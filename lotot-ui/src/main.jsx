@@ -3,11 +3,11 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 const EMPTY_READINGS = {
-  vehicle_speed: 0,
-  engine_rpm: 0,
-  engine_load: 0,
-  module_voltage: 0,
-  maf: 0,
+  vehicle_speed: null,
+  engine_rpm: null,
+  engine_load: null,
+  module_voltage: null,
+  maf: null,
 };
 
 const EMPTY_BLUETOOTH = {
@@ -63,8 +63,9 @@ window.lototSetBluetoothState = (payload) => {
   }
 };
 
-const clamp = (value, min, max) => Math.max(min, Math.min(max, Number(value) || 0));
-const format = (value, decimals = 0) => Number.isFinite(Number(value)) ? Number(value).toFixed(decimals) : '—';
+const isNumericReading = (value) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+const clamp = (value, min, max) => Math.max(min, Math.min(max, isNumericReading(value) ? Number(value) : 0));
+const format = (value, decimals = 0) => isNumericReading(value) ? Number(value).toFixed(decimals) : '—';
 const mediumLabel = (medium) => medium === 'ble' ? 'Bluetooth LE' : 'Bluetooth classique';
 
 function Icon({ name }) {
@@ -88,9 +89,10 @@ function Icon({ name }) {
 }
 
 function RingGauge({ label, value, unit, max, decimals = 0, icon }) {
-  const progress = clamp(value, 0, max) / max * 100;
+  const available = isNumericReading(value);
+  const progress = available ? clamp(value, 0, max) / max * 100 : 0;
   return (
-    <article className="metric-card">
+    <article className={`metric-card ${available ? '' : 'is-unavailable'}`}>
       <div className="metric-head"><span>{label}</span><Icon name={icon}/></div>
       <div className="metric-ring" style={{ '--value': `${progress}%` }}>
         <div><strong>{format(value, decimals)}</strong><small>{unit}</small></div>
@@ -238,7 +240,36 @@ function App() {
   const connected = bluetooth.connectedDevice;
   const selectedDevice = bluetooth.selectedDevice;
   const visibleDevice = connected || selectedDevice;
-  const speedProgress = clamp(readings.vehicle_speed, 0, 240) / 240 * 270;
+  const speedAvailable = isNumericReading(readings.vehicle_speed);
+  const speedProgress = speedAvailable ? clamp(readings.vehicle_speed, 0, 240) / 240 * 270 : 0;
+  const numericReadings = Object.values(readings).filter(isNumericReading);
+  const availableReadingCount = numericReadings.length;
+  const unavailableReadingCount = Object.keys(EMPTY_READINGS).length - availableReadingCount;
+  const allNumericReadingsZero = availableReadingCount > 0 && numericReadings.every((value) => Number(value) === 0);
+  const diagnosticCopy = connected && unavailableReadingCount > 0
+    ? {
+        title: 'Flux OBD actif · données partielles',
+        body: `${availableReadingCount}/5 valeurs numériques reçues. Les autres réponses sont vides ou NaN.`,
+      }
+    : connected && allNumericReadingsZero
+      ? {
+          title: 'Flux OBD actif · valeurs à zéro',
+          body: 'Le simulateur répond, mais les capteurs affichés sont actuellement réglés à zéro.',
+        }
+      : connected
+        ? {
+            title: 'Diagnostic local actif',
+            body: `Les données arrivent depuis ${connected.name}.`,
+          }
+        : status === 'demo'
+          ? {
+              title: 'Simulation AndrOBD active',
+              body: 'Les jauges utilisent les valeurs générées par le moteur de démonstration.',
+            }
+          : {
+              title: 'Prêt pour le diagnostic',
+              body: 'Connectez un adaptateur ou lancez la simulation pour tester les jauges.',
+            };
 
   const openConnection = () => {
     setConnectionOpen(true);
@@ -291,11 +322,11 @@ function App() {
         <RingGauge label="DÉBIT D’AIR" value={readings.maf} unit="g/s" max={50} decimals={1} icon="wind" />
       </section>
 
-      <section className="health-card">
+      <section className={`health-card ${connected && unavailableReadingCount > 0 ? 'has-data-warning' : ''}`}>
         <span className="health-icon"><Icon name="shield"/></span>
         <div>
-          <strong>{connected ? 'Diagnostic local actif' : status === 'demo' ? 'Simulation AndrOBD active' : 'Prêt pour le diagnostic'}</strong>
-          <p>{connected ? `Les données arrivent depuis ${connected.name}.` : 'Connectez un adaptateur ou lancez la simulation pour tester les jauges.'}</p>
+          <strong>{diagnosticCopy.title}</strong>
+          <p>{diagnosticCopy.body}</p>
         </div>
       </section>
 

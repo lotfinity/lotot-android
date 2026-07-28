@@ -1284,18 +1284,31 @@ public class MainActivity extends PluginManager
                 null);
     }
 
-    private double getLotoTValue(String mnemonic)
+    private Object getLotoTValue(String mnemonic)
     {
         try
         {
+            // Do not expose zero-initialised registry values while disconnected.
+            if (getMode() != MODE.DEMO && !"demo".equals(mLototStatus)
+                    && !"live".equals(mLototStatus))
+                return JSONObject.NULL;
+
+            // AndrOBD updates these EcuDataItem process variables directly when
+            // each PID response is decoded. Numeric zero is valid; "n/a", NaN,
+            // empty payloads and unsupported PIDs remain unavailable.
             EcuDataItem item = EcuDataItems.byMnemonic.get(mnemonic);
-            if (item == null || item.pv == null) return 0d;
+            if (item == null || item.pv == null) return JSONObject.NULL;
             Object value = item.pv.get(EcuDataPv.FID_VALUE);
-            return value instanceof Number ? ((Number) value).doubleValue() : 0d;
+            if (value instanceof Number)
+            {
+                double numeric = ((Number) value).doubleValue();
+                return Double.isFinite(numeric) ? numeric : JSONObject.NULL;
+            }
+            return JSONObject.NULL;
         }
         catch (Exception ex)
         {
-            return 0d;
+            return JSONObject.NULL;
         }
     }
 

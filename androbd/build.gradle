@@ -13,8 +13,8 @@ android {
         applicationId 'com.lotot.android'
         minSdkVersion 23
         targetSdkVersion 36
-        versionCode 101
-        versionName '0.2.0-spike'
+        versionCode 102
+        versionName '0.2.1-spike'
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
