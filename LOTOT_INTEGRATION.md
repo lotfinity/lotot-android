@@ -97,3 +97,16 @@ The React dashboard provides:
 Freshness is stored as a lightweight field on `EcuDataItem`; the process
 variable map remains unchanged so the upstream AndrOBD library contract and
 unit tests are preserved.
+
+## Low-latency driving telemetry (0.3.1 spike)
+
+The driving cockpit uses a split telemetry cadence. Vehicle speed and engine RPM
+are sent through a small native-to-React payload every 100 ms, while the complete
+PID explorer remains on a throttled full snapshot. This avoids repeatedly
+rerendering the complete dashboard just to move the speedometer.
+
+For Mode 01 live data, the OBD scheduler gives PID `0x0D` (vehicle speed) a
+100 ms priority deadline and PID `0x0C` (engine RPM) a 200 ms deadline. These
+requests pre-empt very large normal PID rotations, including simulators that
+advertise nearly every PID as supported. The original AndrOBD ordering remains
+unchanged outside the LotoT realtime session.

@@ -188,7 +188,9 @@ public class MainActivity extends PluginManager
     /**
      * time between display updates to represent data changes
      */
-    private static final int DISPLAY_UPDATE_TIME = 250;
+    private static final int DISPLAY_UPDATE_TIME = 100;
+    private static final int NATIVE_LIST_UPDATE_TIME = 250;
+    private static final int FULL_TELEMETRY_UPDATE_TIME = 500;
     private static final String LOG_MASTER = "log_master";
     private static final String KEEP_SCREEN_ON = "keep_screen_on";
     private static final String ELM_CUSTOM_INIT_CMDS = "elm_custom_init_cmds";
@@ -306,6 +308,10 @@ public class MainActivity extends PluginManager
     private String mLototConnectedAddress = null;
     private String mLototConnectedMedium = null;
     private long mLototLastDebugLog = 0L;
+    private long mLototLastNativeListUpdate = 0L;
+    private long mLototLastFullTelemetryUpdate = 0L;
+    private long mLototLastFastCadenceLog = 0L;
+    private int mLototFastPublishCount = 0;
     /**
      * current data view mode
      */
@@ -452,8 +458,18 @@ public class MainActivity extends PluginManager
                         break;
 
                     case MESSAGE_UPDATE_VIEW:
-                        getListView().invalidateViews();
-                        publishLotoTTelemetry();
+                        long lototNow = System.currentTimeMillis();
+                        if (lototNow - mLototLastNativeListUpdate >= NATIVE_LIST_UPDATE_TIME)
+                        {
+                            getListView().invalidateViews();
+                            mLototLastNativeListUpdate = lototNow;
+                        }
+                        publishLotoTFastTelemetry();
+                        if (lototNow - mLototLastFullTelemetryUpdate >= FULL_TELEMETRY_UPDATE_TIME)
+                        {
+                            publishLotoTTelemetry();
+                            mLototLastFullTelemetryUpdate = lototNow;
+                        }
                         break;
 
                     // handle state change in OBD protocol
@@ -1024,6 +1040,7 @@ public class MainActivity extends PluginManager
     public void startLotoTDemo()
     {
         resetLotoTSignalTimestamps();
+        ObdProt.setRealtimePidPriorityEnabled(true);
         CommService.medium = CommService.MEDIUM.DEMO;
         startDemoService();
         setLotoTStatus("demo");
@@ -1397,6 +1414,48 @@ public class MainActivity extends PluginManager
             log.log(Level.FINER, "Unable to collect LotoT live signals", ex);
         }
         return signals;
+    }
+
+    private void publishLotoTFastTelemetry()
+    {
+        if (!mLototReady || mLototWebView == null) return;
+        try
+        {
+            JSONObject readings = new JSONObject();
+            readings.put("vehicle_speed", getLotoTValue("vehicle_speed"));
+            readings.put("engine_rpm", getLotoTValue("engine_speed"));
+
+            JSONObject payload = new JSONObject();
+            long capturedAt = System.currentTimeMillis();
+            payload.put("captured_at", capturedAt);
+            payload.put("mode", mLototStatus);
+            payload.put("readings", readings);
+
+            if (BuildConfig.DEBUG)
+            {
+                mLototFastPublishCount++;
+                if (capturedAt - mLototLastFastCadenceLog >= 1000L)
+                {
+                    EcuDataItem speedItem = EcuDataItems.byMnemonic.get("vehicle_speed");
+                    long sourceAge = speedItem == null || speedItem.updatedAt <= 0L
+                            ? -1L : Math.max(0L, capturedAt - speedItem.updatedAt);
+                    Log.d("LotoTFast", "publishes=" + mLototFastPublishCount
+                            + " speed=" + readings.opt("vehicle_speed")
+                            + " source_age_ms=" + sourceAge);
+                    mLototFastPublishCount = 0;
+                    mLototLastFastCadenceLog = capturedAt;
+                }
+            }
+
+            String encoded = JSONObject.quote(payload.toString());
+            mLototWebView.evaluateJavascript(
+                    "window.lototReceiveFastTelemetry && window.lototReceiveFastTelemetry(" + encoded + ");",
+                    null);
+        }
+        catch (Exception ex)
+        {
+            log.log(Level.FINER, "Unable to publish fast LotoT telemetry", ex);
+        }
     }
 
     private void publishLotoTTelemetry()
@@ -3143,6 +3202,7 @@ public class MainActivity extends PluginManager
     {
         stopDemoService();
         resetLotoTSignalTimestamps();
+        ObdProt.setRealtimePidPriorityEnabled(true);
 
         mode = MODE.ONLINE;
         // Menu visibility will be handled by updateMenuVisibility() call in setMode
@@ -3162,6 +3222,7 @@ public class MainActivity extends PluginManager
      */
     private void onDisconnect()
     {
+        ObdProt.setRealtimePidPriorityEnabled(false);
         // handle further initialisations
         setMode(MODE.OFFLINE);
         mConnectedDeviceName = null;

@@ -185,6 +185,13 @@ public class ObdProt extends ProtoHeader
     /** List of PIDs supported by the vehicle */
     private static final Vector<ObdPid> pidSupported = new Vector<ObdPid>();
 
+    /** Low-latency PIDs used by the LotoT driving cockpit. */
+    static final int PID_ENGINE_RPM = 0x0C;
+    static final int PID_VEHICLE_SPEED = 0x0D;
+    static final long SPEED_POLL_INTERVAL_MS = 100L;
+    static final long RPM_POLL_INTERVAL_MS = 200L;
+    private static volatile boolean realtimePidPriorityEnabled = false;
+
     /** positive response fields */
     private static final int ID_OBD_SVC = 0;
     private static final int ID_OBD_PID = 1;
@@ -456,6 +463,7 @@ public class ObdProt extends ProtoHeader
         if( start == 0)
         {
             pidSupported.clear();
+            pidsWrapped = false;
         }
 
         // loop through bits and mark corresponding PIDs as supported
@@ -510,6 +518,101 @@ public class ObdProt extends ProtoHeader
         fixedPids.clear();
     }
 
+    public static void setRealtimePidPriorityEnabled(boolean enabled)
+    {
+        realtimePidPriorityEnabled = enabled;
+    }
+
+    static boolean isRealtimePid(int pid)
+    {
+        return pid == PID_VEHICLE_SPEED || pid == PID_ENGINE_RPM;
+    }
+
+    static long realtimePollInterval(int pid)
+    {
+        if (pid == PID_VEHICLE_SPEED) return SPEED_POLL_INTERVAL_MS;
+        if (pid == PID_ENGINE_RPM) return RPM_POLL_INTERVAL_MS;
+        return 0L;
+    }
+
+    private static int realtimePriority(int pid)
+    {
+        if (pid == PID_VEHICLE_SPEED) return 0;
+        if (pid == PID_ENGINE_RPM) return 1;
+        return Integer.MAX_VALUE;
+    }
+
+    /**
+     * Select a PID while allowing speed/RPM to pre-empt a very large normal PID
+     * rotation once their low-latency deadline has elapsed.
+     */
+    static ObdPid selectNextPid(Vector<ObdPid> pids, long now, boolean prioritizeRealtime)
+    {
+        if (pids == null || pids.isEmpty()) return null;
+
+        ObdPid selected = null;
+        if (prioritizeRealtime)
+        {
+            for (ObdPid candidate : pids)
+            {
+                if (!isRealtimePid(candidate.intValue()) || candidate.getNextRequest() > now)
+                    continue;
+                if (selected == null
+                        || realtimePriority(candidate.intValue()) < realtimePriority(selected.intValue())
+                        || (realtimePriority(candidate.intValue()) == realtimePriority(selected.intValue())
+                            && candidate.getNextRequest() < selected.getNextRequest()))
+                {
+                    selected = candidate;
+                }
+            }
+        }
+
+        // Between realtime deadlines, continue rotating through every other PID.
+        if (selected == null)
+        {
+            for (ObdPid candidate : pids)
+            {
+                if (prioritizeRealtime && isRealtimePid(candidate.intValue())) continue;
+                if (selected == null || candidate.getNextRequest() < selected.getNextRequest())
+                    selected = candidate;
+            }
+        }
+
+        // A fixed-PID view can contain only realtime PIDs. Poll the earliest one.
+        if (selected == null)
+        {
+            for (ObdPid candidate : pids)
+            {
+                if (selected == null || candidate.getNextRequest() < selected.getNextRequest())
+                    selected = candidate;
+            }
+        }
+
+        if (selected != null)
+        {
+            long previousDeadline = selected.getNextRequest();
+            pidsWrapped = previousDeadline != 0L;
+            long interval = prioritizeRealtime
+                    ? realtimePollInterval(selected.intValue()) : 0L;
+            selected.setNextRequest(now + interval);
+        }
+        return selected;
+    }
+
+    static void updatePidDeadlineAfterResponse(ObdPid pid, long now,
+                                               long updatePeriod,
+                                               boolean prioritizeRealtime)
+    {
+        long decodedDeadline = now + Math.max(0L, updatePeriod);
+        if (prioritizeRealtime && isRealtimePid(pid.intValue()))
+        {
+            // The response arrives after selection. Do not erase the 100/200 ms
+            // deadline that was assigned when the request was scheduled.
+            decodedDeadline = Math.max(decodedDeadline, pid.getNextRequest());
+        }
+        pid.setNextRequest(decodedDeadline);
+    }
+
     /**
      * get the next available supported PID
      * @return next available supported PID
@@ -517,19 +620,16 @@ public class ObdProt extends ProtoHeader
     synchronized Integer getNextSupportedPid()
     {
         Integer result = 0;
-        /* get corresponding PID list */
         Vector<ObdPid> pidsToCheck = (fixedPids.size() > 0) ? fixedPids : pidSupported;
         try
         {
-            /* sort by next expected request */
-            Collections.sort(pidsToCheck, ObdPid.requestSorter);
-            ObdPid pid = pidsToCheck.firstElement();
-            /* detect wrap around in PID list */
-            pidsWrapped = pid.getNextRequest() != 0;
-            /* mark PID as handled */
-            pid.setNextRequest(System.currentTimeMillis());
-            /* and return first list element */
-            result = pid.intValue();
+            // Preserve AndrOBD's deterministic first pass through every PID.
+            // Once that discovery pass wraps, enable the low-latency driving PIDs.
+            boolean prioritizeRealtime = service == OBD_SVC_DATA
+                    && (realtimePidPriorityEnabled || pidsWrapped);
+            ObdPid pid = selectNextPid(pidsToCheck,
+                    System.currentTimeMillis(), prioritizeRealtime);
+            if (pid != null) result = pid.intValue();
         }
         catch(Exception e)
         {
@@ -649,7 +749,9 @@ public class ObdProt extends ProtoHeader
                                 {
                                     if(pid.intValue()==msgPid)
                                     {
-                                        pid.setNextRequest(System.currentTimeMillis()+updatePeriod);
+                                        updatePidDeadlineAfterResponse(pid,
+                                                System.currentTimeMillis(), updatePeriod,
+                                                msgService == OBD_SVC_DATA);
                                     }
                                 }
                                 break;
@@ -687,7 +789,9 @@ public class ObdProt extends ProtoHeader
                                 {
                                     if(pid.intValue()==msgPid)
                                     {
-                                        pid.setNextRequest(System.currentTimeMillis()+updatePeriod);
+                                        updatePidDeadlineAfterResponse(pid,
+                                                System.currentTimeMillis(), updatePeriod,
+                                                msgService == OBD_SVC_DATA);
                                     }
                                 }
                                 break;

@@ -85,6 +85,25 @@ window.lototReceiveTelemetry = (payload) => {
   }
 };
 
+window.lototReceiveFastTelemetry = (payload) => {
+  try {
+    const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
+    if (!parsed || typeof parsed !== 'object') return;
+    const previous = telemetryBridge.lastPayload || {};
+    telemetryBridge.lastPayload = {
+      ...previous,
+      ...parsed,
+      readings: { ...(previous.readings || {}), ...(parsed.readings || {}) },
+    };
+    if (['demo', 'live', 'connecting', 'offline'].includes(parsed.mode)) {
+      telemetryBridge.status = parsed.mode;
+    }
+    window.dispatchEvent(new CustomEvent('lotot:fast-telemetry', { detail: parsed }));
+  } catch (error) {
+    console.error('Invalid native fast telemetry payload', error);
+  }
+};
+
 window.lototSetStatus = (status) => {
   if (!['live', 'connecting', 'offline', 'demo'].includes(status)) return;
   telemetryBridge.status = status;
@@ -388,18 +407,26 @@ function App() {
       if (payload.captured_at) setLastCapturedAt(Number(payload.captured_at));
       setPacketCount((count) => count + 1);
     };
+    const onFastTelemetry = (event) => {
+      const payload = event.detail || {};
+      if (payload.readings) setReadings((current) => ({ ...current, ...payload.readings }));
+      if (payload.mode) setStatus(payload.mode);
+      if (payload.captured_at) setLastCapturedAt(Number(payload.captured_at));
+    };
     const onStatus = (event) => setStatus(event.detail?.status || 'offline');
     const onBluetooth = (event) => {
       setBluetooth(event.detail || EMPTY_BLUETOOTH);
       if (event.detail?.medium) setMediumState(event.detail.medium);
     };
     window.addEventListener('lotot:telemetry', onTelemetry);
+    window.addEventListener('lotot:fast-telemetry', onFastTelemetry);
     window.addEventListener('lotot:telemetry-status', onStatus);
     window.addEventListener('lotot:bluetooth-state', onBluetooth);
     setNativeAvailable(Boolean(window.LotoTNative));
     window.LotoTNative?.ready?.();
     return () => {
       window.removeEventListener('lotot:telemetry', onTelemetry);
+      window.removeEventListener('lotot:fast-telemetry', onFastTelemetry);
       window.removeEventListener('lotot:telemetry-status', onStatus);
       window.removeEventListener('lotot:bluetooth-state', onBluetooth);
     };
