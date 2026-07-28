@@ -70,6 +70,7 @@ public class BtCommService extends CommService
 		// set up protocol handlers
 		elm.addTelegramWriter(ser);
 		ser.setMessageHandler(elm);
+		ser.setReceiveActivityListener(this::markReceiveActivity);
 	}
 
 	/**

@@ -22,6 +22,7 @@ final class LotoTWebBridge
         void requestLotoTBluetoothDevices(String medium);
         void connectLotoTBluetoothDevice(String address, String medium);
         void disconnectLotoTBluetooth();
+        void setLotoTTheme(String theme);
         void openLotoTNativeTools();
     }
 
@@ -62,6 +63,12 @@ final class LotoTWebBridge
     public void disconnectBluetooth()
     {
         activity.runOnUiThread(host::disconnectLotoTBluetooth);
+    }
+
+    @JavascriptInterface
+    public void setTheme(String theme)
+    {
+        activity.runOnUiThread(() -> host.setLotoTTheme(theme));
     }
 
     @JavascriptInterface

@@ -138,6 +138,7 @@ public class MainActivity extends PluginManager
     public static final int MESSAGE_FILE_READ = 2;
     public static final int MESSAGE_DEVICE_NAME = 4;
     public static final int MESSAGE_TOAST = 5;
+    public static final int MESSAGE_CONNECTION_LOST = 13;
     public static final int MESSAGE_UPDATE_VIEW = 7;
     public static final int MESSAGE_TOOLBAR_VISIBLE = 12;
     /**
@@ -191,6 +192,9 @@ public class MainActivity extends PluginManager
     private static final int DISPLAY_UPDATE_TIME = 100;
     private static final int NATIVE_LIST_UPDATE_TIME = 250;
     private static final int FULL_TELEMETRY_UPDATE_TIME = 500;
+    private static final long CONNECTION_INITIAL_GRACE_MS = 12_000L;
+    private static final long CONNECTION_SILENCE_TIMEOUT_MS = 3_500L;
+    private static final String PREF_LOTOT_THEME = "lotot_theme";
     private static final String LOG_MASTER = "log_master";
     private static final String KEEP_SCREEN_ON = "keep_screen_on";
     private static final String ELM_CUSTOM_INIT_CMDS = "elm_custom_init_cmds";
@@ -307,6 +311,12 @@ public class MainActivity extends PluginManager
     private String mLototSelectedDeviceName = null;
     private String mLototConnectedAddress = null;
     private String mLototConnectedMedium = null;
+    private String mLototLastDeviceName = null;
+    private String mLototLastDeviceAddress = null;
+    private String mLototLastDeviceMedium = null;
+    private boolean mLototManualDisconnect = false;
+    private boolean mLototLossLatched = false;
+    private boolean mLototWatchdogTriggered = false;
     private long mLototLastDebugLog = 0L;
     private long mLototLastNativeListUpdate = 0L;
     private long mLototLastFullTelemetryUpdate = 0L;
@@ -411,6 +421,15 @@ public class MainActivity extends PluginManager
                         publishLotoTBluetoothState();
                         break;
 
+                    case MESSAGE_CONNECTION_LOST:
+                        if (!mLototManualDisconnect)
+                        {
+                            mLototLossLatched = true;
+                            mLototBluetoothError = "Connexion Bluetooth perdue. Vérifiez l’adaptateur puis reconnectez-vous.";
+                            setLotoTStatus("lost");
+                        }
+                        break;
+
                     case MESSAGE_TOAST:
                         String toastMessage = msg.getData().getString(TOAST);
                         Toast.makeText(getApplicationContext(), toastMessage, Toast.LENGTH_SHORT).show();
@@ -420,7 +439,12 @@ public class MainActivity extends PluginManager
                         }
                         else if (getString(R.string.connectionlost).equals(toastMessage))
                         {
-                            mLototBluetoothError = "Connexion Bluetooth interrompue.";
+                            if (!mLototManualDisconnect)
+                            {
+                                mLototLossLatched = true;
+                                mLototBluetoothError = "Connexion Bluetooth perdue. Vérifiez l’adaptateur puis reconnectez-vous.";
+                                setLotoTStatus("lost");
+                            }
                         }
                         else
                         {
@@ -459,6 +483,7 @@ public class MainActivity extends PluginManager
 
                     case MESSAGE_UPDATE_VIEW:
                         long lototNow = System.currentTimeMillis();
+                        checkLotoTConnectionWatchdog(lototNow);
                         if (lototNow - mLototLastNativeListUpdate >= NATIVE_LIST_UPDATE_TIME)
                         {
                             getListView().invalidateViews();
@@ -647,6 +672,7 @@ public class MainActivity extends PluginManager
         mListView = getWindow().getLayoutInflater().inflate(R.layout.obd_list, null);
         mLototBluetoothManager = new LotoTBluetoothManager(this, this);
         initializeLotoTDashboard();
+        applyLotoTSystemBars(prefs.getString(PREF_LOTOT_THEME, "dark"));
 
         // Log program startup
         log.info(String.format("%s %s starting",
@@ -1039,6 +1065,10 @@ public class MainActivity extends PluginManager
     @Override
     public void startLotoTDemo()
     {
+        mLototManualDisconnect = false;
+        mLototLossLatched = false;
+        mLototWatchdogTriggered = false;
+        mLototBluetoothError = null;
         resetLotoTSignalTimestamps();
         ObdProt.setRealtimePidPriorityEnabled(true);
         CommService.medium = CommService.MEDIUM.DEMO;
@@ -1069,9 +1099,14 @@ public class MainActivity extends PluginManager
     @Override
     public void disconnectLotoTBluetooth()
     {
+        mLototManualDisconnect = true;
+        mLototLossLatched = false;
+        mLototWatchdogTriggered = false;
+        rememberLotoTDevice();
         if (mLototBluetoothManager != null) mLototBluetoothManager.stopScan();
         if (mCommService != null)
         {
+            mCommService.suppressConnectionLossNotification();
             mCommService.stop();
             mCommService = null;
         }
@@ -1083,10 +1118,38 @@ public class MainActivity extends PluginManager
         mLototBluetoothError = null;
         setMode(MODE.OFFLINE);
         setLotoTStatus("offline");
-        mConnectedDeviceName = null;
-        mLototConnectedAddress = null;
-        mLototConnectedMedium = null;
         publishLotoTBluetoothState();
+    }
+
+    @Override
+    public void setLotoTTheme(String theme)
+    {
+        String normalized = "light".equalsIgnoreCase(theme) ? "light" : "dark";
+        if (prefs == null) prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        prefs.edit().putString(PREF_LOTOT_THEME, normalized).apply();
+        applyLotoTSystemBars(normalized);
+    }
+
+    private void applyLotoTSystemBars(String theme)
+    {
+        boolean light = "light".equals(theme);
+        int background = Color.parseColor(light ? "#F4F6F0" : "#07090B");
+        getWindow().setStatusBarColor(background);
+        getWindow().setNavigationBarColor(background);
+        int visibility = getWindow().getDecorView().getSystemUiVisibility();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+        {
+            visibility = light
+                    ? visibility | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                    : visibility & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+        {
+            visibility = light
+                    ? visibility | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                    : visibility & ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        }
+        getWindow().getDecorView().setSystemUiVisibility(visibility);
     }
 
     @Override
@@ -1182,8 +1245,12 @@ public class MainActivity extends PluginManager
         if (!"connect".equals(action) || address == null) return;
         mLototBluetoothManager.stopScan();
         stopDemoService();
+        mLototManualDisconnect = false;
+        mLototLossLatched = false;
+        mLototWatchdogTriggered = false;
         if (mCommService != null)
         {
+            mCommService.suppressConnectionLossNotification();
             mCommService.stop();
             mCommService = null;
         }
@@ -1272,6 +1339,21 @@ public class MainActivity extends PluginManager
             else
             {
                 state.put("connectedDevice", JSONObject.NULL);
+            }
+
+            if (mLototLastDeviceAddress != null)
+            {
+                JSONObject lastDevice = new JSONObject();
+                lastDevice.put("name", mLototLastDeviceName == null
+                        ? "Adaptateur OBD" : mLototLastDeviceName);
+                lastDevice.put("address", mLototLastDeviceAddress);
+                lastDevice.put("medium", mLototLastDeviceMedium == null
+                        ? mLototBluetoothMedium : mLototLastDeviceMedium);
+                state.put("lastDevice", lastDevice);
+            }
+            else
+            {
+                state.put("lastDevice", JSONObject.NULL);
             }
 
             String encoded = JSONObject.quote(state.toString());
@@ -2353,12 +2435,13 @@ public class MainActivity extends PluginManager
 
     protected void setNightMode(boolean nightMode)
     {
-        // store last mode selection
         MainActivity.nightMode = nightMode;
-
-        // Set display theme based on specified mode
-        setTheme(nightMode ? R.style.AppTheme_Dark : R.style.AppTheme);
-        getWindow().getDecorView().setBackgroundColor(nightMode ? Color.BLACK : Color.WHITE);
+        boolean lototLight = prefs != null
+                && "light".equals(prefs.getString(PREF_LOTOT_THEME, "dark"));
+        setTheme(lototLight ? R.style.AppTheme_Light
+                : nightMode ? R.style.AppTheme_Dark : R.style.AppTheme);
+        getWindow().getDecorView().setBackgroundColor(
+                lototLight ? Color.parseColor("#F4F6F0") : Color.parseColor("#07090B"));
     }
 
     private void setNumCodes(int newNumCodes)
@@ -3194,6 +3277,39 @@ public class MainActivity extends PluginManager
         return positionsValid;
     }
 
+    private void rememberLotoTDevice()
+    {
+        String address = mLototConnectedAddress;
+        if (address == null || address.trim().isEmpty()) return;
+        mLototLastDeviceAddress = address;
+        mLototLastDeviceMedium = mLototConnectedMedium == null
+                ? mLototBluetoothMedium : mLototConnectedMedium;
+        String name = mConnectedDeviceName;
+        if (name == null || name.trim().isEmpty()) name = mLototSelectedDeviceName;
+        mLototLastDeviceName = name == null || name.trim().isEmpty()
+                ? "Adaptateur OBD" : name;
+    }
+
+    private void checkLotoTConnectionWatchdog(long nowMs)
+    {
+        if (mLototWatchdogTriggered || mLototManualDisconnect
+                || !"live".equals(mLototStatus) || mCommService == null
+                || mCommService.getState() != CommService.STATE.CONNECTED) return;
+
+        if (LotoTConnectionWatchdog.isTimedOut(
+                nowMs,
+                mCommService.getConnectedAtMs(),
+                mCommService.getLastReceiveActivityMs(),
+                CONNECTION_INITIAL_GRACE_MS,
+                CONNECTION_SILENCE_TIMEOUT_MS))
+        {
+            mLototWatchdogTriggered = true;
+            mLototLossLatched = true;
+            Log.w("LotoTConnection", "Bluetooth heartbeat timed out");
+            mCommService.connectionLost();
+        }
+    }
+
     /**
      * Handle bluetooth connection established ...
      */
@@ -3203,6 +3319,10 @@ public class MainActivity extends PluginManager
         stopDemoService();
         resetLotoTSignalTimestamps();
         ObdProt.setRealtimePidPriorityEnabled(true);
+        mLototManualDisconnect = false;
+        mLototLossLatched = false;
+        mLototWatchdogTriggered = false;
+        rememberLotoTDevice();
 
         mode = MODE.ONLINE;
         // Menu visibility will be handled by updateMenuVisibility() call in setMode
@@ -3223,12 +3343,23 @@ public class MainActivity extends PluginManager
     private void onDisconnect()
     {
         ObdProt.setRealtimePidPriorityEnabled(false);
-        // handle further initialisations
+        rememberLotoTDevice();
         setMode(MODE.OFFLINE);
         mConnectedDeviceName = null;
         mLototConnectedAddress = null;
         mLototConnectedMedium = null;
-        setLotoTStatus("offline");
+        mLototSelectedDeviceName = null;
+        mCommService = null;
+        if (mLototLossLatched && !mLototManualDisconnect)
+        {
+            mLototBluetoothError = "Connexion Bluetooth perdue. Vérifiez l’adaptateur puis reconnectez-vous.";
+            setLotoTStatus("lost");
+        }
+        else
+        {
+            mLototBluetoothError = null;
+            setLotoTStatus("offline");
+        }
         publishLotoTBluetoothState();
     }
 

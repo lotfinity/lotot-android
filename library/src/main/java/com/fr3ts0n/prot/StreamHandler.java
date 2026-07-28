@@ -42,6 +42,7 @@ public class StreamHandler implements TelegramWriter, Runnable
 	private BufferedWriter out;
 	
 	private TelegramListener messageHandler;
+	private Runnable receiveActivityListener;
 	// current receive message
 	private String message = "";
 	
@@ -126,6 +127,10 @@ public class StreamHandler implements TelegramWriter, Runnable
 	 */
 	private void processRxChar(int chr)
 	{
+		if (receiveActivityListener != null)
+		{
+			receiveActivityListener.run();
+		}
 		// process incoming data
 		log.finer(this.toString() + " RX: '"
 		          + String.format("%02X : %1c", (byte) chr, chr < 32 ? '.' : chr)
@@ -226,6 +231,12 @@ public class StreamHandler implements TelegramWriter, Runnable
 	public void setMessageHandler(TelegramListener messageHandler)
 	{
 		this.messageHandler = messageHandler;
+	}
+
+	/** Receive callback used by connection watchdogs. */
+	public void setReceiveActivityListener(Runnable listener)
+	{
+		receiveActivityListener = listener;
 	}
 	
 	/**

@@ -110,3 +110,34 @@ For Mode 01 live data, the OBD scheduler gives PID `0x0D` (vehicle speed) a
 requests pre-empt very large normal PID rotations, including simulators that
 advertise nearly every PID as supported. The original AndrOBD ordering remains
 unchanged outside the LotoT realtime session.
+
+## Connection stability and light theme (0.4.0 spike)
+
+LotoT no longer treats an Android Bluetooth socket flag as proof that the ELM
+session is alive. Classic RFCOMM bytes and BLE notifications update a receive
+heartbeat. After the initial adapter/ECU handshake grace period, 3.5 seconds of
+complete receive silence terminates the stale transport and publishes a
+separate `lost` state. Unexpected loss clears `connectedDevice`, preserves the
+last adapter for one-tap reconnect, and displays a connection-lost warning.
+Manual disconnect remains a clean `offline` state.
+
+The React cockpit now has a persistent dark/light toggle. The bundled WebView,
+status/navigation bars and native AndrOBD theme preference use the same saved
+selection. Existing sessions are not recreated when the theme changes, so an
+active OBD connection is not interrupted.
+
+## Django synchronization milestone
+
+The existing Django backend already separates human and device authentication:
+
+- `/api/v1/auth/login/` authenticates the driver and returns their account and
+  vehicle context;
+- `/api/v1/telemetry/ingest/` accepts background telemetry using a provisioned
+  `device_uid` and `api_key`;
+- `/ws/vehicles/<vehicle_id>/live/` broadcasts accepted readings to web clients.
+
+The Android client should next add account login and vehicle selection, secure
+device credential storage, periodic telemetry batches, and a Room-backed
+offline queue. Each batch maps AndrOBD mnemonics to Django `readings`, includes
+`captured_at` and connection metadata, and retries with bounded backoff until
+acknowledged.

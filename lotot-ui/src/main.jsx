@@ -19,6 +19,7 @@ const EMPTY_BLUETOOTH = {
   devices: [],
   connectedDevice: null,
   selectedDevice: null,
+  lastDevice: null,
   error: null,
 };
 
@@ -76,7 +77,7 @@ window.lototReceiveTelemetry = (payload) => {
     const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
     if (!parsed || typeof parsed !== 'object') return;
     telemetryBridge.lastPayload = parsed;
-    if (['demo', 'live', 'connecting', 'offline'].includes(parsed.mode)) {
+    if (['demo', 'live', 'connecting', 'offline', 'lost'].includes(parsed.mode)) {
       telemetryBridge.status = parsed.mode;
     }
     window.dispatchEvent(new CustomEvent('lotot:telemetry', { detail: parsed }));
@@ -95,7 +96,7 @@ window.lototReceiveFastTelemetry = (payload) => {
       ...parsed,
       readings: { ...(previous.readings || {}), ...(parsed.readings || {}) },
     };
-    if (['demo', 'live', 'connecting', 'offline'].includes(parsed.mode)) {
+    if (['demo', 'live', 'connecting', 'offline', 'lost'].includes(parsed.mode)) {
       telemetryBridge.status = parsed.mode;
     }
     window.dispatchEvent(new CustomEvent('lotot:fast-telemetry', { detail: parsed }));
@@ -105,7 +106,7 @@ window.lototReceiveFastTelemetry = (payload) => {
 };
 
 window.lototSetStatus = (status) => {
-  if (!['live', 'connecting', 'offline', 'demo'].includes(status)) return;
+  if (!['live', 'connecting', 'offline', 'demo', 'lost'].includes(status)) return;
   telemetryBridge.status = status;
   window.dispatchEvent(new CustomEvent('lotot:telemetry-status', { detail: { status } }));
 };
@@ -193,6 +194,8 @@ function Icon({ name }) {
     leaf: <><path d="M11 20A7 7 0 0 1 9.8 6.1C14 3 20 4 21 4c0 1 .8 8-4.2 11.8A7 7 0 0 1 11 20Z"/><path d="M2 21c0-3 1.8-5.3 5-7"/></>,
     grid: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
     clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
+    sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></>,
+    moon: <path d="M21 12.8A8.5 8.5 0 1 1 11.2 3 6.8 6.8 0 0 0 21 12.8Z"/>,
   };
   return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name] || paths.activity}</svg>;
 }
@@ -367,6 +370,7 @@ function App() {
   const [lastCapturedAt, setLastCapturedAt] = useState(Number(retainedPayload.captured_at) || 0);
   const [packetCount, setPacketCount] = useState(0);
   const [now, setNow] = useState(Date.now());
+  const [theme, setTheme] = useState(() => localStorage.getItem('lotot-theme') === 'light' ? 'light' : 'dark');
   const [favorites, setFavorites] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('lotot-signal-favorites') || '[]');
@@ -380,6 +384,12 @@ function App() {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('lotot-theme', theme);
+    window.LotoTNative?.setTheme?.(theme);
+  }, [theme]);
 
   useEffect(() => {
     localStorage.setItem('lotot-signal-favorites', JSON.stringify(favorites));
@@ -434,7 +444,16 @@ function App() {
 
   const state = useMemo(() => ({
     live: ['live', 'demo'].includes(status),
-    label: status === 'demo' ? 'MODE DÉMO' : status === 'live' ? 'EN DIRECT' : status === 'connecting' ? 'CONNEXION' : 'HORS LIGNE',
+    lost: status === 'lost',
+    label: status === 'demo'
+      ? 'MODE DÉMO'
+      : status === 'live'
+        ? 'EN DIRECT'
+        : status === 'connecting'
+          ? 'CONNEXION'
+          : status === 'lost'
+            ? 'CONNEXION PERDUE'
+            : 'HORS LIGNE',
   }), [status]);
 
   const signalMap = useMemo(() => {
@@ -478,7 +497,8 @@ function App() {
 
   const connected = bluetooth.connectedDevice;
   const selectedDevice = bluetooth.selectedDevice;
-  const visibleDevice = connected || selectedDevice;
+  const lastDevice = bluetooth.lastDevice;
+  const visibleDevice = connected || selectedDevice || (status === 'lost' ? lastDevice : null);
   const speedAvailable = isNumericReading(readings.vehicle_speed);
   const speedProgress = speedAvailable ? clamp(readings.vehicle_speed, 0, 240) / 240 * 270 : 0;
   const toggleFavorite = (key) => setFavorites((current) => current.includes(key) ? current.filter((entry) => entry !== key) : [...current, key]);
@@ -491,7 +511,9 @@ function App() {
       ? { title: 'Connexion active · attente des PIDs', body: 'L’adaptateur répond, mais aucune mesure valide n’a encore été décodée.' }
       : status === 'demo'
         ? { title: 'Simulation AndrOBD active', body: 'Les valeurs de démonstration alimentent le cockpit.' }
-        : { title: 'Prêt pour le diagnostic', body: 'Connectez un adaptateur ou lancez la simulation.' };
+        : status === 'lost'
+          ? { title: 'Connexion Bluetooth perdue', body: `${lastDevice?.name || 'L’adaptateur'} ne répond plus. La session a été arrêtée automatiquement.` }
+          : { title: 'Prêt pour le diagnostic', body: 'Connectez un adaptateur ou lancez la simulation.' };
 
   const openConnection = () => {
     setConnectionOpen(true);
@@ -502,28 +524,31 @@ function App() {
     window.LotoTNative?.scanBluetooth?.(nextMedium);
   };
   const connectDevice = (device) => window.LotoTNative?.connectBluetooth?.(device.address, device.medium || medium);
+  const reconnectLastDevice = () => lastDevice ? connectDevice(lastDevice) : openConnection();
+  const connectionAction = status === 'lost' && lastDevice ? reconnectLastDevice : openConnection;
 
   return (
     <main className="app-shell">
       <header className="topbar">
         <div className="brand">Loto<span>T</span></div>
-        <button className={`status-pill ${state.live ? 'is-live' : ''}`} type="button" onClick={openConnection}><i/><span>{state.label}</span></button>
+        <button className={`status-pill ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`} type="button" onClick={openConnection}><i/><span>{state.label}</span></button>
+        <button className="theme-toggle" type="button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Activer le thème clair' : 'Activer le thème sombre'}><Icon name={theme === 'dark' ? 'sun' : 'moon'}/></button>
       </header>
 
       <section className="session-strip">
         <div><Icon name="activity"/><span><strong>{signals.length}</strong> capteurs</span></div>
         <div><Icon name="clock"/><span>{fluxLabel}</span></div>
-        <div><Icon name="bluetooth"/><span>{connected?.name || 'Aucun adaptateur'}</span></div>
+        <div><Icon name="bluetooth"/><span>{connected?.name || (status === 'lost' ? 'Connexion perdue' : 'Aucun adaptateur')}</span></div>
       </section>
 
-      <section className={`vehicle-card ${connected ? 'is-connected' : ''} ${status === 'connecting' ? 'is-connecting' : ''}`}>
+      <section className={`vehicle-card ${connected ? 'is-connected' : ''} ${status === 'connecting' ? 'is-connecting' : ''} ${status === 'lost' ? 'is-lost' : ''}`}>
         <div>
-          <span className="eyebrow">{connected ? 'ADAPTATEUR CONNECTÉ' : status === 'connecting' ? 'CONNEXION EN COURS' : 'AUCUN ADAPTATEUR'}</span>
+          <span className="eyebrow">{connected ? 'ADAPTATEUR CONNECTÉ' : status === 'connecting' ? 'CONNEXION EN COURS' : status === 'lost' ? 'CONNEXION PERDUE' : 'AUCUN ADAPTATEUR'}</span>
           <h1>{visibleDevice ? visibleDevice.name : 'Connectez votre boîtier OBD'}</h1>
           <p>{visibleDevice ? `${mediumLabel(visibleDevice.medium)} · ${visibleDevice.address}` : 'Recherchez votre adaptateur Bluetooth directement depuis LotoT.'}</p>
-          <button className="vehicle-connect" type="button" onClick={openConnection} disabled={!nativeAvailable}><Icon name="bluetooth"/><span>{connected ? 'Gérer la connexion' : 'Choisir un appareil'}</span><Icon name="chevron"/></button>
+          <button className="vehicle-connect" type="button" onClick={connectionAction} disabled={!nativeAvailable}><Icon name={status === 'lost' ? 'refresh' : 'bluetooth'}/><span>{connected ? 'Gérer la connexion' : status === 'lost' && lastDevice ? 'Reconnecter cet adaptateur' : 'Choisir un appareil'}</span><Icon name="chevron"/></button>
         </div>
-        <div className="vehicle-symbol"><Icon name={connected ? 'link' : status === 'connecting' ? 'bluetooth' : 'car'}/></div>
+        <div className="vehicle-symbol"><Icon name={connected ? 'link' : status === 'connecting' ? 'bluetooth' : status === 'lost' ? 'unlink' : 'car'}/></div>
       </section>
 
       <section className="speed-card">
@@ -583,7 +608,7 @@ function App() {
       </section>
 
       <section className="actions">
-        <button className="primary" type="button" onClick={openConnection} disabled={!nativeAvailable}><Icon name="bluetooth"/><span>{connected ? 'Connexion' : 'Connecter'}</span></button>
+        <button className="primary" type="button" onClick={connectionAction} disabled={!nativeAvailable}><Icon name={status === 'lost' ? 'refresh' : 'bluetooth'}/><span>{connected ? 'Connexion' : status === 'lost' && lastDevice ? 'Reconnecter' : 'Connecter'}</span></button>
         <button className="secondary" type="button" onClick={() => window.LotoTNative?.startDemo?.()} disabled={!nativeAvailable}><Icon name="play"/><span>Mode démo</span></button>
         <button className="tools-button" type="button" onClick={() => window.LotoTNative?.openNativeTools?.()} disabled={!nativeAvailable}><Icon name="tool"/><span>Diagnostics avancés AndrOBD</span><Icon name="chevron"/></button>
       </section>

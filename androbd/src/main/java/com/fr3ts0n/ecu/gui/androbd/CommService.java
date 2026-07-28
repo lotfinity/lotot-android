@@ -67,6 +67,10 @@ public abstract class CommService
 	Context mContext;
 	private Handler mHandler = null;
 	STATE mState;
+	private volatile long connectedAtMs = 0L;
+	private volatile long lastReceiveActivityMs = 0L;
+	private volatile boolean lossNotified = false;
+	private volatile boolean suppressLossNotification = false;
 
 	/**
 	 * Constructor. Prepares a new Communication session.
@@ -124,6 +128,26 @@ public abstract class CommService
 		return mState;
 	}
 
+	void markReceiveActivity()
+	{
+		lastReceiveActivityMs = System.currentTimeMillis();
+	}
+
+	long getConnectedAtMs()
+	{
+		return connectedAtMs;
+	}
+
+	long getLastReceiveActivityMs()
+	{
+		return lastReceiveActivityMs;
+	}
+
+	void suppressConnectionLossNotification()
+	{
+		suppressLossNotification = true;
+	}
+
 	/**
 	 * Start the chat service. Specifically start AcceptThread to begin a session
 	 * in listening (server) mode. Called by the Activity onResume()
@@ -169,12 +193,20 @@ public abstract class CommService
 	/**
 	 * Indicate that the connection was lost and notify the UI Activity.
 	 */
-	void connectionLost()
+	synchronized void connectionLost()
 	{
+		if (lossNotified) return;
+		lossNotified = true;
+		boolean suppressed = suppressLossNotification;
+		// Queue the reason before OFFLINE, so the UI never briefly reports a clean disconnect.
+		if (!suppressed)
+		{
+			mHandler.obtainMessage(MainActivity.MESSAGE_CONNECTION_LOST).sendToTarget();
+		}
 		stop();
-		// set new state offline
 		setState(STATE.OFFLINE);
-		// Send a failure message back to the Activity
+		if (suppressed) return;
+
 		Message msg = mHandler.obtainMessage(MainActivity.MESSAGE_TOAST);
 		Bundle bundle = new Bundle();
 		bundle.putString(MainActivity.TOAST, mContext.getString(R.string.connectionlost));
@@ -187,6 +219,10 @@ public abstract class CommService
 	 */
 	void connectionEstablished(String deviceName)
 	{
+		connectedAtMs = System.currentTimeMillis();
+		lastReceiveActivityMs = 0L;
+		lossNotified = false;
+		suppressLossNotification = false;
 		// Send the name of the connectionEstablished device back to the UI Activity
 		Message msg = mHandler.obtainMessage(MainActivity.MESSAGE_DEVICE_NAME);
 		Bundle bundle = new Bundle();

@@ -255,6 +255,7 @@ public class BleCommService
             /* Handle incoming characteristic changes
              * Since only RX characteristic is registered for notification, we handle RX events here */
             byte[] newValue = characteristic.getValue();
+            if (newValue != null && newValue.length > 0) markReceiveActivity();
             handleTelegram(new String(newValue).toCharArray());
         }
     };

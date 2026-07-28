@@ -10,4 +10,11 @@
     <color name="lotot_accent_dark">#91B800</color>
     <color name="lotot_danger">#FF3D78</color>
     <color name="lotot_divider">#24282D</color>
+    <color name="lotot_light_background">#F4F6F0</color>
+    <color name="lotot_light_surface">#FFFFFF</color>
+    <color name="lotot_light_surface_raised">#E8ECE2</color>
+    <color name="lotot_light_text">#151A11</color>
+    <color name="lotot_light_muted">#66705E</color>
+    <color name="lotot_light_accent">#6F9200</color>
+    <color name="lotot_light_divider">#D8DED1</color>
 </resources>
