@@ -10,10 +10,11 @@ android {
     }
 
     defaultConfig {
+        applicationId 'com.lotot.android'
         minSdkVersion 23
         targetSdkVersion 36
-        versionCode 20710
-        versionName 'V2.7.10'
+        versionCode 100
+        versionName '0.1.0-spike'
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 

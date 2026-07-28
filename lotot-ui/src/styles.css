@@ -1,0 +1,41 @@
+:root {
+  color-scheme: dark;
+  --bg: #07090b;
+  --surface: #111417;
+  --surface-2: #171a1e;
+  --line: rgba(255,255,255,.09);
+  --text: #f6f8fa;
+  --muted: #858d95;
+  --accent: #caff00;
+  --danger: #ff3d78;
+  --warning: #ffce45;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+* { box-sizing: border-box; }
+html, body, #root { min-height: 100%; margin: 0; background: var(--bg); }
+body { overscroll-behavior: none; }
+button { font: inherit; }
+svg { width: 1.25rem; height: 1.25rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.app-shell { min-height: 100vh; padding: max(18px, env(safe-area-inset-top)) 16px max(22px, env(safe-area-inset-bottom)); background: radial-gradient(circle at 50% -10%, rgba(202,255,0,.08), transparent 32%), var(--bg); }
+.topbar { min-height: 48px; display: flex; align-items: center; justify-content: space-between; }
+.brand { font-size: 24px; font-weight: 850; letter-spacing: -.07em; }.brand span { color: var(--accent); }
+.status-pill { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .1em; }
+.status-pill i { width: 6px; height: 6px; border-radius: 50%; background: #4b5258; }.status-pill.is-live { color: var(--accent); border-color: rgba(202,255,0,.22); background: rgba(202,255,0,.06); }.status-pill.is-live i { background: var(--accent); box-shadow: 0 0 12px var(--accent); }
+.vehicle-card, .speed-card, .metric-card, .health-card { border: 1px solid var(--line); background: linear-gradient(145deg, rgba(23,26,30,.96), rgba(11,14,16,.99)); box-shadow: inset 0 1px 0 rgba(255,255,255,.025), 0 16px 40px rgba(0,0,0,.18); }
+.vehicle-card { min-height: 152px; margin-top: 14px; padding: 20px; border-radius: 24px; display: grid; grid-template-columns: 1fr 92px; align-items: center; gap: 12px; overflow: hidden; position: relative; }
+.vehicle-card::after { content: ''; position: absolute; width: 160px; height: 160px; right: -50px; top: -50px; border-radius: 50%; background: rgba(202,255,0,.08); filter: blur(24px); }
+.eyebrow, .card-title span, .metric-head span { color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: .14em; }
+.vehicle-card h1 { max-width: 300px; margin: 8px 0 7px; font-size: 23px; line-height: 1.05; letter-spacing: -.045em; }.vehicle-card p { max-width: 330px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.vehicle-symbol { position: relative; z-index: 2; width: 82px; height: 82px; display: grid; place-items: center; border: 1px solid rgba(202,255,0,.18); border-radius: 50%; color: var(--accent); background: rgba(202,255,0,.04); }.vehicle-symbol svg { width: 38px; height: 38px; }
+.speed-card { margin-top: 12px; padding: 16px; border-radius: 22px; }.card-title, .metric-head { display: flex; justify-content: space-between; align-items: center; }.card-title svg, .metric-head svg { color: var(--accent); }
+.speed-ring { width: min(230px, 76vw); aspect-ratio: 1; margin: 12px auto 8px; display: grid; place-items: center; border-radius: 50%; background: conic-gradient(from -135deg, var(--accent) var(--angle), rgba(255,255,255,.07) 0 270deg, transparent 0); position: relative; transition: background .35s ease; }.speed-ring::before { content: ''; position: absolute; inset: 13px; border-radius: inherit; background: radial-gradient(circle at 50% 38%, #1b2024, #080a0c 70%); box-shadow: inset 0 0 34px rgba(0,0,0,.9); }.speed-core { position: relative; z-index: 1; text-align: center; }.speed-core small { display: block; color: var(--muted); font-size: 9px; letter-spacing: .12em; }.speed-core strong { display: block; margin: 3px 0 -1px; font-size: 58px; line-height: 1; letter-spacing: -.08em; }.speed-core span { color: var(--muted); font-size: 10px; }
+.rpm-row { display: flex; align-items: baseline; justify-content: space-between; padding-top: 13px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }.rpm-row strong { color: var(--text); font-size: 18px; }.rpm-row small { color: var(--muted); font-size: 9px; font-weight: 500; }
+.metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; margin-top: 12px; }.metric-card { min-width: 0; min-height: 152px; padding: 13px 10px; border-radius: 18px; }.metric-head { min-width: 0; }.metric-head span { max-width: calc(100% - 23px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 7px; }.metric-head svg { width: 16px; height: 16px; }
+.metric-ring { width: min(78px, 20vw); aspect-ratio: 1; margin: 17px auto 0; display: grid; place-items: center; border-radius: 50%; background: conic-gradient(var(--accent) var(--value), rgba(255,255,255,.075) 0); position: relative; transition: background .35s ease; }.metric-ring::before { content: ''; position: absolute; inset: 7px; border-radius: inherit; background: #0c0f11; }.metric-ring div { position: relative; z-index: 1; text-align: center; }.metric-ring strong { font-size: 18px; letter-spacing: -.05em; }.metric-ring small { margin-left: 2px; color: var(--muted); font-size: 7px; }
+.health-card { display: grid; grid-template-columns: 42px 1fr; align-items: center; gap: 12px; margin-top: 12px; padding: 14px; border-radius: 18px; }.health-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 13px; color: var(--accent); background: rgba(202,255,0,.09); }.health-card strong { font-size: 12px; }.health-card p { margin: 4px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }.actions button { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 15px; font-size: 10px; font-weight: 800; cursor: pointer; }.actions button:disabled { opacity: .45; }.primary { border: 0; background: var(--accent); color: #101300; }.secondary { border: 1px solid var(--line); background: var(--surface-2); color: var(--text); }
+footer { padding: 18px 0 4px; color: #545b61; text-align: center; font-size: 8px; letter-spacing: .08em; }
+@media (max-width: 360px) { .app-shell { padding-inline: 11px; }.vehicle-card { grid-template-columns: 1fr 68px; padding: 16px; }.vehicle-symbol { width: 64px; height: 64px; }.vehicle-symbol svg { width: 30px; height: 30px; }.metric-grid { gap: 7px; }.metric-card { padding-inline: 7px; }.actions { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }

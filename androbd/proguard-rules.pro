@@ -29,3 +29,11 @@
 # initializer). Keeping package names avoids this whole bug class for any
 # current or future relative-resource lookup, at negligible size cost.
 -keeppackagenames
+
+
+# The bundled React UI calls these methods by their JavaScript-visible names.
+# Keep the bridge and all @JavascriptInterface methods stable in release builds.
+-keep class com.fr3ts0n.ecu.gui.androbd.LotoTWebBridge { *; }
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}

@@ -344,7 +344,7 @@ public class SettingsActivity extends AppCompatActivity
 			// set enries and keys
 			pref.setEntries(titles);
 			pref.setEntryValues(keys);
-			pref.setDefaultValue(titles[0]);
+			pref.setDefaultValue(String.valueOf(CommService.MEDIUM.BLUETOOTH.ordinal()));
 			// show current selection
 			pref.setSummary(pref.getEntry());
 		}

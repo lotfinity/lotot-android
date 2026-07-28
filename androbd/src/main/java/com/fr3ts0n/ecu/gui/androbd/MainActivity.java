@@ -48,12 +48,14 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
 import android.preference.PreferenceManager;
+import android.util.Log;
 import android.util.SparseBooleanArray;
 import android.view.ActionMode;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.AbsListView;
@@ -62,6 +64,10 @@ import android.widget.ListView;
 import android.widget.Spinner;
 import android.widget.Toast;
 import android.window.OnBackInvokedCallback;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.FileProvider;
@@ -102,6 +108,8 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
 
+import org.json.JSONObject;
+
 /**
  * Main Activity for AndrOBD app
  */
@@ -110,7 +118,8 @@ public class MainActivity extends PluginManager
         AdapterView.OnItemLongClickListener,
         PropertyChangeListener,
         SharedPreferences.OnSharedPreferenceChangeListener,
-        AbsListView.MultiChoiceModeListener
+        AbsListView.MultiChoiceModeListener,
+        LotoTWebBridge.Host
 {
     /**
      * Key names for preferences
@@ -279,6 +288,12 @@ public class MainActivity extends PluginManager
      * the local list view
      */
     private View mListView;
+    /** Bundled React dashboard and its native bridge. */
+    private View mLototView;
+    private WebView mLototWebView;
+    private boolean mLototReady = false;
+    private String mLototStatus = "offline";
+    private long mLototLastDebugLog = 0L;
     /**
      * current data view mode
      */
@@ -333,6 +348,7 @@ public class MainActivity extends PluginManager
 
                             case CONNECTING:
                                 setStatus(R.string.title_connecting);
+                                setLotoTStatus("connecting");
                                 break;
 
                             default:
@@ -407,6 +423,7 @@ public class MainActivity extends PluginManager
 
                     case MESSAGE_UPDATE_VIEW:
                         getListView().invalidateViews();
+                        publishLotoTTelemetry();
                         break;
 
                     // handle state change in OBD protocol
@@ -575,6 +592,7 @@ public class MainActivity extends PluginManager
 
         // get list view
         mListView = getWindow().getLayoutInflater().inflate(R.layout.obd_list, null);
+        initializeLotoTDashboard();
 
         // Log program startup
         log.info(String.format("%s %s starting",
@@ -604,8 +622,8 @@ public class MainActivity extends PluginManager
         // start automatic toolbar hider
         setAutoHider(prefs.getBoolean(PREF_AUTOHIDE, false));
 
-        // set content view
-        setContentView(R.layout.startup_layout);
+        // Open the LotoT dashboard while AndrOBD keeps ownership of connection and protocol state.
+        showLotoTDashboard();
         
         // Ensure menus are properly created and visible
         invalidateOptionsMenu();
@@ -631,7 +649,17 @@ public class MainActivity extends PluginManager
             }
         }
 
-        initSelectedMode();
+        // Normal LotoT launches stay passive until the user chooses Demo or Connect.
+        // USB attach intents still initialise immediately because the device action is explicit.
+        if ("android.hardware.usb.action.USB_DEVICE_ATTACHED".equals(getIntent().getAction()))
+        {
+            initSelectedMode();
+        }
+        else
+        {
+            mode = MODE.OFFLINE;
+            setLotoTStatus("offline");
+        }
     }
 
     /**
@@ -837,10 +865,167 @@ public class MainActivity extends PluginManager
         // Shut down the background executor
         executor.shutdown();
 
+        if (mLototWebView != null)
+        {
+            mLototWebView.removeJavascriptInterface("LotoTNative");
+            mLototWebView.stopLoading();
+            mLototWebView.destroy();
+            mLototWebView = null;
+        }
+
         // Clean up view hierarchy
         ModernUiUtils.cleanupViewHierarchy(findViewById(android.R.id.content));
 
         super.onDestroy();
+    }
+
+    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
+    private void initializeLotoTDashboard()
+    {
+        ViewGroup contentRoot = findViewById(android.R.id.content);
+        mLototView = getLayoutInflater().inflate(R.layout.lotot_dashboard, contentRoot, false);
+        mLototWebView = mLototView.findViewById(R.id.lotot_webview);
+        mLototWebView.setBackgroundColor(Color.rgb(7, 9, 11));
+
+        WebSettings settings = mLototWebView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setAllowContentAccess(false);
+        settings.setAllowFileAccess(true);
+        settings.setAllowFileAccessFromFileURLs(false);
+        settings.setAllowUniversalAccessFromFileURLs(false);
+
+        mLototWebView.addJavascriptInterface(new LotoTWebBridge(this, this), "LotoTNative");
+        mLototWebView.setWebViewClient(new WebViewClient()
+        {
+            private boolean handleUrl(Uri uri)
+            {
+                String url = uri != null ? uri.toString() : "";
+                if (url.startsWith("file:///android_asset/lotot/")) return false;
+                if (!url.isEmpty())
+                {
+                    try
+                    {
+                        startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                    }
+                    catch (Exception ex)
+                    {
+                        log.log(Level.FINER, "Unable to open external LotoT URL", ex);
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request)
+            {
+                return handleUrl(request.getUrl());
+            }
+
+            @SuppressWarnings("deprecation")
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url)
+            {
+                return handleUrl(Uri.parse(url));
+            }
+        });
+        if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true);
+        mLototWebView.loadUrl("file:///android_asset/lotot/index.html");
+    }
+
+    private void showLotoTDashboard()
+    {
+        if (mLototView != null) setContentView(mLototView);
+        publishLotoTStatus();
+        publishLotoTTelemetry();
+    }
+
+    @Override
+    public void onLotoTReady()
+    {
+        mLototReady = true;
+        publishLotoTStatus();
+        publishLotoTTelemetry();
+    }
+
+    @Override
+    public void startLotoTDemo()
+    {
+        CommService.medium = CommService.MEDIUM.DEMO;
+        startDemoService();
+        setLotoTStatus("demo");
+        setObdService(ObdProt.OBD_SVC_DATA, getString(R.string.obd_data));
+        showLotoTDashboard();
+    }
+
+    @Override
+    public void openLotoTNativeTools()
+    {
+        openOptionsMenu();
+    }
+
+    private void setLotoTStatus(String status)
+    {
+        mLototStatus = status;
+        publishLotoTStatus();
+    }
+
+    private void publishLotoTStatus()
+    {
+        if (!mLototReady || mLototWebView == null) return;
+        String status = JSONObject.quote(mLototStatus);
+        mLototWebView.evaluateJavascript(
+                "window.lototSetStatus && window.lototSetStatus(" + status + ");",
+                null);
+    }
+
+    private double getLotoTValue(String mnemonic)
+    {
+        try
+        {
+            EcuDataItem item = EcuDataItems.byMnemonic.get(mnemonic);
+            if (item == null || item.pv == null) return 0d;
+            Object value = item.pv.get(EcuDataPv.FID_VALUE);
+            return value instanceof Number ? ((Number) value).doubleValue() : 0d;
+        }
+        catch (Exception ex)
+        {
+            return 0d;
+        }
+    }
+
+    private void publishLotoTTelemetry()
+    {
+        if (!mLototReady || mLototWebView == null) return;
+        try
+        {
+            JSONObject readings = new JSONObject();
+            readings.put("vehicle_speed", getLotoTValue("vehicle_speed"));
+            readings.put("engine_rpm", getLotoTValue("engine_speed"));
+            readings.put("engine_load", getLotoTValue("engine_load_calculated"));
+            readings.put("module_voltage", getLotoTValue("ecu_voltage"));
+            readings.put("maf", getLotoTValue("mass_airflow"));
+
+            JSONObject payload = new JSONObject();
+            long capturedAt = System.currentTimeMillis();
+            payload.put("captured_at", capturedAt);
+            payload.put("mode", mLototStatus);
+            payload.put("readings", readings);
+            if (BuildConfig.DEBUG && capturedAt - mLototLastDebugLog >= 1000L)
+            {
+                Log.d("LotoTBridge", payload.toString());
+                mLototLastDebugLog = capturedAt;
+            }
+
+            String encoded = JSONObject.quote(payload.toString());
+            mLototWebView.evaluateJavascript(
+                    "window.lototReceiveTelemetry && window.lototReceiveTelemetry(" + encoded + ");",
+                    null);
+        }
+        catch (Exception ex)
+        {
+            log.log(Level.FINER, "Unable to publish LotoT telemetry", ex);
+        }
     }
 
     @Override
@@ -1223,7 +1408,7 @@ public class MainActivity extends PluginManager
         {
             CommService.medium =
                     CommService.MEDIUM.values()[
-                            getPrefsInt(SettingsActivity.KEY_COMM_MEDIUM, 0)];
+                            getPrefsInt(SettingsActivity.KEY_COMM_MEDIUM, CommService.MEDIUM.BLUETOOTH.ordinal())];
         }
 
         // enable/disable ELM adaptive timing
@@ -2325,8 +2510,15 @@ public class MainActivity extends PluginManager
         obdService = newObdService;
         ignoreNrcs = false;
 
-        // set list view
-        setContentView(mListView);
+        // Keep the LotoT dashboard for the home and live-data services.
+        if (newObdService == ObdProt.OBD_SVC_NONE || newObdService == ObdProt.OBD_SVC_DATA)
+        {
+            showLotoTDashboard();
+        }
+        else
+        {
+            setContentView(mListView);
+        }
         getListView().setOnItemLongClickListener(this);
         getListView().setMultiChoiceModeListener(this);
         getListView().setChoiceMode(ListView.CHOICE_MODE_SINGLE);
@@ -2380,7 +2572,7 @@ public class MainActivity extends PluginManager
                 break;
 
             case ObdProt.OBD_SVC_NONE:
-                setContentView(R.layout.startup_layout);
+                showLotoTDashboard();
                 // intentionally no break to initialize adapter
             case ObdProt.OBD_SVC_VEH_INFO:
                 currDataAdapter = mVidAdapter;
@@ -2521,6 +2713,7 @@ public class MainActivity extends PluginManager
         setStatus(getString(R.string.title_connected_to, mConnectedDeviceName));
         // send RESET to Elm adapter
         CommService.elm.reset();
+        setLotoTStatus("live");
     }
 
     /**
@@ -2530,6 +2723,7 @@ public class MainActivity extends PluginManager
     {
         // handle further initialisations
         setMode(MODE.OFFLINE);
+        setLotoTStatus("offline");
     }
 
     /**

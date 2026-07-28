@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <WebView
+        android:id="@+id/lotot_webview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@string/lotot_dashboard_description" />
+
+    <!-- ListActivity requires @android:id/list in every active content view.
+         It stays hidden while the React dashboard is visible, but keeps the
+         mature AndrOBD adapters and selection state alive underneath. -->
+    <ListView
+        android:id="@android:id/list"
+        android:layout_width="1dp"
+        android:layout_height="1dp"
+        android:visibility="gone" />
+
+    <!-- MainActivity configures this selector for every OBD service. -->
+    <Spinner
+        android:id="@+id/ff_selector"
+        android:layout_width="1dp"
+        android:layout_height="1dp"
+        android:visibility="gone" />
+</FrameLayout>
