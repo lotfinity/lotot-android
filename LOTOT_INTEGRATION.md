@@ -56,3 +56,22 @@ androbd/build/outputs/apk/debug/androbd-debug.apk
 AndrOBD is GPL licensed. This combined Android application must be distributed
 with corresponding source under GPL-compatible terms. The separately deployed
 Django service is not included in this APK.
+
+## Integrated Bluetooth connection UI (0.2.0 spike)
+
+The LotoT WebView now owns the user-facing adapter workflow instead of opening
+AndrOBD's legacy Bluetooth picker:
+
+- Classic Bluetooth discovery and bonded-device listing
+- BLE scanning with RSSI updates
+- Classic/BLE filtering based on Android device type
+- Direct connect/disconnect calls into `BtCommService` and `BleCommService`
+- Selected and connected device identity published to React
+- Visible connection errors inside the LotoT drawer
+- Automatic live-data service selection after ECU detection
+- Passive app startup with no automatic Bluetooth prompt
+
+The native AndrOBD action bar is hidden on the LotoT dashboard. Remaining
+advanced diagnostic screens use the LotoT dark Android theme. Automatic plugin
+discovery is deferred until the plugin manager is explicitly opened, avoiding
+Android 12+ background-service crashes.

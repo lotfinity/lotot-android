@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="row_activated">#80808080</color>
+    <color name="row_activated">#33CAFF00</color>
+    <color name="lotot_background">#07090B</color>
+    <color name="lotot_surface">#111417</color>
+    <color name="lotot_surface_raised">#202429</color>
+    <color name="lotot_text">#F6F8FA</color>
+    <color name="lotot_muted">#858D95</color>
+    <color name="lotot_accent">#CAFF00</color>
+    <color name="lotot_accent_dark">#91B800</color>
+    <color name="lotot_danger">#FF3D78</color>
+    <color name="lotot_divider">#24282D</color>
 </resources>

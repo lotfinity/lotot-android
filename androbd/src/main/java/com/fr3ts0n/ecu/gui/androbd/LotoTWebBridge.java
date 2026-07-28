@@ -19,6 +19,9 @@ final class LotoTWebBridge
     {
         void onLotoTReady();
         void startLotoTDemo();
+        void requestLotoTBluetoothDevices(String medium);
+        void connectLotoTBluetoothDevice(String address, String medium);
+        void disconnectLotoTBluetooth();
         void openLotoTNativeTools();
     }
 
@@ -41,6 +44,24 @@ final class LotoTWebBridge
     public void startDemo()
     {
         activity.runOnUiThread(host::startLotoTDemo);
+    }
+
+    @JavascriptInterface
+    public void scanBluetooth(String medium)
+    {
+        activity.runOnUiThread(() -> host.requestLotoTBluetoothDevices(medium));
+    }
+
+    @JavascriptInterface
+    public void connectBluetooth(String address, String medium)
+    {
+        activity.runOnUiThread(() -> host.connectLotoTBluetoothDevice(address, medium));
+    }
+
+    @JavascriptInterface
+    public void disconnectBluetooth()
+    {
+        activity.runOnUiThread(host::disconnectLotoTBluetooth);
     }
 
     @JavascriptInterface

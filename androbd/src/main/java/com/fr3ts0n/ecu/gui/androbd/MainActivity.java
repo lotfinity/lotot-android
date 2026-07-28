@@ -108,6 +108,7 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
@@ -119,7 +120,8 @@ public class MainActivity extends PluginManager
         PropertyChangeListener,
         SharedPreferences.OnSharedPreferenceChangeListener,
         AbsListView.MultiChoiceModeListener,
-        LotoTWebBridge.Host
+        LotoTWebBridge.Host,
+        LotoTBluetoothManager.Listener
 {
     /**
      * Key names for preferences
@@ -177,6 +179,8 @@ public class MainActivity extends PluginManager
     private static final int REQUEST_GRAPH_DISPLAY_DONE = 7;
     private static final int REQUEST_BT_PERMISSIONS = 8;
     private static final int REQUEST_NOTIFICATIONS = 9;
+    private static final int REQUEST_LOTOT_BT_PERMISSIONS = 10;
+    private static final int REQUEST_LOTOT_ENABLE_BT = 11;
     /**
      * app exit parameters
      */
@@ -293,6 +297,14 @@ public class MainActivity extends PluginManager
     private WebView mLototWebView;
     private boolean mLototReady = false;
     private String mLototStatus = "offline";
+    private LotoTBluetoothManager mLototBluetoothManager;
+    private String mLototBluetoothMedium = LotoTBluetoothManager.MEDIUM_CLASSIC;
+    private String mLototBluetoothError = null;
+    private String mLototPendingBluetoothAction = null;
+    private String mLototPendingBluetoothAddress = null;
+    private String mLototSelectedDeviceName = null;
+    private String mLototConnectedAddress = null;
+    private String mLototConnectedMedium = null;
     private long mLototLastDebugLog = 0L;
     /**
      * current data view mode
@@ -349,6 +361,7 @@ public class MainActivity extends PluginManager
                             case CONNECTING:
                                 setStatus(R.string.title_connecting);
                                 setLotoTStatus("connecting");
+                                publishLotoTBluetoothState();
                                 break;
 
                             default:
@@ -382,15 +395,32 @@ public class MainActivity extends PluginManager
                     case MESSAGE_DEVICE_NAME:
                         // save the connected device's name
                         mConnectedDeviceName = msg.getData().getString(DEVICE_NAME);
+                        if (mConnectedDeviceName == null || mConnectedDeviceName.trim().isEmpty())
+                        {
+                            mConnectedDeviceName = mLototSelectedDeviceName;
+                        }
                         Toast.makeText(getApplicationContext(),
                                 getString(R.string.connected_to) + mConnectedDeviceName,
                                 Toast.LENGTH_SHORT).show();
+                        publishLotoTBluetoothState();
                         break;
 
                     case MESSAGE_TOAST:
-                        Toast.makeText(getApplicationContext(),
-                                msg.getData().getString(TOAST),
-                                Toast.LENGTH_SHORT).show();
+                        String toastMessage = msg.getData().getString(TOAST);
+                        Toast.makeText(getApplicationContext(), toastMessage, Toast.LENGTH_SHORT).show();
+                        if (getString(R.string.unabletoconnect).equals(toastMessage))
+                        {
+                            mLototBluetoothError = "Connexion impossible. Vérifiez que l’adaptateur est allumé et disponible.";
+                        }
+                        else if (getString(R.string.connectionlost).equals(toastMessage))
+                        {
+                            mLototBluetoothError = "Connexion Bluetooth interrompue.";
+                        }
+                        else
+                        {
+                            mLototBluetoothError = toastMessage;
+                        }
+                        publishLotoTBluetoothState();
                         break;
 
                     case MESSAGE_DATA_ITEMS_CHANGED:
@@ -437,7 +467,14 @@ public class MainActivity extends PluginManager
                                     .ordinal()]);
                         }
                         // if last selection shall be restored ...
-                        if (istRestoreWanted(PRESELECT.LAST_SERVICE))
+                        if (state == ElmProt.STAT.ECU_DETECTED
+                                && mLototConnectedAddress != null
+                                && obdService == ObdProt.OBD_SVC_NONE)
+                        {
+                            setObdService(ObdProt.OBD_SVC_DATA, getString(R.string.obd_data));
+                            showLotoTDashboard();
+                        }
+                        else if (istRestoreWanted(PRESELECT.LAST_SERVICE))
                         {
                             if (state == ElmProt.STAT.ECU_DETECTED)
                             {
@@ -592,6 +629,7 @@ public class MainActivity extends PluginManager
 
         // get list view
         mListView = getWindow().getLayoutInflater().inflate(R.layout.obd_list, null);
+        mLototBluetoothManager = new LotoTBluetoothManager(this, this);
         initializeLotoTDashboard();
 
         // Log program startup
@@ -743,6 +781,12 @@ public class MainActivity extends PluginManager
         }
    }
 
+    @Override
+    protected boolean shouldAutoDiscoverPlugins()
+    {
+        return false;
+    }
+
     /**
      * Handler for application start event
      */
@@ -772,6 +816,24 @@ public class MainActivity extends PluginManager
             }
             if (allGranted) {
                 initSelectedMode();
+            }
+        } else if (requestCode == REQUEST_LOTOT_BT_PERMISSIONS) {
+            boolean allGranted = true;
+            for (int result : grantResults) {
+                if (result != PackageManager.PERMISSION_GRANTED) {
+                    allGranted = false;
+                    break;
+                }
+            }
+            if (allGranted) {
+                prepareLotoTBluetoothAction(mLototPendingBluetoothAction,
+                        mLototBluetoothMedium,
+                        mLototPendingBluetoothAddress);
+            } else {
+                mLototPendingBluetoothAction = null;
+                mLototPendingBluetoothAddress = null;
+                mLototBluetoothError = "Autorisation Bluetooth refusée";
+                publishLotoTBluetoothState();
             }
         }
     }
@@ -865,6 +927,12 @@ public class MainActivity extends PluginManager
         // Shut down the background executor
         executor.shutdown();
 
+        if (mLototBluetoothManager != null)
+        {
+            mLototBluetoothManager.destroy();
+            mLototBluetoothManager = null;
+        }
+
         if (mLototWebView != null)
         {
             mLototWebView.removeJavascriptInterface("LotoTNative");
@@ -936,8 +1004,11 @@ public class MainActivity extends PluginManager
     private void showLotoTDashboard()
     {
         if (mLototView != null) setContentView(mLototView);
+        ActionBar actionBar = getActionBar();
+        if (actionBar != null) actionBar.hide();
         publishLotoTStatus();
         publishLotoTTelemetry();
+        publishLotoTBluetoothState();
     }
 
     @Override
@@ -946,6 +1017,7 @@ public class MainActivity extends PluginManager
         mLototReady = true;
         publishLotoTStatus();
         publishLotoTTelemetry();
+        publishLotoTBluetoothState();
     }
 
     @Override
@@ -959,15 +1031,248 @@ public class MainActivity extends PluginManager
     }
 
     @Override
+    public void requestLotoTBluetoothDevices(String medium)
+    {
+        prepareLotoTBluetoothAction("scan", medium, null);
+    }
+
+    @Override
+    public void connectLotoTBluetoothDevice(String address, String medium)
+    {
+        if (address == null || address.trim().isEmpty())
+        {
+            mLototBluetoothError = "Adresse Bluetooth invalide";
+            publishLotoTBluetoothState();
+            return;
+        }
+        prepareLotoTBluetoothAction("connect", medium, address.trim());
+    }
+
+    @Override
+    public void disconnectLotoTBluetooth()
+    {
+        if (mLototBluetoothManager != null) mLototBluetoothManager.stopScan();
+        if (mCommService != null)
+        {
+            mCommService.stop();
+            mCommService = null;
+        }
+        stopDemoService();
+        mLototConnectedAddress = null;
+        mLototConnectedMedium = null;
+        mConnectedDeviceName = null;
+        mLototSelectedDeviceName = null;
+        mLototBluetoothError = null;
+        setMode(MODE.OFFLINE);
+        setLotoTStatus("offline");
+        mConnectedDeviceName = null;
+        mLototConnectedAddress = null;
+        mLototConnectedMedium = null;
+        publishLotoTBluetoothState();
+    }
+
+    @Override
     public void openLotoTNativeTools()
     {
+        ActionBar actionBar = getActionBar();
+        if (actionBar != null) actionBar.show();
         openOptionsMenu();
+    }
+
+    @Override
+    public void onLotoTBluetoothChanged()
+    {
+        publishLotoTBluetoothState();
+    }
+
+    private String normalizeLotoTBluetoothMedium(String medium)
+    {
+        return LotoTBluetoothManager.MEDIUM_BLE.equals(medium)
+                ? LotoTBluetoothManager.MEDIUM_BLE
+                : LotoTBluetoothManager.MEDIUM_CLASSIC;
+    }
+
+    private void prepareLotoTBluetoothAction(String action, String medium, String address)
+    {
+        mLototPendingBluetoothAction = action;
+        mLototPendingBluetoothAddress = address;
+        mLototBluetoothMedium = normalizeLotoTBluetoothMedium(medium);
+        mLototBluetoothError = null;
+
+        if (mLototBluetoothManager == null || !mLototBluetoothManager.isAvailable())
+        {
+            mLototBluetoothError = "Bluetooth indisponible sur cet appareil";
+            publishLotoTBluetoothState();
+            return;
+        }
+
+        ArrayList<String> missingPermissions = new ArrayList<>();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+        {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
+                    != PackageManager.PERMISSION_GRANTED)
+            {
+                missingPermissions.add(Manifest.permission.BLUETOOTH_SCAN);
+            }
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
+                    != PackageManager.PERMISSION_GRANTED)
+            {
+                missingPermissions.add(Manifest.permission.BLUETOOTH_CONNECT);
+            }
+        }
+        else if ("scan".equals(action)
+                && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED)
+        {
+            missingPermissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        }
+
+        if (!missingPermissions.isEmpty())
+        {
+            ActivityCompat.requestPermissions(this,
+                    missingPermissions.toArray(new String[0]),
+                    REQUEST_LOTOT_BT_PERMISSIONS);
+            return;
+        }
+
+        if (!mLototBluetoothManager.isEnabled())
+        {
+            startActivityForResult(new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE),
+                    REQUEST_LOTOT_ENABLE_BT);
+            return;
+        }
+
+        executePendingLotoTBluetoothAction();
+    }
+
+    @SuppressLint("MissingPermission")
+    private void executePendingLotoTBluetoothAction()
+    {
+        if (mLototBluetoothManager == null || mLototPendingBluetoothAction == null) return;
+        String action = mLototPendingBluetoothAction;
+        String address = mLototPendingBluetoothAddress;
+        mLototPendingBluetoothAction = null;
+        mLototPendingBluetoothAddress = null;
+
+        if ("scan".equals(action))
+        {
+            mLototBluetoothManager.startScan(mLototBluetoothMedium);
+            publishLotoTBluetoothState();
+            return;
+        }
+
+        if (!"connect".equals(action) || address == null) return;
+        mLototBluetoothManager.stopScan();
+        stopDemoService();
+        if (mCommService != null)
+        {
+            mCommService.stop();
+            mCommService = null;
+        }
+
+        mBluetoothAdapter = mLototBluetoothManager.getAdapter();
+        mLototConnectedAddress = address;
+        mLototConnectedMedium = mLototBluetoothMedium;
+        mLototSelectedDeviceName = mLototBluetoothManager.getName(address);
+        mConnectedDeviceName = null;
+        mLototBluetoothError = null;
+        setLotoTStatus("connecting");
+        publishLotoTBluetoothState();
+
+        prefs.edit()
+                .putString(PRESELECT.LAST_DEV_ADDRESS.toString(), address)
+                .putString(SettingsActivity.KEY_COMM_MEDIUM,
+                        String.valueOf(LotoTBluetoothManager.MEDIUM_BLE.equals(mLototBluetoothMedium)
+                                ? CommService.MEDIUM.BLE.ordinal()
+                                : CommService.MEDIUM.BLUETOOTH.ordinal()))
+                .apply();
+
+        if (LotoTBluetoothManager.MEDIUM_BLE.equals(mLototBluetoothMedium))
+        {
+            CommService.medium = CommService.MEDIUM.BLE;
+            connectBleDevice(address, false);
+        }
+        else
+        {
+            CommService.medium = CommService.MEDIUM.BLUETOOTH;
+            connectBtDevice(address, false);
+        }
+    }
+
+    private void publishLotoTBluetoothState()
+    {
+        if (!mLototReady || mLototWebView == null) return;
+        try
+        {
+            JSONObject state = new JSONObject();
+            boolean available = mLototBluetoothManager != null
+                    && mLototBluetoothManager.isAvailable();
+            state.put("available", available);
+            state.put("enabled", available && mLototBluetoothManager.isEnabled());
+            state.put("scanning", mLototBluetoothManager != null
+                    && mLototBluetoothManager.isScanning());
+            state.put("medium", mLototBluetoothMedium);
+            state.put("status", mLototStatus);
+            state.put("error", mLototBluetoothError == null
+                    ? JSONObject.NULL : mLototBluetoothError);
+            JSONArray devices = mLototBluetoothManager == null
+                    ? new JSONArray()
+                    : mLototBluetoothManager.getDevices(mLototBluetoothMedium);
+            state.put("devices", devices);
+
+            if (mLototConnectedAddress != null)
+            {
+                JSONObject selected = new JSONObject();
+                String selectedName = mConnectedDeviceName;
+                if (selectedName == null || selectedName.trim().isEmpty())
+                    selectedName = mLototSelectedDeviceName;
+                if (selectedName == null || selectedName.trim().isEmpty())
+                    selectedName = "Adaptateur OBD";
+                selected.put("name", selectedName);
+                selected.put("address", mLototConnectedAddress);
+                selected.put("medium", mLototConnectedMedium == null
+                        ? mLototBluetoothMedium : mLototConnectedMedium);
+                state.put("selectedDevice", selected);
+            }
+            else
+            {
+                state.put("selectedDevice", JSONObject.NULL);
+            }
+
+            if ("live".equals(mLototStatus) && mLototConnectedAddress != null)
+            {
+                JSONObject connected = new JSONObject();
+                String name = mConnectedDeviceName;
+                if (name == null || name.trim().isEmpty()) name = mLototSelectedDeviceName;
+                if (name == null || name.trim().isEmpty()) name = "Adaptateur OBD";
+                connected.put("name", name);
+                connected.put("address", mLototConnectedAddress);
+                connected.put("medium", mLototConnectedMedium == null
+                        ? mLototBluetoothMedium : mLototConnectedMedium);
+                state.put("connectedDevice", connected);
+            }
+            else
+            {
+                state.put("connectedDevice", JSONObject.NULL);
+            }
+
+            String encoded = JSONObject.quote(state.toString());
+            mLototWebView.evaluateJavascript(
+                    "window.lototSetBluetoothState && window.lototSetBluetoothState(" + encoded + ");",
+                    null);
+            if (BuildConfig.DEBUG) Log.d("LotoTBluetooth", state.toString());
+        }
+        catch (Exception ex)
+        {
+            log.log(Level.FINER, "Unable to publish LotoT Bluetooth state", ex);
+        }
     }
 
     private void setLotoTStatus(String status)
     {
         mLototStatus = status;
         publishLotoTStatus();
+        publishLotoTBluetoothState();
     }
 
     private void publishLotoTStatus()
@@ -1123,6 +1428,17 @@ public class MainActivity extends PluginManager
      * Menu structure provides direct access to key features from any screen.
      * Compatible with Android 4.1+ using standard menu handling.
      */
+    @Override
+    public void onOptionsMenuClosed(Menu menu)
+    {
+        super.onOptionsMenuClosed(menu);
+        if (findViewById(R.id.lotot_webview) != null)
+        {
+            ActionBar actionBar = getActionBar();
+            if (actionBar != null) actionBar.hide();
+        }
+    }
+
     @Override
     public boolean onOptionsItemSelected(MenuItem item)
     {
@@ -1327,6 +1643,21 @@ public class MainActivity extends PluginManager
                 } else
                 {
                     setMode(MODE.OFFLINE);
+                }
+                break;
+
+            // Bluetooth enabled from the LotoT connection panel
+            case REQUEST_LOTOT_ENABLE_BT:
+                if (resultCode == Activity.RESULT_OK)
+                {
+                    executePendingLotoTBluetoothAction();
+                }
+                else
+                {
+                    mLototPendingBluetoothAction = null;
+                    mLototPendingBluetoothAddress = null;
+                    mLototBluetoothError = "Bluetooth désactivé";
+                    publishLotoTBluetoothState();
                 }
                 break;
 
@@ -2518,6 +2849,8 @@ public class MainActivity extends PluginManager
         else
         {
             setContentView(mListView);
+            ActionBar actionBar = getActionBar();
+            if (actionBar != null) actionBar.show();
         }
         getListView().setOnItemLongClickListener(this);
         getListView().setMultiChoiceModeListener(this);
@@ -2713,7 +3046,9 @@ public class MainActivity extends PluginManager
         setStatus(getString(R.string.title_connected_to, mConnectedDeviceName));
         // send RESET to Elm adapter
         CommService.elm.reset();
+        mLototBluetoothError = null;
         setLotoTStatus("live");
+        publishLotoTBluetoothState();
     }
 
     /**
@@ -2723,7 +3058,11 @@ public class MainActivity extends PluginManager
     {
         // handle further initialisations
         setMode(MODE.OFFLINE);
+        mConnectedDeviceName = null;
+        mLototConnectedAddress = null;
+        mLototConnectedMedium = null;
         setLotoTStatus("offline");
+        publishLotoTBluetoothState();
     }
 
     /**
