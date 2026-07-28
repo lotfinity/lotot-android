@@ -75,3 +75,25 @@ The native AndrOBD action bar is hidden on the LotoT dashboard. Remaining
 advanced diagnostic screens use the LotoT dark Android theme. Automatic plugin
 discovery is deferred until the plugin manager is explicitly opened, avoiding
 Android 12+ background-service crashes.
+
+## Complete live PID dashboard (0.3.0 spike)
+
+The Android bridge now publishes every successfully decoded `EcuDataItem`, not
+only the original five headline measurements. Each signal includes its PID,
+mnemonic, label, value, unit, min/max range and last update timestamp.
+
+The React dashboard provides:
+
+- automatic cards for every PID that starts producing valid data;
+- category filters for engine, driving, temperatures, fuel, air, pressures,
+  electrical and emissions data;
+- sensor/PID/unit search;
+- persistent favorites;
+- 30-sample sparklines, trend indicators and range progress bars;
+- live packet age, signal count and adapter identity;
+- quick cards for coolant temperature, fuel rate, intake pressure and fuel
+  level when those signals are present.
+
+Freshness is stored as a lightweight field on `EcuDataItem`; the process
+variable map remains unchanged so the upstream AndrOBD library contract and
+unit tests are preserved.

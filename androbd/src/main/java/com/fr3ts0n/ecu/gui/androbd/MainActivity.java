@@ -1023,6 +1023,7 @@ public class MainActivity extends PluginManager
     @Override
     public void startLotoTDemo()
     {
+        resetLotoTSignalTimestamps();
         CommService.medium = CommService.MEDIUM.DEMO;
         startDemoService();
         setLotoTStatus("demo");
@@ -1312,6 +1313,92 @@ public class MainActivity extends PluginManager
         }
     }
 
+    private void resetLotoTSignalTimestamps()
+    {
+        for (EcuDataItem item : EcuDataItems.byMnemonic.values())
+        {
+            if (item != null) item.updatedAt = 0L;
+        }
+    }
+
+    private JSONArray getLotoTSignals()
+    {
+        JSONArray signals = new JSONArray();
+        if (!"live".equals(mLototStatus) && !"demo".equals(mLototStatus))
+            return signals;
+        try
+        {
+            ArrayList<EcuDataItem> updatedItems = new ArrayList<>();
+            for (EcuDataItem item : EcuDataItems.byMnemonic.values())
+            {
+                if (item == null || item.pv == null || item.updatedAt <= 0L) continue;
+                updatedItems.add(item);
+            }
+            updatedItems.sort(Comparator
+                    .comparingInt((EcuDataItem item) -> item.pid)
+                    .thenComparingInt(item -> item.ofs)
+                    .thenComparing(item -> String.valueOf(
+                            item.pv.get(EcuDataPv.FID_MNEMONIC))));
+
+            for (EcuDataItem item : updatedItems)
+            {
+                Object value = item.pv.get(EcuDataPv.FID_VALUE);
+                if (value instanceof Number)
+                {
+                    double numeric = ((Number) value).doubleValue();
+                    if (!Double.isFinite(numeric)) continue;
+                    value = numeric;
+                }
+                else
+                {
+                    if (value == null) continue;
+                    String stringValue = String.valueOf(value).trim();
+                    if (stringValue.isEmpty()
+                            || "n/a".equalsIgnoreCase(stringValue)
+                            || "nan".equalsIgnoreCase(stringValue)) continue;
+                    value = stringValue;
+                }
+
+                Object mnemonicObject = item.pv.get(EcuDataPv.FID_MNEMONIC);
+                String mnemonic = mnemonicObject == null
+                        ? String.format("PID_%02X_%d", item.pid, item.ofs)
+                        : String.valueOf(mnemonicObject);
+                Object descriptionObject = item.pv.get(EcuDataPv.FID_DESCRIPT);
+                String description = descriptionObject == null
+                        ? mnemonic : String.valueOf(descriptionObject);
+
+                JSONObject signal = new JSONObject();
+                signal.put("key", String.format("%02X.%d.%s", item.pid, item.ofs, mnemonic));
+                signal.put("mnemonic", mnemonic);
+                signal.put("label", description);
+                signal.put("value", value);
+                signal.put("unit", item.pv.getUnits());
+                signal.put("pid", item.pid);
+                signal.put("offset", item.ofs);
+                signal.put("updated_at", item.updatedAt);
+
+                Object minObject = item.pv.get(EcuDataPv.FID_MIN);
+                if (minObject instanceof Number)
+                {
+                    double min = ((Number) minObject).doubleValue();
+                    if (Double.isFinite(min)) signal.put("min", min);
+                }
+                Object maxObject = item.pv.get(EcuDataPv.FID_MAX);
+                if (maxObject instanceof Number)
+                {
+                    double max = ((Number) maxObject).doubleValue();
+                    if (Double.isFinite(max)) signal.put("max", max);
+                }
+                signals.put(signal);
+            }
+        }
+        catch (Exception ex)
+        {
+            log.log(Level.FINER, "Unable to collect LotoT live signals", ex);
+        }
+        return signals;
+    }
+
     private void publishLotoTTelemetry()
     {
         if (!mLototReady || mLototWebView == null) return;
@@ -1329,9 +1416,14 @@ public class MainActivity extends PluginManager
             payload.put("captured_at", capturedAt);
             payload.put("mode", mLototStatus);
             payload.put("readings", readings);
+            JSONArray signals = getLotoTSignals();
+            payload.put("signals", signals);
+            payload.put("signal_count", signals.length());
             if (BuildConfig.DEBUG && capturedAt - mLototLastDebugLog >= 1000L)
             {
-                Log.d("LotoTBridge", payload.toString());
+                Log.d("LotoTBridge", "mode=" + mLototStatus
+                        + " signals=" + signals.length()
+                        + " readings=" + readings.toString());
                 mLototLastDebugLog = capturedAt;
             }
 
@@ -3050,6 +3142,7 @@ public class MainActivity extends PluginManager
     private void onConnect()
     {
         stopDemoService();
+        resetLotoTSignalTimestamps();
 
         mode = MODE.ONLINE;
         // Menu visibility will be handled by updateMenuVisibility() call in setMode

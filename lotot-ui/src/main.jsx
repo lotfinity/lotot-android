@@ -22,6 +22,46 @@ const EMPTY_BLUETOOTH = {
   error: null,
 };
 
+const LABEL_OVERRIDES = {
+  vehicle_speed: 'Vitesse véhicule',
+  engine_speed: 'Régime moteur',
+  engine_load_calculated: 'Charge moteur',
+  engine_load: 'Charge moteur absolue',
+  coolant_temp: 'Température liquide',
+  engine_coolant_temperature: 'Température liquide moteur',
+  ecu_voltage: 'Tension ECU',
+  mass_airflow: 'Débit d’air MAF',
+  engine_fuel_rate: 'Débit carburant',
+  intake_air_temperature: 'Température admission',
+  intake_manifold_pressure: 'Pression admission',
+  fuel_tank_level_input: 'Niveau carburant',
+  fuel_level: 'Niveau carburant',
+  fuel_pressure: 'Pression carburant',
+  frp_relative: 'Pression rampe relative',
+  fuel_injection_timing: 'Avance injection',
+  timing_advance_cycle_1: 'Avance allumage',
+  seconds_since_engine_start: 'Temps moteur actif',
+  running_time: 'Temps moteur actif',
+  ignition_timing_advance_cyl1: 'Avance à l’allumage',
+  fuel_pressure_rel: 'Pression de rampe relative',
+  ethanol_fuel_percentage: 'Taux d’éthanol',
+  number_fault_codes: 'Codes défaut détectés',
+};
+
+const CATEGORIES = [
+  { id: 'all', label: 'Tout', icon: 'activity' },
+  { id: 'favorites', label: 'Favoris', icon: 'star' },
+  { id: 'engine', label: 'Moteur', icon: 'gauge' },
+  { id: 'driving', label: 'Conduite', icon: 'car' },
+  { id: 'temperature', label: 'Températures', icon: 'thermometer' },
+  { id: 'fuel', label: 'Carburant', icon: 'fuel' },
+  { id: 'air', label: 'Air', icon: 'wind' },
+  { id: 'pressure', label: 'Pressions', icon: 'droplet' },
+  { id: 'electrical', label: 'Électrique', icon: 'bolt' },
+  { id: 'emissions', label: 'Émissions', icon: 'leaf' },
+  { id: 'other', label: 'Autres', icon: 'grid' },
+];
+
 const telemetryBridge = window.lototTelemetryBridge = window.lototTelemetryBridge || {
   status: 'offline',
   lastPayload: null,
@@ -63,10 +103,51 @@ window.lototSetBluetoothState = (payload) => {
   }
 };
 
-const isNumericReading = (value) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
-const clamp = (value, min, max) => Math.max(min, Math.min(max, isNumericReading(value) ? Number(value) : 0));
-const format = (value, decimals = 0) => isNumericReading(value) ? Number(value).toFixed(decimals) : '—';
+const isNumericReading = (value) => value !== null
+  && value !== undefined
+  && value !== ''
+  && Number.isFinite(Number(value));
+
+const clamp = (value, min, max) => Math.max(min, Math.min(max, isNumericReading(value) ? Number(value) : min));
 const mediumLabel = (medium) => medium === 'ble' ? 'Bluetooth LE' : 'Bluetooth classique';
+const signalKey = (signal) => signal?.key || signal?.mnemonic || signal?.label || 'unknown';
+const cleanText = (value) => String(value || '').trim();
+
+function formatValue(value, decimals = null) {
+  if (!isNumericReading(value)) return value === null || value === undefined || value === '' ? '—' : String(value);
+  const number = Number(value);
+  if (decimals !== null) return number.toFixed(decimals);
+  const absolute = Math.abs(number);
+  if (absolute >= 1000) return number.toFixed(0);
+  if (absolute >= 100) return number.toFixed(1).replace(/\.0$/, '');
+  if (absolute >= 10) return number.toFixed(1).replace(/\.0$/, '');
+  return number.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function signalLabel(signal) {
+  return LABEL_OVERRIDES[signal?.mnemonic] || cleanText(signal?.label) || cleanText(signal?.mnemonic) || 'Capteur OBD';
+}
+
+function categoryFor(signal) {
+  const text = `${signal?.mnemonic || ''} ${signal?.label || ''} ${signal?.unit || ''}`.toLowerCase();
+  if (/temp|temperature|coolant|therm/.test(text)) return 'temperature';
+  if (/voltage|battery|electr/.test(text)) return 'electrical';
+  if (/fuel|ethanol|injection|trim|tank/.test(text)) return 'fuel';
+  if (/pressure|barometric|manifold|frp|evap.*pressure/.test(text)) return 'pressure';
+  if (/maf|air.?flow|intake_air|airmass/.test(text)) return 'air';
+  if (/o2|oxygen|lambda|catalyst|egr|emission|dpf|particulate|mil/.test(text)) return 'emissions';
+  if (/engine_speed|engine.*rpm|rpm|engine|torque|throttle|timing|power|load/.test(text)) return 'engine';
+  if (/speed|distance|odometer|accelerator|pedal|travel/.test(text)) return 'driving';
+  return 'other';
+}
+
+function ageLabel(timestamp, now) {
+  if (!Number.isFinite(Number(timestamp)) || Number(timestamp) <= 0) return '—';
+  const age = Math.max(0, now - Number(timestamp));
+  if (age < 1000) return 'maintenant';
+  if (age < 60000) return `${Math.floor(age / 1000)} s`;
+  return `${Math.floor(age / 60000)} min`;
+}
 
 function Icon({ name }) {
   const paths = {
@@ -84,8 +165,17 @@ function Icon({ name }) {
     unlink: <><path d="m18.8 12.8.9-.9a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="m5.2 11.2-.9.9a5 5 0 0 0 7.1 7.1l1.1-1.1"/><path d="M2 2l20 20"/></>,
     signal: <><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 20V4"/></>,
     chevron: <path d="m9 18 6-6-6-6" />,
+    activity: <><path d="M3 12h4l2-7 4 14 2-7h6"/></>,
+    star: <path d="m12 2.7 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.3l6.2-.9L12 2.7Z" />,
+    search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
+    thermometer: <><path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0Z"/><path d="M12 9v7"/></>,
+    fuel: <><path d="M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/><path d="M2 21h16M7 7h6M16 8h2l2 2v7a2 2 0 0 0 2 2"/></>,
+    droplet: <path d="M12 2s6 7 6 12a6 6 0 0 1-12 0c0-5 6-12 6-12Z" />,
+    leaf: <><path d="M11 20A7 7 0 0 1 9.8 6.1C14 3 20 4 21 4c0 1 .8 8-4.2 11.8A7 7 0 0 1 11 20Z"/><path d="M2 21c0-3 1.8-5.3 5-7"/></>,
+    grid: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
+    clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
   };
-  return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
+  return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name] || paths.activity}</svg>;
 }
 
 function RingGauge({ label, value, unit, max, decimals = 0, icon }) {
@@ -95,8 +185,70 @@ function RingGauge({ label, value, unit, max, decimals = 0, icon }) {
     <article className={`metric-card ${available ? '' : 'is-unavailable'}`}>
       <div className="metric-head"><span>{label}</span><Icon name={icon}/></div>
       <div className="metric-ring" style={{ '--value': `${progress}%` }}>
-        <div><strong>{format(value, decimals)}</strong><small>{unit}</small></div>
+        <div><strong>{formatValue(value, decimals)}</strong><small>{unit}</small></div>
       </div>
+    </article>
+  );
+}
+
+function QuickMetric({ label, value, unit, icon }) {
+  return (
+    <article className={`quick-metric ${isNumericReading(value) ? '' : 'is-unavailable'}`}>
+      <span><Icon name={icon}/></span>
+      <div><small>{label}</small><strong>{formatValue(value)} <em>{unit}</em></strong></div>
+    </article>
+  );
+}
+
+function Sparkline({ values = [] }) {
+  const numeric = values.filter(isNumericReading).map(Number);
+  if (numeric.length < 2) return <div className="sparkline-placeholder"/>;
+  const min = Math.min(...numeric);
+  const max = Math.max(...numeric);
+  const spread = max - min || 1;
+  const points = numeric.map((value, index) => {
+    const x = numeric.length === 1 ? 50 : index / (numeric.length - 1) * 100;
+    const y = 28 - ((value - min) / spread * 24);
+    return `${x},${y}`;
+  }).join(' ');
+  return <svg className="sparkline" viewBox="0 0 100 32" preserveAspectRatio="none"><polyline points={points}/></svg>;
+}
+
+function SignalCard({ signal, favorite, onToggleFavorite, history, now }) {
+  const key = signalKey(signal);
+  const numeric = isNumericReading(signal.value);
+  const min = isNumericReading(signal.min) ? Number(signal.min) : null;
+  const max = isNumericReading(signal.max) ? Number(signal.max) : null;
+  const hasRange = numeric && min !== null && max !== null && max > min;
+  const progress = hasRange ? (clamp(signal.value, min, max) - min) / (max - min) * 100 : null;
+  const historyValues = history[key] || [];
+  const previous = historyValues.length > 1 ? Number(historyValues[historyValues.length - 2]) : null;
+  const current = numeric ? Number(signal.value) : null;
+  const trend = previous === null || current === null || Math.abs(current - previous) < 0.0001
+    ? 'steady'
+    : current > previous ? 'up' : 'down';
+
+  return (
+    <article className="signal-card">
+      <header>
+        <div>
+          <span>{CATEGORIES.find((category) => category.id === categoryFor(signal))?.label || 'Autres'}</span>
+          <h3>{signalLabel(signal)}</h3>
+        </div>
+        <button type="button" className={favorite ? 'favorite-button is-active' : 'favorite-button'} onClick={() => onToggleFavorite(key)} aria-label={favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}>
+          <Icon name="star"/>
+        </button>
+      </header>
+      <div className="signal-value-row">
+        <div className="signal-value"><strong>{formatValue(signal.value)}</strong><span>{signal.unit || ''}</span></div>
+        <span className={`trend trend-${trend}`}>{trend === 'up' ? '↑' : trend === 'down' ? '↓' : '—'}</span>
+      </div>
+      <Sparkline values={historyValues}/>
+      {progress !== null && <div className="signal-progress"><i style={{ width: `${progress}%` }}/></div>}
+      <footer>
+        <code>PID {Number(signal.pid || 0).toString(16).toUpperCase().padStart(2, '0')} · {signal.mnemonic || 'capteur'}</code>
+        <span><Icon name="clock"/>{ageLabel(signal.updated_at, now)}</span>
+      </footer>
     </article>
   );
 }
@@ -105,12 +257,7 @@ function DeviceRow({ device, connected, selected, connecting, onConnect }) {
   const isConnected = connected?.address === device.address;
   const isConnecting = connecting && selected?.address === device.address;
   return (
-    <button
-      type="button"
-      className={`device-row ${isConnected ? 'is-connected' : ''} ${isConnecting ? 'is-connecting' : ''}`}
-      onClick={() => onConnect(device)}
-      disabled={isConnected || connecting}
-    >
+    <button type="button" className={`device-row ${isConnected ? 'is-connected' : ''} ${isConnecting ? 'is-connecting' : ''}`} onClick={() => onConnect(device)} disabled={isConnected || connecting}>
       <span className="device-icon"><Icon name="bluetooth"/></span>
       <span className="device-copy">
         <strong>{device.name || 'Adaptateur Bluetooth'}</strong>
@@ -144,10 +291,7 @@ function ConnectionSheet({ open, onClose, bluetooth, medium, setMedium, onScan, 
       <section className="connection-sheet" role="dialog" aria-modal="true" aria-label="Connexion Bluetooth" onClick={(event) => event.stopPropagation()}>
         <div className="sheet-handle"/>
         <header className="sheet-header">
-          <div>
-            <span>CONNEXION OBD</span>
-            <h2>Choisir un adaptateur</h2>
-          </div>
+          <div><span>CONNEXION OBD</span><h2>Choisir un adaptateur</h2></div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Fermer"><Icon name="close"/></button>
         </header>
 
@@ -166,23 +310,14 @@ function ConnectionSheet({ open, onClose, bluetooth, medium, setMedium, onScan, 
 
         <div className="scan-toolbar">
           <div><strong>{mediumLabel(medium)}</strong><span>{devices.length} appareil{devices.length === 1 ? '' : 's'}</span></div>
-          <button type="button" onClick={() => onScan(medium)} disabled={bluetooth.scanning}>
-            <Icon name="refresh"/><span>{bluetooth.scanning ? 'Recherche…' : 'Actualiser'}</span>
-          </button>
+          <button type="button" onClick={() => onScan(medium)} disabled={bluetooth.scanning}><Icon name="refresh"/><span>{bluetooth.scanning ? 'Recherche…' : 'Actualiser'}</span></button>
         </div>
 
         {bluetooth.error && <div className="connection-error">{bluetooth.error}</div>}
 
         <div className="device-list">
           {devices.map((device) => (
-            <DeviceRow
-              key={`${device.medium}:${device.address}`}
-              device={device}
-              connected={bluetooth.connectedDevice}
-              selected={bluetooth.selectedDevice}
-              connecting={connecting}
-              onConnect={onConnect}
-            />
+            <DeviceRow key={`${device.medium}:${device.address}`} device={device} connected={bluetooth.connectedDevice} selected={bluetooth.selectedDevice} connecting={connecting} onConnect={onConnect}/>
           ))}
           {!devices.length && (
             <div className="empty-devices">
@@ -192,7 +327,6 @@ function ConnectionSheet({ open, onClose, bluetooth, medium, setMedium, onScan, 
             </div>
           )}
         </div>
-
         <p className="sheet-note">Les adaptateurs ELM327 classiques doivent parfois être associés dans les réglages Bluetooth Android avec le code 1234 ou 0000.</p>
       </section>
     </div>
@@ -200,20 +334,59 @@ function ConnectionSheet({ open, onClose, bluetooth, medium, setMedium, onScan, 
 }
 
 function App() {
-  const retained = telemetryBridge.lastPayload?.readings || {};
-  const [readings, setReadings] = useState({ ...EMPTY_READINGS, ...retained });
+  const retainedPayload = telemetryBridge.lastPayload || {};
+  const [readings, setReadings] = useState({ ...EMPTY_READINGS, ...(retainedPayload.readings || {}) });
+  const [signals, setSignals] = useState(Array.isArray(retainedPayload.signals) ? retainedPayload.signals : []);
+  const [history, setHistory] = useState({});
   const [status, setStatus] = useState(telemetryBridge.status || 'offline');
   const [bluetooth, setBluetooth] = useState({ ...EMPTY_BLUETOOTH, ...(bluetoothBridge.lastState || {}) });
   const [nativeAvailable, setNativeAvailable] = useState(Boolean(window.LotoTNative));
   const [connectionOpen, setConnectionOpen] = useState(false);
   const [medium, setMediumState] = useState(bluetooth.medium || 'classic');
+  const [query, setQuery] = useState('');
+  const [category, setCategory] = useState('all');
+  const [lastCapturedAt, setLastCapturedAt] = useState(Number(retainedPayload.captured_at) || 0);
+  const [packetCount, setPacketCount] = useState(0);
+  const [now, setNow] = useState(Date.now());
+  const [favorites, setFavorites] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('lotot-signal-favorites') || '[]');
+      return Array.isArray(saved) ? saved : [];
+    } catch (_) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('lotot-signal-favorites', JSON.stringify(favorites));
+  }, [favorites]);
 
   useEffect(() => {
     const onTelemetry = (event) => {
-      const incoming = event.detail?.readings;
-      if (!incoming) return;
-      setReadings((current) => ({ ...current, ...incoming }));
-      if (event.detail?.mode) setStatus(event.detail.mode);
+      const payload = event.detail || {};
+      if (payload.readings) setReadings((current) => ({ ...current, ...payload.readings }));
+      if (Array.isArray(payload.signals)) {
+        const validSignals = payload.signals.filter((signal) => signal && signal.value !== null && signal.value !== undefined);
+        setSignals(validSignals);
+        setHistory((currentHistory) => {
+          const next = { ...currentHistory };
+          validSignals.forEach((signal) => {
+            if (!isNumericReading(signal.value)) return;
+            const key = signalKey(signal);
+            const values = [...(next[key] || []), Number(signal.value)];
+            next[key] = values.slice(-30);
+          });
+          return next;
+        });
+      }
+      if (payload.mode) setStatus(payload.mode);
+      if (payload.captured_at) setLastCapturedAt(Number(payload.captured_at));
+      setPacketCount((count) => count + 1);
     };
     const onStatus = (event) => setStatus(event.detail?.status || 'offline');
     const onBluetooth = (event) => {
@@ -237,39 +410,61 @@ function App() {
     label: status === 'demo' ? 'MODE DÉMO' : status === 'live' ? 'EN DIRECT' : status === 'connecting' ? 'CONNEXION' : 'HORS LIGNE',
   }), [status]);
 
+  const signalMap = useMemo(() => {
+    const map = new Map();
+    signals.forEach((signal) => map.set(signal.mnemonic, signal));
+    return map;
+  }, [signals]);
+
+  const valueOf = (...mnemonics) => {
+    for (const mnemonic of mnemonics) {
+      const signal = signalMap.get(mnemonic);
+      if (signal && signal.value !== null && signal.value !== undefined) return signal.value;
+    }
+    return null;
+  };
+
+  const categoryCounts = useMemo(() => signals.reduce((counts, signal) => {
+    const signalCategory = categoryFor(signal);
+    counts[signalCategory] = (counts[signalCategory] || 0) + 1;
+    return counts;
+  }, {}), [signals]);
+
+  const filteredSignals = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return signals
+      .filter((signal) => {
+        const key = signalKey(signal);
+        if (category === 'favorites' && !favorites.includes(key)) return false;
+        if (!['all', 'favorites'].includes(category) && categoryFor(signal) !== category) return false;
+        if (!normalizedQuery) return true;
+        return `${signalLabel(signal)} ${signal.mnemonic || ''} ${signal.unit || ''}`.toLowerCase().includes(normalizedQuery);
+      })
+      .sort((a, b) => {
+        const favoriteDifference = Number(favorites.includes(signalKey(b))) - Number(favorites.includes(signalKey(a)));
+        if (favoriteDifference) return favoriteDifference;
+        const categoryDifference = categoryFor(a).localeCompare(categoryFor(b));
+        if (categoryDifference) return categoryDifference;
+        return signalLabel(a).localeCompare(signalLabel(b));
+      });
+  }, [signals, category, query, favorites]);
+
   const connected = bluetooth.connectedDevice;
   const selectedDevice = bluetooth.selectedDevice;
   const visibleDevice = connected || selectedDevice;
   const speedAvailable = isNumericReading(readings.vehicle_speed);
   const speedProgress = speedAvailable ? clamp(readings.vehicle_speed, 0, 240) / 240 * 270 : 0;
-  const numericReadings = Object.values(readings).filter(isNumericReading);
-  const availableReadingCount = numericReadings.length;
-  const unavailableReadingCount = Object.keys(EMPTY_READINGS).length - availableReadingCount;
-  const allNumericReadingsZero = availableReadingCount > 0 && numericReadings.every((value) => Number(value) === 0);
-  const diagnosticCopy = connected && unavailableReadingCount > 0
-    ? {
-        title: 'Flux OBD actif · données partielles',
-        body: `${availableReadingCount}/5 valeurs numériques reçues. Les autres réponses sont vides ou NaN.`,
-      }
-    : connected && allNumericReadingsZero
-      ? {
-          title: 'Flux OBD actif · valeurs à zéro',
-          body: 'Le simulateur répond, mais les capteurs affichés sont actuellement réglés à zéro.',
-        }
-      : connected
-        ? {
-            title: 'Diagnostic local actif',
-            body: `Les données arrivent depuis ${connected.name}.`,
-          }
-        : status === 'demo'
-          ? {
-              title: 'Simulation AndrOBD active',
-              body: 'Les jauges utilisent les valeurs générées par le moteur de démonstration.',
-            }
-          : {
-              title: 'Prêt pour le diagnostic',
-              body: 'Connectez un adaptateur ou lancez la simulation pour tester les jauges.',
-            };
+  const toggleFavorite = (key) => setFavorites((current) => current.includes(key) ? current.filter((entry) => entry !== key) : [...current, key]);
+  const lastAge = lastCapturedAt ? Math.max(0, now - lastCapturedAt) : null;
+  const fluxLabel = !['live', 'demo'].includes(status) ? 'Flux arrêté' : lastAge === null ? 'Aucun flux' : lastAge < 1500 ? 'Flux instantané' : `${Math.floor(lastAge / 1000)} s de retard`;
+
+  const diagnosticCopy = signals.length
+    ? { title: `${signals.length} capteur${signals.length === 1 ? '' : 's'} en direct`, body: `Dernier paquet reçu ${ageLabel(lastCapturedAt, now)} · ${packetCount} mises à jour depuis l’ouverture.` }
+    : connected
+      ? { title: 'Connexion active · attente des PIDs', body: 'L’adaptateur répond, mais aucune mesure valide n’a encore été décodée.' }
+      : status === 'demo'
+        ? { title: 'Simulation AndrOBD active', body: 'Les valeurs de démonstration alimentent le cockpit.' }
+        : { title: 'Prêt pour le diagnostic', body: 'Connectez un adaptateur ou lancez la simulation.' };
 
   const openConnection = () => {
     setConnectionOpen(true);
@@ -279,27 +474,27 @@ function App() {
     setMediumState(nextMedium);
     window.LotoTNative?.scanBluetooth?.(nextMedium);
   };
-  const connectDevice = (device) => {
-    window.LotoTNative?.connectBluetooth?.(device.address, device.medium || medium);
-  };
+  const connectDevice = (device) => window.LotoTNative?.connectBluetooth?.(device.address, device.medium || medium);
 
   return (
     <main className="app-shell">
       <header className="topbar">
         <div className="brand">Loto<span>T</span></div>
-        <button className={`status-pill ${state.live ? 'is-live' : ''}`} type="button" onClick={openConnection}>
-          <i></i><span>{state.label}</span>
-        </button>
+        <button className={`status-pill ${state.live ? 'is-live' : ''}`} type="button" onClick={openConnection}><i/><span>{state.label}</span></button>
       </header>
+
+      <section className="session-strip">
+        <div><Icon name="activity"/><span><strong>{signals.length}</strong> capteurs</span></div>
+        <div><Icon name="clock"/><span>{fluxLabel}</span></div>
+        <div><Icon name="bluetooth"/><span>{connected?.name || 'Aucun adaptateur'}</span></div>
+      </section>
 
       <section className={`vehicle-card ${connected ? 'is-connected' : ''} ${status === 'connecting' ? 'is-connecting' : ''}`}>
         <div>
           <span className="eyebrow">{connected ? 'ADAPTATEUR CONNECTÉ' : status === 'connecting' ? 'CONNEXION EN COURS' : 'AUCUN ADAPTATEUR'}</span>
           <h1>{visibleDevice ? visibleDevice.name : 'Connectez votre boîtier OBD'}</h1>
           <p>{visibleDevice ? `${mediumLabel(visibleDevice.medium)} · ${visibleDevice.address}` : 'Recherchez votre adaptateur Bluetooth directement depuis LotoT.'}</p>
-          <button className="vehicle-connect" type="button" onClick={openConnection} disabled={!nativeAvailable}>
-            <Icon name="bluetooth"/><span>{connected ? 'Gérer la connexion' : 'Choisir un appareil'}</span><Icon name="chevron"/>
-          </button>
+          <button className="vehicle-connect" type="button" onClick={openConnection} disabled={!nativeAvailable}><Icon name="bluetooth"/><span>{connected ? 'Gérer la connexion' : 'Choisir un appareil'}</span><Icon name="chevron"/></button>
         </div>
         <div className="vehicle-symbol"><Icon name={connected ? 'link' : status === 'connecting' ? 'bluetooth' : 'car'}/></div>
       </section>
@@ -307,53 +502,68 @@ function App() {
       <section className="speed-card">
         <div className="card-title"><span>CONDUITE EN DIRECT</span><Icon name="gauge"/></div>
         <div className="speed-ring" style={{ '--angle': `${speedProgress}deg` }}>
-          <div className="speed-core">
-            <small>VITESSE</small>
-            <strong>{format(readings.vehicle_speed)}</strong>
-            <span>km/h</span>
-          </div>
+          <div className="speed-core"><small>VITESSE</small><strong>{formatValue(readings.vehicle_speed, 0)}</strong><span>km/h</span></div>
         </div>
-        <div className="rpm-row"><span>Régime moteur</span><strong>{format(readings.engine_rpm)} <small>tr/min</small></strong></div>
+        <div className="rpm-row"><span>Régime moteur</span><strong>{formatValue(readings.engine_rpm, 0)} <small>tr/min</small></strong></div>
       </section>
 
       <section className="metric-grid">
         <RingGauge label="CHARGE MOTEUR" value={readings.engine_load} unit="%" max={100} icon="gauge" />
-        <RingGauge label="BATTERIE" value={readings.module_voltage} unit="V" max={16} decimals={1} icon="bolt" />
+        <RingGauge label="BATTERIE" value={readings.module_voltage} unit="V" max={16} decimals={2} icon="bolt" />
         <RingGauge label="DÉBIT D’AIR" value={readings.maf} unit="g/s" max={50} decimals={1} icon="wind" />
       </section>
 
-      <section className={`health-card ${connected && unavailableReadingCount > 0 ? 'has-data-warning' : ''}`}>
+      <section className="quick-grid">
+        <QuickMetric label="LIQUIDE" value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="thermometer"/>
+        <QuickMetric label="CARBURANT" value={valueOf('engine_fuel_rate')} unit="L/h" icon="fuel"/>
+        <QuickMetric label="ADMISSION" value={valueOf('intake_manifold_pressure')} unit="kPa" icon="droplet"/>
+        <QuickMetric label="RÉSERVOIR" value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="fuel"/>
+      </section>
+
+      <section className="health-card">
         <span className="health-icon"><Icon name="shield"/></span>
-        <div>
-          <strong>{diagnosticCopy.title}</strong>
-          <p>{diagnosticCopy.body}</p>
+        <div><strong>{diagnosticCopy.title}</strong><p>{diagnosticCopy.body}</p></div>
+      </section>
+
+      <section className="data-panel">
+        <header className="data-panel-header">
+          <div><span>EXPLORATEUR OBD</span><h2>Toutes les données live</h2></div>
+          <strong>{filteredSignals.length}/{signals.length}</strong>
+        </header>
+
+        <label className="search-box">
+          <Icon name="search"/>
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Rechercher un capteur, PID ou unité…" />
+          {query && <button type="button" onClick={() => setQuery('')} aria-label="Effacer"><Icon name="close"/></button>}
+        </label>
+
+        <nav className="category-tabs" aria-label="Catégories des capteurs">
+          {CATEGORIES.map((item) => {
+            const count = item.id === 'all' ? signals.length : item.id === 'favorites' ? favorites.filter((key) => signals.some((signal) => signalKey(signal) === key)).length : (categoryCounts[item.id] || 0);
+            if (!['all', 'favorites'].includes(item.id) && count === 0) return null;
+            return <button type="button" key={item.id} className={category === item.id ? 'is-active' : ''} onClick={() => setCategory(item.id)}><Icon name={item.icon}/><span>{item.label}</span><em>{count}</em></button>;
+          })}
+        </nav>
+
+        <div className="signal-grid">
+          {filteredSignals.map((signal) => (
+            <SignalCard key={signalKey(signal)} signal={signal} favorite={favorites.includes(signalKey(signal))} onToggleFavorite={toggleFavorite} history={history} now={now}/>
+          ))}
+          {!filteredSignals.length && (
+            <div className="empty-signals"><Icon name="activity"/><strong>{signals.length ? 'Aucun capteur ne correspond' : 'En attente des données OBD'}</strong><p>{signals.length ? 'Modifiez la recherche ou la catégorie.' : 'Les mesures valides apparaîtront ici automatiquement.'}</p></div>
+          )}
         </div>
       </section>
 
       <section className="actions">
-        <button className="primary" type="button" onClick={openConnection} disabled={!nativeAvailable}>
-          <Icon name="bluetooth"/><span>{connected ? 'Connexion' : 'Connecter'}</span>
-        </button>
-        <button className="secondary" type="button" onClick={() => window.LotoTNative?.startDemo?.()} disabled={!nativeAvailable}>
-          <Icon name="play"/><span>Mode démo</span>
-        </button>
-        <button className="tools-button" type="button" onClick={() => window.LotoTNative?.openNativeTools?.()} disabled={!nativeAvailable}>
-          <Icon name="tool"/><span>Diagnostics avancés AndrOBD</span><Icon name="chevron"/>
-        </button>
+        <button className="primary" type="button" onClick={openConnection} disabled={!nativeAvailable}><Icon name="bluetooth"/><span>{connected ? 'Connexion' : 'Connecter'}</span></button>
+        <button className="secondary" type="button" onClick={() => window.LotoTNative?.startDemo?.()} disabled={!nativeAvailable}><Icon name="play"/><span>Mode démo</span></button>
+        <button className="tools-button" type="button" onClick={() => window.LotoTNative?.openNativeTools?.()} disabled={!nativeAvailable}><Icon name="tool"/><span>Diagnostics avancés AndrOBD</span><Icon name="chevron"/></button>
       </section>
 
-      <footer>Prototype GPL · Moteur AndrOBD · Interface LotoT</footer>
+      <footer className="app-footer">Prototype GPL · Moteur AndrOBD · Interface LotoT</footer>
 
-      <ConnectionSheet
-        open={connectionOpen}
-        onClose={() => setConnectionOpen(false)}
-        bluetooth={bluetooth}
-        medium={medium}
-        setMedium={setMedium}
-        onScan={(selectedMedium) => window.LotoTNative?.scanBluetooth?.(selectedMedium)}
-        onConnect={connectDevice}
-        onDisconnect={() => window.LotoTNative?.disconnectBluetooth?.()}
-      />
+      <ConnectionSheet open={connectionOpen} onClose={() => setConnectionOpen(false)} bluetooth={bluetooth} medium={medium} setMedium={setMedium} onScan={(selectedMedium) => window.LotoTNative?.scanBluetooth?.(selectedMedium)} onConnect={connectDevice} onDisconnect={() => window.LotoTNative?.disconnectBluetooth?.()}/>
     </main>
   );
 }

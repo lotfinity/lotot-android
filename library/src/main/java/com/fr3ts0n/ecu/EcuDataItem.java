@@ -59,6 +59,7 @@ public class EcuDataItem
 	public EcuDataPv pv;        ///< the process variable for displaying
 	private int currErrorCount = 0;     ///< current number of consecutive conversion errors
 	public long updatePeriod_ms = 0; ///< Minimum update period in ms
+	public volatile long updatedAt = 0L; ///< Last successfully decoded update timestamp
 
 	// Logger object
 	private static final Logger log = Logger.getLogger("data.ecu");
@@ -306,6 +307,7 @@ public class EcuDataItem
 			{
 				pv.put(EcuDataPv.FID_VALUE, result);
 				pv.put(EcuDataPv.FID_UNITS, pv.getUnits());
+				updatedAt = System.currentTimeMillis();
 				log.fine(String.format("%02X %-30s %16s %s",
 										pid,
 										label,

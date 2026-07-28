@@ -145,6 +145,16 @@ class EcuDataItemTest
 		assertEquals(100.0f, ((Number) value).floatValue(), 0.001f);
 	}
 
+	/** A PID becomes visible to LotoT only after a valid decoded response. */
+	@Test
+	void updatePvFomBuffer_recordsTimestamp()
+	{
+		EcuDataItem item = makeItem8bit();
+		assertEquals(0L, item.updatedAt);
+		item.updatePvFomBuffer(new char[]{0x2A});
+		assertTrue(item.updatedAt > 0L);
+	}
+
 	/** updatePvFomBuffer returns the configured update period */
 	@Test
 	void updatePvFomBuffer_returnsUpdatePeriod()
