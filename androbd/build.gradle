@@ -13,8 +13,8 @@ android {
         applicationId 'com.lotot.android'
         minSdkVersion 23
         targetSdkVersion 36
-        versionCode 105
-        versionName '0.4.0-spike'
+        versionCode 106
+        versionName '0.5.0-spike'
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
@@ -55,6 +55,7 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.preference:preference:1.2.1'
+    implementation 'org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5'
 
     // Local (JVM) unit tests
     testImplementation 'junit:junit:4.13.2'

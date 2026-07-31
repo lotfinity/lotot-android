@@ -23,6 +23,16 @@ const EMPTY_BLUETOOTH = {
   error: null,
 };
 
+const EMPTY_BUILTINS = {
+  embedded: true,
+  gps: { enabled: false, available: true, permission_granted: false, status: 'disabled', last_update: 0, error: null },
+  sensors: { enabled: true, available: true, status: 'waiting', last_update: 0, error: null },
+  mqtt: {
+    enabled: false, status: 'disabled', broker: null, last_publish: 0, published_messages: 0, error: null,
+    config: { protocol: 'tcp://', host: '', port: 1883, username: '', password_set: false, client_id: '', prefix: 'LotoT/', qos: 0, retain: true, interval_seconds: 5, selected_signals: [] },
+  },
+};
+
 const LABEL_OVERRIDES = {
   vehicle_speed: 'Vitesse véhicule',
   engine_speed: 'Régime moteur',
@@ -70,6 +80,10 @@ const telemetryBridge = window.lototTelemetryBridge = window.lototTelemetryBridg
 
 const bluetoothBridge = window.lototBluetoothBridge = window.lototBluetoothBridge || {
   lastState: EMPTY_BLUETOOTH,
+};
+
+const builtinBridge = window.lototBuiltinBridge = window.lototBuiltinBridge || {
+  lastState: EMPTY_BUILTINS,
 };
 
 window.lototReceiveTelemetry = (payload) => {
@@ -120,6 +134,28 @@ window.lototSetBluetoothState = (payload) => {
     window.dispatchEvent(new CustomEvent('lotot:bluetooth-state', { detail: next }));
   } catch (error) {
     console.error('Invalid native Bluetooth payload', error);
+  }
+};
+
+window.lototSetBuiltinState = (payload) => {
+  try {
+    const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
+    if (!parsed || typeof parsed !== 'object') return;
+    const next = {
+      ...EMPTY_BUILTINS,
+      ...parsed,
+      gps: { ...EMPTY_BUILTINS.gps, ...(parsed.gps || {}) },
+      sensors: { ...EMPTY_BUILTINS.sensors, ...(parsed.sensors || {}) },
+      mqtt: {
+        ...EMPTY_BUILTINS.mqtt,
+        ...(parsed.mqtt || {}),
+        config: { ...EMPTY_BUILTINS.mqtt.config, ...(parsed.mqtt?.config || {}) },
+      },
+    };
+    builtinBridge.lastState = next;
+    window.dispatchEvent(new CustomEvent('lotot:builtin-state', { detail: next }));
+  } catch (error) {
+    console.error('Invalid native built-in services payload', error);
   }
 };
 
@@ -196,6 +232,10 @@ function Icon({ name }) {
     clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
     sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></>,
     moon: <path d="M21 12.8A8.5 8.5 0 1 1 11.2 3 6.8 6.8 0 0 0 21 12.8Z"/>,
+    location: <><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,
+    cloud: <><path d="M17.5 19H7a5 5 0 0 1-.6-10A7 7 0 0 1 20 11.5 3.8 3.8 0 0 1 17.5 19Z"/><path d="M9 14h6M12 11v6"/></>,
+    phone: <><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 18h4"/></>,
+    sliders: <><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="18" r="2"/></>,
   };
   return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name] || paths.activity}</svg>;
 }
@@ -268,7 +308,7 @@ function SignalCard({ signal, favorite, onToggleFavorite, history, now }) {
       <Sparkline values={historyValues}/>
       {progress !== null && <div className="signal-progress"><i style={{ width: `${progress}%` }}/></div>}
       <footer>
-        <code>PID {Number(signal.pid || 0).toString(16).toUpperCase().padStart(2, '0')} · {signal.mnemonic || 'capteur'}</code>
+        <code>{signal.source ? `${signal.source === 'gps' ? 'GPS intégré' : signal.source === 'motion' ? 'Capteur téléphone' : signal.source} · ${signal.mnemonic || 'capteur'}` : `PID ${Number(signal.pid || 0).toString(16).toUpperCase().padStart(2, '0')} · ${signal.mnemonic || 'capteur'}`}</code>
         <span><Icon name="clock"/>{ageLabel(signal.updated_at, now)}</span>
       </footer>
     </article>
@@ -355,6 +395,136 @@ function ConnectionSheet({ open, onClose, bluetooth, medium, setMedium, onScan, 
   );
 }
 
+
+function serviceLabel(service, kind) {
+  if (!service?.enabled) return 'DÉSACTIVÉ';
+  if (service.status === 'active' || service.status === 'online') return 'ACTIF';
+  if (service.status === 'permission') return 'AUTORISATION';
+  if (service.status === 'configuration') return 'À CONFIGURER';
+  if (service.status === 'error' || service.status === 'unavailable') return 'ERREUR';
+  if (service.status === 'connecting') return 'CONNEXION';
+  return kind === 'mqtt' ? 'EN ATTENTE DU FLUX' : 'EN ATTENTE';
+}
+
+function ServiceTile({ icon, title, service, kind, detail, onClick }) {
+  const healthy = ['active', 'online'].includes(service?.status);
+  const warning = ['permission', 'configuration', 'error', 'unavailable'].includes(service?.status);
+  return (
+    <button type="button" className={`service-tile ${healthy ? 'is-active' : ''} ${warning ? 'is-warning' : ''}`} onClick={onClick}>
+      <span className="service-icon"><Icon name={icon}/></span>
+      <span className="service-copy"><small>{title}</small><strong>{serviceLabel(service, kind)}</strong><em>{detail}</em></span>
+      <span className="service-chevron"><Icon name="chevron"/></span>
+    </button>
+  );
+}
+
+function SwitchRow({ checked, onChange, title, description, disabled = false }) {
+  return (
+    <label className={`switch-row ${disabled ? 'is-disabled' : ''}`}>
+      <span><strong>{title}</strong><small>{description}</small></span>
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} disabled={disabled}/>
+      <i/>
+    </label>
+  );
+}
+
+function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLocation, onPublishNow }) {
+  const [gpsEnabled, setGpsEnabled] = useState(false);
+  const [sensorsEnabled, setSensorsEnabled] = useState(true);
+  const [mqtt, setMqtt] = useState({ ...EMPTY_BUILTINS.mqtt.config, enabled: false, password: '' });
+
+  useEffect(() => {
+    if (!open) return;
+    setGpsEnabled(Boolean(services.gps?.enabled));
+    setSensorsEnabled(Boolean(services.sensors?.enabled));
+    setMqtt({
+      ...EMPTY_BUILTINS.mqtt.config,
+      ...(services.mqtt?.config || {}),
+      enabled: Boolean(services.mqtt?.enabled),
+      password: '',
+    });
+  }, [open, services]);
+
+  if (!open) return null;
+  const selected = Array.isArray(mqtt.selected_signals) ? mqtt.selected_signals : [];
+  const updateMqtt = (key, value) => setMqtt((current) => ({ ...current, [key]: value }));
+  const toggleSignal = (mnemonic) => updateMqtt('selected_signals', selected.includes(mnemonic)
+    ? selected.filter((item) => item !== mnemonic)
+    : [...selected, mnemonic]);
+  const save = () => {
+    const mqttPayload = {
+      enabled: Boolean(mqtt.enabled),
+      protocol: mqtt.protocol,
+      host: mqtt.host.trim(),
+      port: Number(mqtt.port) || 1883,
+      username: mqtt.username,
+      client_id: mqtt.client_id,
+      prefix: mqtt.prefix,
+      qos: Number(mqtt.qos) || 0,
+      retain: Boolean(mqtt.retain),
+      interval_seconds: Math.max(1, Number(mqtt.interval_seconds) || 5),
+      selected_signals: selected,
+    };
+    if (mqtt.password) mqttPayload.password = mqtt.password;
+    onSave({ gps_enabled: gpsEnabled, sensors_enabled: sensorsEnabled, mqtt: mqttPayload });
+  };
+
+  return (
+    <div className="sheet-backdrop services-backdrop" role="presentation" onClick={onClose}>
+      <section className="connection-sheet services-sheet" role="dialog" aria-modal="true" aria-label="Services intégrés" onClick={(event) => event.stopPropagation()}>
+        <div className="sheet-handle"/>
+        <header className="sheet-header">
+          <div><span>SERVICES NATIFS LOTOT</span><h2>Sources et synchronisation</h2></div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Fermer"><Icon name="close"/></button>
+        </header>
+
+        <section className="service-config-block">
+          <div className="service-config-title"><span><Icon name="location"/></span><div><strong>Position GPS intégrée</strong><small>Latitude, longitude, altitude, cap et vitesse GPS</small></div></div>
+          <SwitchRow checked={gpsEnabled} onChange={setGpsEnabled} title="Activer la position" description="Alimente le tableau de bord et MQTT sans application séparée." disabled={!services.gps?.available}/>
+          {gpsEnabled && !services.gps?.permission_granted && <button className="permission-button" type="button" onClick={onRequestLocation}><Icon name="location"/><span>Autoriser la localisation</span></button>}
+          {services.gps?.error && <p className="inline-service-error">{services.gps.error}</p>}
+        </section>
+
+        <section className="service-config-block">
+          <div className="service-config-title"><span><Icon name="phone"/></span><div><strong>Capteurs du téléphone</strong><small>Accélérations latérale, longitudinale et verticale</small></div></div>
+          <SwitchRow checked={sensorsEnabled} onChange={setSensorsEnabled} title="Activer l’accéléromètre" description="Échantillonnage natif à 10 Hz, affichage réduit à la cadence du dashboard." disabled={!services.sensors?.available}/>
+        </section>
+
+        <section className="service-config-block mqtt-config-block">
+          <div className="service-config-title"><span><Icon name="cloud"/></span><div><strong>Publication MQTT intégrée</strong><small>Un topic par signal plus un snapshot JSON complet</small></div></div>
+          <SwitchRow checked={Boolean(mqtt.enabled)} onChange={(value) => updateMqtt('enabled', value)} title="Activer MQTT" description="Connexion automatique au broker lorsque des données sont disponibles."/>
+          <div className="mqtt-form">
+            <label><span>Protocole</span><select value={mqtt.protocol} onChange={(event) => updateMqtt('protocol', event.target.value)}><option value="tcp://">TCP</option><option value="ssl://">SSL/TLS</option><option value="ws://">WebSocket</option><option value="wss://">WebSocket sécurisé</option></select></label>
+            <label className="is-wide"><span>Serveur MQTT</span><input value={mqtt.host} onChange={(event) => updateMqtt('host', event.target.value)} placeholder="mqtt.example.com"/></label>
+            <label><span>Port</span><input type="number" value={mqtt.port} onChange={(event) => updateMqtt('port', event.target.value)} inputMode="numeric"/></label>
+            <label><span>Intervalle</span><div className="input-unit"><input type="number" min="1" value={mqtt.interval_seconds} onChange={(event) => updateMqtt('interval_seconds', event.target.value)}/><em>s</em></div></label>
+            <label className="is-wide"><span>Préfixe des topics</span><input value={mqtt.prefix} onChange={(event) => updateMqtt('prefix', event.target.value)} placeholder="LotoT/vehicle/"/></label>
+            <label className="is-wide"><span>Identifiant client</span><input value={mqtt.client_id} onChange={(event) => updateMqtt('client_id', event.target.value)} placeholder="Généré automatiquement"/></label>
+            <label><span>Utilisateur</span><input value={mqtt.username} onChange={(event) => updateMqtt('username', event.target.value)} autoCapitalize="none"/></label>
+            <label><span>Mot de passe</span><input type="password" value={mqtt.password} onChange={(event) => updateMqtt('password', event.target.value)} placeholder={mqtt.password_set ? 'Enregistré · laisser vide' : 'Facultatif'}/></label>
+            <label><span>QoS</span><select value={mqtt.qos} onChange={(event) => updateMqtt('qos', event.target.value)}><option value="0">0 · rapide</option><option value="1">1 · confirmé</option><option value="2">2 · exactement une fois</option></select></label>
+            <SwitchRow checked={Boolean(mqtt.retain)} onChange={(value) => updateMqtt('retain', value)} title="Messages retenus" description="Le broker conserve la dernière valeur de chaque topic."/>
+          </div>
+
+          <div className="signal-publish-head"><div><strong>Signaux publiés</strong><small>{selected.length ? `${selected.length} sélectionné(s)` : 'Tous les signaux live'}</small></div><button type="button" onClick={() => updateMqtt('selected_signals', [])}>TOUT PUBLIER</button></div>
+          <div className="publish-signal-list">
+            {signals.map((signal) => {
+              const mnemonic = signal.mnemonic || signalKey(signal);
+              const active = !selected.length || selected.includes(mnemonic);
+              return <button type="button" key={signalKey(signal)} className={active ? 'is-selected' : ''} onClick={() => toggleSignal(mnemonic)}><i/><span>{signalLabel(signal)}</span><code>{mnemonic}</code></button>;
+            })}
+            {!signals.length && <p>Les signaux apparaîtront ici après la première session OBD ou GPS.</p>}
+          </div>
+          {services.mqtt?.error && <p className="inline-service-error">{services.mqtt.error}</p>}
+          <button className="mqtt-test-button" type="button" onClick={onPublishNow} disabled={!services.mqtt?.enabled}><Icon name="cloud"/><span>Publier un test maintenant</span><em>{serviceLabel(services.mqtt, 'mqtt')}</em></button>
+        </section>
+
+        <div className="services-actions"><button type="button" className="secondary" onClick={onClose}>Annuler</button><button type="button" className="primary" onClick={save}>Enregistrer</button></div>
+      </section>
+    </div>
+  );
+}
+
 function App() {
   const retainedPayload = telemetryBridge.lastPayload || {};
   const [readings, setReadings] = useState({ ...EMPTY_READINGS, ...(retainedPayload.readings || {}) });
@@ -362,8 +532,10 @@ function App() {
   const [history, setHistory] = useState({});
   const [status, setStatus] = useState(telemetryBridge.status || 'offline');
   const [bluetooth, setBluetooth] = useState({ ...EMPTY_BLUETOOTH, ...(bluetoothBridge.lastState || {}) });
+  const [services, setServices] = useState({ ...EMPTY_BUILTINS, ...(builtinBridge.lastState || {}) });
   const [nativeAvailable, setNativeAvailable] = useState(Boolean(window.LotoTNative));
   const [connectionOpen, setConnectionOpen] = useState(false);
+  const [servicesOpen, setServicesOpen] = useState(false);
   const [medium, setMediumState] = useState(bluetooth.medium || 'classic');
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
@@ -428,10 +600,12 @@ function App() {
       setBluetooth(event.detail || EMPTY_BLUETOOTH);
       if (event.detail?.medium) setMediumState(event.detail.medium);
     };
+    const onBuiltins = (event) => setServices(event.detail || EMPTY_BUILTINS);
     window.addEventListener('lotot:telemetry', onTelemetry);
     window.addEventListener('lotot:fast-telemetry', onFastTelemetry);
     window.addEventListener('lotot:telemetry-status', onStatus);
     window.addEventListener('lotot:bluetooth-state', onBluetooth);
+    window.addEventListener('lotot:builtin-state', onBuiltins);
     setNativeAvailable(Boolean(window.LotoTNative));
     window.LotoTNative?.ready?.();
     return () => {
@@ -439,6 +613,7 @@ function App() {
       window.removeEventListener('lotot:fast-telemetry', onFastTelemetry);
       window.removeEventListener('lotot:telemetry-status', onStatus);
       window.removeEventListener('lotot:bluetooth-state', onBluetooth);
+      window.removeEventListener('lotot:builtin-state', onBuiltins);
     };
   }, []);
 
@@ -577,6 +752,16 @@ function App() {
         <div><strong>{diagnosticCopy.title}</strong><p>{diagnosticCopy.body}</p></div>
       </section>
 
+      <section className="builtins-panel">
+        <header className="builtins-header"><div><span>SERVICES INTÉGRÉS</span><h2>Sources natives et cloud</h2></div><button type="button" onClick={() => setServicesOpen(true)}><Icon name="sliders"/><span>Configurer</span></button></header>
+        <div className="service-grid">
+          <ServiceTile icon="location" title="POSITION GPS" service={services.gps} detail={services.gps?.last_update ? ageLabel(services.gps.last_update, now) : services.gps?.permission_granted ? 'Prêt à localiser' : 'Permission requise'} onClick={() => setServicesOpen(true)}/>
+          <ServiceTile icon="phone" title="CAPTEURS TÉLÉPHONE" service={services.sensors} detail={services.sensors?.last_update ? ageLabel(services.sensors.last_update, now) : 'Accéléromètre natif'} onClick={() => setServicesOpen(true)}/>
+          <ServiceTile icon="cloud" title="SYNCHRONISATION MQTT" kind="mqtt" service={services.mqtt} detail={services.mqtt?.last_publish ? `Publié ${ageLabel(services.mqtt.last_publish, now)}` : services.mqtt?.broker || 'Broker non configuré'} onClick={() => setServicesOpen(true)}/>
+        </div>
+        <p className="builtins-note">Ces services font partie de LotoT. Aucun APK complémentaire ni système de plugin n’est requis.</p>
+      </section>
+
       <section className="data-panel">
         <header className="data-panel-header">
           <div><span>EXPLORATEUR OBD</span><h2>Toutes les données live</h2></div>
@@ -613,9 +798,10 @@ function App() {
         <button className="tools-button" type="button" onClick={() => window.LotoTNative?.openNativeTools?.()} disabled={!nativeAvailable}><Icon name="tool"/><span>Diagnostics avancés AndrOBD</span><Icon name="chevron"/></button>
       </section>
 
-      <footer className="app-footer">Prototype GPL · Moteur AndrOBD · Interface LotoT</footer>
+      <footer className="app-footer">GPL · Moteur AndrOBD · GPS, capteurs et MQTT intégrés · Interface LotoT</footer>
 
       <ConnectionSheet open={connectionOpen} onClose={() => setConnectionOpen(false)} bluetooth={bluetooth} medium={medium} setMedium={setMedium} onScan={(selectedMedium) => window.LotoTNative?.scanBluetooth?.(selectedMedium)} onConnect={connectDevice} onDisconnect={() => window.LotoTNative?.disconnectBluetooth?.()}/>
+      <ServicesSheet open={servicesOpen} onClose={() => setServicesOpen(false)} services={services} signals={signals} onSave={(payload) => window.LotoTNative?.configureBuiltins?.(JSON.stringify(payload))} onRequestLocation={() => window.LotoTNative?.requestLocationPermission?.()} onPublishNow={() => window.LotoTNative?.publishMqttNow?.()}/>
     </main>
   );
 }

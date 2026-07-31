@@ -6,20 +6,17 @@ adds a bundled LotoT React dashboard as the default Android home screen.
 ## Current vertical slice
 
 - Separate Android package: `com.lotot.android`
-- LotoT-branded React UI bundled under `androbd/src/main/assets/lotot/`
-- JavaScript bridge limited to three explicit actions:
-  - notify native code that React is ready;
-  - start AndrOBD Demo mode;
-  - open the existing AndrOBD options menu.
-- Native telemetry snapshot every 250 ms using AndrOBD's existing UI timer.
-- Mapped signals:
-  - `vehicle_speed` ← AndrOBD `vehicle_speed`
-  - `engine_rpm` ← AndrOBD `engine_speed`
-  - `engine_load` ← AndrOBD `engine_load_calculated`
-  - `module_voltage` ← AndrOBD `ecu_voltage`
-  - `maf` ← AndrOBD `mass_airflow`
-- The normal AndrOBD services, DTC screens, settings, plugins and connection
-  transports remain in place.
+- LotoT React cockpit bundled under `androbd/src/main/assets/lotot/`
+- Native JavaScript bridge for Bluetooth, telemetry, themes and integrated
+  services
+- AndrOBD remains the in-process ELM327/OBD transport, polling and decoding
+  engine
+- Low-latency speed/RPM updates plus a complete live signal explorer
+- Classic Bluetooth and BLE discovery/connection entirely inside the LotoT UI
+- Built-in GPS, accelerometer and MQTT services in the same APK
+- No separate AndrOBD provider or MQTT plugin APK is required by LotoT
+- Advanced DTC, vehicle-information, freeze-frame and native diagnostic tools
+  remain available behind the LotoT advanced-tools entry
 
 ## Build the React assets
 
@@ -126,6 +123,29 @@ status/navigation bars and native AndrOBD theme preference use the same saved
 selection. Existing sessions are not recreated when the theme changes, so an
 active OBD connection is not interrupted.
 
+## Built-in services (0.5.0 spike)
+
+The former AndrOBD GPS Provider, Sensor Provider and MQTT Publisher capabilities
+are now direct LotoT components rather than externally discovered services. The
+user installs one APK and configures everything from the React cockpit.
+
+- `LotoTGpsProvider` publishes latitude, longitude, altitude, bearing and GPS
+  speed into the same signal explorer as OBD data.
+- `LotoTMotionSensorProvider` publishes `ACC_X`, `ACC_Y` and `ACC_Z` from the
+  phone accelerometer.
+- `LotoTMqttPublisher` supports TCP, TLS, WebSocket and secure WebSocket broker
+  endpoints, authentication, topic prefixes, QoS, retained values, update
+  intervals and per-signal selection. It emits one topic per signal plus a
+  complete `snapshot` JSON topic.
+- The integrated-services panel reports live state and exposes all controls in
+  the dark/light LotoT UI. The legacy external-plugin manager is hidden.
+- GPS and motion signals remain available while OBD is offline; when OBD is
+  connected, MQTT publishes the combined OBD, GPS and phone-sensor snapshot.
+
+The implementation is adapted from the GPLv3 AndrOBD-plugin repository,
+upstream commit `fec003c` (`Plugins: SDK36 UI tuning`). It remains covered by
+the GPL terms of this combined Android application.
+
 ## Django synchronization milestone
 
 The existing Django backend already separates human and device authentication:
@@ -136,8 +156,10 @@ The existing Django backend already separates human and device authentication:
   `device_uid` and `api_key`;
 - `/ws/vehicles/<vehicle_id>/live/` broadcasts accepted readings to web clients.
 
-The Android client should next add account login and vehicle selection, secure
-device credential storage, periodic telemetry batches, and a Room-backed
-offline queue. Each batch maps AndrOBD mnemonics to Django `readings`, includes
-`captured_at` and connection metadata, and retries with bounded backoff until
-acknowledged.
+The next cloud milestone should add account login, vehicle selection and secure
+device provisioning. Django can ingest the built-in MQTT `snapshot` topic via a
+broker consumer, preserving the existing mobile publisher, or the same native
+signal snapshot can be placed into a Room-backed HTTP upload queue. In either
+case, Android keeps the 10 Hz local cockpit independent from the slower cloud
+transport and Django remains responsible for history, alerts, predictions and
+websocket fan-out.

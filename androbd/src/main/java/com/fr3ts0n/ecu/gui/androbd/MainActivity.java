@@ -121,7 +121,8 @@ public class MainActivity extends PluginManager
         SharedPreferences.OnSharedPreferenceChangeListener,
         AbsListView.MultiChoiceModeListener,
         LotoTWebBridge.Host,
-        LotoTBluetoothManager.Listener
+        LotoTBluetoothManager.Listener,
+        LotoTBuiltinServices.Listener
 {
     /**
      * Key names for preferences
@@ -182,6 +183,7 @@ public class MainActivity extends PluginManager
     private static final int REQUEST_NOTIFICATIONS = 9;
     private static final int REQUEST_LOTOT_BT_PERMISSIONS = 10;
     private static final int REQUEST_LOTOT_ENABLE_BT = 11;
+    private static final int REQUEST_LOTOT_LOCATION_PERMISSION = 12;
     /**
      * app exit parameters
      */
@@ -304,6 +306,7 @@ public class MainActivity extends PluginManager
     private boolean mLototReady = false;
     private String mLototStatus = "offline";
     private LotoTBluetoothManager mLototBluetoothManager;
+    private LotoTBuiltinServices mLototBuiltins;
     private String mLototBluetoothMedium = LotoTBluetoothManager.MEDIUM_CLASSIC;
     private String mLototBluetoothError = null;
     private String mLototPendingBluetoothAction = null;
@@ -671,6 +674,7 @@ public class MainActivity extends PluginManager
         // get list view
         mListView = getWindow().getLayoutInflater().inflate(R.layout.obd_list, null);
         mLototBluetoothManager = new LotoTBluetoothManager(this, this);
+        mLototBuiltins = new LotoTBuiltinServices(this, prefs, this);
         initializeLotoTDashboard();
         applyLotoTSystemBars(prefs.getString(PREF_LOTOT_THEME, "dark"));
 
@@ -681,6 +685,8 @@ public class MainActivity extends PluginManager
 
         // update all settings from preferences
         onSharedPreferenceChanged(prefs, null);
+
+        if (mLototBuiltins != null) mLototBuiltins.start();
 
         // set up logging system
         setupLoggers();
@@ -877,6 +883,12 @@ public class MainActivity extends PluginManager
                 mLototBluetoothError = "Autorisation Bluetooth refusée";
                 publishLotoTBluetoothState();
             }
+        } else if (requestCode == REQUEST_LOTOT_LOCATION_PERMISSION) {
+            if (mLototBuiltins != null)
+            {
+                mLototBuiltins.onLocationPermissionResult();
+                publishLotoTBuiltinState();
+            }
         }
     }
 
@@ -974,6 +986,11 @@ public class MainActivity extends PluginManager
             mLototBluetoothManager.destroy();
             mLototBluetoothManager = null;
         }
+        if (mLototBuiltins != null)
+        {
+            mLototBuiltins.stop();
+            mLototBuiltins = null;
+        }
 
         if (mLototWebView != null)
         {
@@ -1060,6 +1077,7 @@ public class MainActivity extends PluginManager
         publishLotoTStatus();
         publishLotoTTelemetry();
         publishLotoTBluetoothState();
+        publishLotoTBuiltinState();
     }
 
     @Override
@@ -1128,6 +1146,44 @@ public class MainActivity extends PluginManager
         if (prefs == null) prefs = PreferenceManager.getDefaultSharedPreferences(this);
         prefs.edit().putString(PREF_LOTOT_THEME, normalized).apply();
         applyLotoTSystemBars(normalized);
+    }
+
+    @Override
+    public void updateLotoTBuiltinConfig(String json)
+    {
+        if (mLototBuiltins == null) return;
+        try
+        {
+            boolean needsPermission = mLototBuiltins.applyConfig(json);
+            publishLotoTBuiltinState();
+            publishLotoTTelemetry();
+            if (needsPermission) requestLotoTLocationPermission();
+        }
+        catch (Exception ex)
+        {
+            log.log(Level.WARNING, "Invalid built-in services configuration", ex);
+        }
+    }
+
+    @Override
+    public void requestLotoTLocationPermission()
+    {
+        if (mLototBuiltins == null) return;
+        if (!mLototBuiltins.needsLocationPermission())
+        {
+            mLototBuiltins.onLocationPermissionResult();
+            return;
+        }
+        ActivityCompat.requestPermissions(this,
+                new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION},
+                REQUEST_LOTOT_LOCATION_PERMISSION);
+    }
+
+    @Override
+    public void publishLotoTMqttNow()
+    {
+        if (mLototBuiltins != null) mLototBuiltins.publishMqttNow();
     }
 
     private void applyLotoTSystemBars(String theme)
@@ -1368,6 +1424,34 @@ public class MainActivity extends PluginManager
         }
     }
 
+    private void publishLotoTBuiltinState()
+    {
+        if (!mLototReady || mLototWebView == null || mLototBuiltins == null) return;
+        try
+        {
+            JSONObject state = mLototBuiltins.getState();
+            String encoded = JSONObject.quote(state.toString());
+            mLototWebView.evaluateJavascript(
+                    "window.lototSetBuiltinState && window.lototSetBuiltinState(" + encoded + ");",
+                    null);
+            if (BuildConfig.DEBUG) Log.d("LotoTBuiltins", state.toString());
+        }
+        catch (Exception ex)
+        {
+            log.log(Level.FINER, "Unable to publish LotoT built-in state", ex);
+        }
+    }
+
+    @Override
+    public void onBuiltinServicesStateChanged()
+    {
+        runOnUiThread(() ->
+        {
+            publishLotoTBuiltinState();
+            publishLotoTTelemetry();
+        });
+    }
+
     private void setLotoTStatus(String status)
     {
         mLototStatus = status;
@@ -1423,10 +1507,10 @@ public class MainActivity extends PluginManager
     private JSONArray getLotoTSignals()
     {
         JSONArray signals = new JSONArray();
-        if (!"live".equals(mLototStatus) && !"demo".equals(mLototStatus))
-            return signals;
         try
         {
+            if ("live".equals(mLototStatus) || "demo".equals(mLototStatus))
+            {
             ArrayList<EcuDataItem> updatedItems = new ArrayList<>();
             for (EcuDataItem item : EcuDataItems.byMnemonic.values())
             {
@@ -1490,6 +1574,8 @@ public class MainActivity extends PluginManager
                 }
                 signals.put(signal);
             }
+            }
+            if (mLototBuiltins != null) mLototBuiltins.appendSignals(signals);
         }
         catch (Exception ex)
         {
@@ -1558,6 +1644,7 @@ public class MainActivity extends PluginManager
             payload.put("mode", mLototStatus);
             payload.put("readings", readings);
             JSONArray signals = getLotoTSignals();
+            if (mLototBuiltins != null) mLototBuiltins.updateTelemetry(signals);
             payload.put("signals", signals);
             payload.put("signal_count", signals.length());
             if (BuildConfig.DEBUG && capturedAt - mLototLastDebugLog >= 1000L)
@@ -2521,6 +2608,10 @@ public class MainActivity extends PluginManager
     private void updateMenuVisibility()
     {
         if (menu == null) return;
+
+        // MQTT, GPS and phone sensors are native LotoT services now. Do not
+        // expose AndrOBD's legacy external-plugin manager in the user flow.
+        setMenuItemVisible(R.id.plugin_manager, false);
         
         switch (mode)
         {

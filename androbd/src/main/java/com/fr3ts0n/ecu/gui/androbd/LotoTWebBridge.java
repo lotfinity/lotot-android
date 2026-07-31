@@ -23,6 +23,9 @@ final class LotoTWebBridge
         void connectLotoTBluetoothDevice(String address, String medium);
         void disconnectLotoTBluetooth();
         void setLotoTTheme(String theme);
+        void updateLotoTBuiltinConfig(String json);
+        void requestLotoTLocationPermission();
+        void publishLotoTMqttNow();
         void openLotoTNativeTools();
     }
 
@@ -69,6 +72,24 @@ final class LotoTWebBridge
     public void setTheme(String theme)
     {
         activity.runOnUiThread(() -> host.setLotoTTheme(theme));
+    }
+
+    @JavascriptInterface
+    public void configureBuiltins(String json)
+    {
+        activity.runOnUiThread(() -> host.updateLotoTBuiltinConfig(json));
+    }
+
+    @JavascriptInterface
+    public void requestLocationPermission()
+    {
+        activity.runOnUiThread(host::requestLotoTLocationPermission);
+    }
+
+    @JavascriptInterface
+    public void publishMqttNow()
+    {
+        activity.runOnUiThread(host::publishLotoTMqttNow);
     }
 
     @JavascriptInterface
