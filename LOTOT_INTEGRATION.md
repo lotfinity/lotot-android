@@ -171,3 +171,24 @@ under `LotoT/devices/<device_uid>/snapshot`. New configurations default to QoS
 1 with retained messages disabled, preventing stale telemetry replay. Snapshot
 payloads include `external_id`, `device_uid`, app version and publisher metadata
 for idempotent Django ingestion and auditing.
+
+## Dense health cockpit and domain-aware charts (0.7.0 spike)
+
+The first mobile viewport is now a compact vehicle-health cockpit rather than a
+large adapter card and decorative speedometer. Connection identity is reduced to
+a status strip, while speed, RPM, engine load, throttle, torque, threshold
+health, coolant, oil, voltage, fuel, intake and pressure are visible without
+scrolling on a typical phone.
+
+The PID explorer uses visualization types matched to the signal domain:
+
+- temperature cards show a thermal band with explicit normal, elevated and
+  critical regions progressing from green through orange to red;
+- voltage cards show the normal charging window and abnormal extremes;
+- percentage, fuel, pressure and airflow cards use domain-specific range bars;
+- engine and driving values retain time-series sparklines.
+
+Live threshold checks surface coolant/oil heat, voltage, low fuel, MIL/fault
+codes and abnormal fuel trims in the overview before the user opens the full PID
+explorer. These are local cockpit warnings; Django remains the authoritative
+source for persisted health scores, alerts and predictions.

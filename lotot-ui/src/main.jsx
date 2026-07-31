@@ -34,34 +34,70 @@ const EMPTY_BUILTINS = {
 };
 
 const LABEL_OVERRIDES = {
-  vehicle_speed: 'Vitesse véhicule',
-  engine_speed: 'Régime moteur',
-  engine_load_calculated: 'Charge moteur',
-  engine_load: 'Charge moteur absolue',
-  coolant_temp: 'Température liquide',
-  engine_coolant_temperature: 'Température liquide moteur',
-  ecu_voltage: 'Tension ECU',
-  mass_airflow: 'Débit d’air MAF',
-  engine_fuel_rate: 'Débit carburant',
-  intake_air_temperature: 'Température admission',
-  intake_manifold_pressure: 'Pression admission',
-  fuel_tank_level_input: 'Niveau carburant',
-  fuel_level: 'Niveau carburant',
-  fuel_pressure: 'Pression carburant',
-  frp_relative: 'Pression rampe relative',
-  fuel_injection_timing: 'Avance injection',
-  timing_advance_cycle_1: 'Avance allumage',
-  seconds_since_engine_start: 'Temps moteur actif',
-  running_time: 'Temps moteur actif',
-  ignition_timing_advance_cyl1: 'Avance à l’allumage',
-  fuel_pressure_rel: 'Pression de rampe relative',
-  ethanol_fuel_percentage: 'Taux d’éthanol',
   number_fault_codes: 'Codes défaut détectés',
+  status_mil: 'Voyant moteur (MIL)',
+  status_component_test: 'Moniteur composants',
+  status_fuel_system: 'Moniteur système carburant',
+  status_ignition_monitoring: 'Surveillance allumage',
+  status_misfires: 'Moniteur ratés moteur',
+  status_ac_refrigerant_test: 'Moniteur climatisation',
+  status_catalyst_test: 'Moniteur catalyseur',
+  status_catalyst_test_nox_monitor: 'Moniteur catalyseur / NOx',
+  status_egr_system_test: 'Moniteur système EGR',
+  status_evaporative_system_test: 'Moniteur système EVAP',
+  status_oxygen_sensor_heater_test: 'Moniteur chauffage sonde O₂',
+  status_oxygen_sensor_test: 'Moniteur sonde O₂',
+  status_secondary_air_system_test: 'Moniteur air secondaire',
+  engine_load_calculated: 'Charge moteur calculée',
+  engine_load: 'Charge moteur absolue',
+  engine_coolant_temperature: 'Température liquide moteur',
+  coolant_temp: 'Température liquide moteur',
+  fuel_trim_short_b1: 'Correction carburant courte B1',
+  fuel_trim_long_b1: 'Correction carburant longue B1',
+  fuel_trim_short_b2: 'Correction carburant courte B2',
+  fuel_trim_long_b2: 'Correction carburant longue B2',
+  fuel_pressure: 'Pression carburant',
+  fuel_pressure_rel: 'Pression carburant relative',
+  frp_relative: 'Pression rampe relative',
+  intake_manifold_pressure: 'Pression collecteur admission',
+  engine_speed: 'Régime moteur',
+  vehicle_speed: 'Vitesse véhicule',
+  ignition_timing_advance_cyl1: 'Avance allumage cylindre 1',
+  timing_advance_cycle_1: 'Avance allumage',
+  intake_air_temperature: 'Température air admission',
+  mass_airflow: 'Débit d’air MAF',
+  throttle_position_abs: 'Position papillon absolue',
+  throttle_position_rel: 'Position papillon relative',
+  running_time: 'Temps moteur actif',
+  seconds_since_engine_start: 'Temps moteur actif',
+  fuel_level: 'Niveau carburant',
+  fuel_tank_level_input: 'Niveau carburant',
+  barometric_pressure: 'Pression atmosphérique',
+  ecu_voltage: 'Tension ECU',
+  module_voltage: 'Tension module',
+  ambient_air_temperature: 'Température extérieure',
+  ethanol_fuel_percentage: 'Taux d’éthanol',
+  accelerator_pedal_position: 'Position pédale accélérateur',
+  engine_oil_temperature: 'Température huile moteur',
+  fuel_injection_timing: 'Avance injection',
+  engine_fuel_rate: 'Débit carburant',
+  engine_torque_demand: 'Demande de couple moteur',
+  engine_torque: 'Couple moteur actuel',
+  engine_torque_reference: 'Couple moteur de référence',
+  GPS_LATITUDE: 'Latitude GPS',
+  GPS_LONGITUDE: 'Longitude GPS',
+  GPS_ALTITUDE: 'Altitude GPS',
+  GPS_BEARING: 'Cap GPS',
+  GPS_SPEED: 'Vitesse GPS',
+  ACC_X: 'Accélération latérale',
+  ACC_Y: 'Accélération longitudinale',
+  ACC_Z: 'Accélération verticale',
 };
 
 const CATEGORIES = [
   { id: 'all', label: 'Tout', icon: 'activity' },
   { id: 'favorites', label: 'Favoris', icon: 'star' },
+  { id: 'diagnostic', label: 'Diagnostic', icon: 'shield' },
   { id: 'engine', label: 'Moteur', icon: 'gauge' },
   { id: 'driving', label: 'Conduite', icon: 'car' },
   { id: 'temperature', label: 'Températures', icon: 'thermometer' },
@@ -70,6 +106,8 @@ const CATEGORIES = [
   { id: 'pressure', label: 'Pressions', icon: 'droplet' },
   { id: 'electrical', label: 'Électrique', icon: 'bolt' },
   { id: 'emissions', label: 'Émissions', icon: 'leaf' },
+  { id: 'location', label: 'GPS', icon: 'location' },
+  { id: 'motion', label: 'Mouvement', icon: 'phone' },
   { id: 'other', label: 'Autres', icon: 'grid' },
 ];
 
@@ -185,7 +223,11 @@ function signalLabel(signal) {
 }
 
 function categoryFor(signal) {
-  const text = `${signal?.mnemonic || ''} ${signal?.label || ''} ${signal?.unit || ''}`.toLowerCase();
+  const mnemonic = signal?.mnemonic || '';
+  const text = `${mnemonic} ${signal?.label || ''} ${signal?.unit || ''}`.toLowerCase();
+  if (signal?.source === 'gps' || /^GPS_/.test(mnemonic)) return 'location';
+  if (signal?.source === 'motion' || /^ACC_[XYZ]$/.test(mnemonic)) return 'motion';
+  if (/^status_|fault|number_fault|readiness|monitor/.test(text)) return 'diagnostic';
   if (/temp|temperature|coolant|therm/.test(text)) return 'temperature';
   if (/voltage|battery|electr/.test(text)) return 'electrical';
   if (/fuel|ethanol|injection|trim|tank/.test(text)) return 'fuel';
@@ -203,6 +245,85 @@ function ageLabel(timestamp, now) {
   if (age < 1000) return 'maintenant';
   if (age < 60000) return `${Math.floor(age / 1000)} s`;
   return `${Math.floor(age / 60000)} min`;
+}
+
+
+const TEMPERATURE_PROFILES = {
+  engine_coolant_temperature: { min: 0, max: 130, normalMin: 70, normalMax: 105, warningMax: 115, short: 'Liquide moteur' },
+  coolant_temp: { min: 0, max: 130, normalMin: 70, normalMax: 105, warningMax: 115, short: 'Liquide moteur' },
+  engine_oil_temperature: { min: 0, max: 150, normalMin: 70, normalMax: 110, warningMax: 125, short: 'Huile moteur' },
+  intake_air_temperature: { min: -20, max: 100, normalMin: -10, normalMax: 60, warningMax: 80, short: 'Air admission' },
+  ambient_air_temperature: { min: -30, max: 60, normalMin: -10, normalMax: 40, warningMax: 50, short: 'Air extérieur' },
+};
+
+function temperatureProfile(signal) {
+  const mnemonic = signal?.mnemonic || '';
+  if (TEMPERATURE_PROFILES[mnemonic]) return TEMPERATURE_PROFILES[mnemonic];
+  return { min: -20, max: 140, normalMin: 0, normalMax: 100, warningMax: 120, short: signalLabel(signal) };
+}
+
+function assessSignal(signal) {
+  if (!signal || !isNumericReading(signal.value)) return null;
+  const mnemonic = signal.mnemonic || '';
+  const value = Number(signal.value);
+  const absolute = Math.abs(value);
+  const issue = (level, message) => ({ level, message, signal });
+  if (mnemonic === 'number_fault_codes' && value > 0) return issue('danger', `${formatValue(value, 0)} code(s) défaut enregistré(s)`);
+  if (mnemonic === 'status_mil' && value > 0) return issue('danger', 'Voyant moteur allumé');
+  if (['engine_coolant_temperature', 'coolant_temp'].includes(mnemonic)) {
+    if (value > 115) return issue('danger', `Liquide moteur critique à ${formatValue(value, 0)} °C`);
+    if (value > 105) return issue('warning', `Liquide moteur élevé à ${formatValue(value, 0)} °C`);
+  }
+  if (mnemonic === 'engine_oil_temperature') {
+    if (value > 125) return issue('danger', `Huile moteur critique à ${formatValue(value, 0)} °C`);
+    if (value > 110) return issue('warning', `Huile moteur élevée à ${formatValue(value, 0)} °C`);
+  }
+  if (mnemonic === 'intake_air_temperature') {
+    if (value > 80) return issue('danger', `Air d’admission critique à ${formatValue(value, 0)} °C`);
+    if (value > 60) return issue('warning', `Air d’admission chaud à ${formatValue(value, 0)} °C`);
+  }
+  if (['ecu_voltage', 'module_voltage'].includes(mnemonic)) {
+    if (value < 11.8 || value > 15.2) return issue('danger', `Tension électrique anormale : ${formatValue(value, 2)} V`);
+    if (value < 12.3 || value > 14.8) return issue('warning', `Tension électrique à surveiller : ${formatValue(value, 2)} V`);
+  }
+  if (['fuel_level', 'fuel_tank_level_input'].includes(mnemonic)) {
+    if (value < 10) return issue('danger', `Réservoir presque vide : ${formatValue(value, 0)} %`);
+    if (value < 20) return issue('warning', `Niveau carburant bas : ${formatValue(value, 0)} %`);
+  }
+  if (/fuel_trim_(short|long)_b[12]/.test(mnemonic)) {
+    if (absolute > 25) return issue('danger', `${signalLabel(signal)} hors plage : ${formatValue(value, 1)} %`);
+    if (absolute > 15) return issue('warning', `${signalLabel(signal)} élevé : ${formatValue(value, 1)} %`);
+  }
+  return null;
+}
+
+function toneForTemperature(value, profile) {
+  if (!isNumericReading(value)) return 'unknown';
+  const numeric = Number(value);
+  if (numeric > profile.warningMax) return 'danger';
+  if (numeric > profile.normalMax) return 'warning';
+  if (numeric < profile.normalMin) return 'cold';
+  return 'normal';
+}
+
+function toneLabel(tone) {
+  return tone === 'danger' ? 'CRITIQUE' : tone === 'warning' ? 'ÉLEVÉ' : tone === 'cold' ? 'FROID' : tone === 'normal' ? 'NORMAL' : 'INDISPONIBLE';
+}
+
+function toneForVoltage(value) {
+  if (!isNumericReading(value)) return 'unknown';
+  const numeric = Number(value);
+  if (numeric < 11.8 || numeric > 15.2) return 'danger';
+  if (numeric < 12.3 || numeric > 14.8) return 'warning';
+  return 'normal';
+}
+
+function toneForFuel(value) {
+  if (!isNumericReading(value)) return 'unknown';
+  const numeric = Number(value);
+  if (numeric < 10) return 'danger';
+  if (numeric < 20) return 'warning';
+  return 'normal';
 }
 
 function Icon({ name }) {
@@ -262,7 +383,7 @@ function QuickMetric({ label, value, unit, icon }) {
   );
 }
 
-function Sparkline({ values = [] }) {
+function Sparkline({ values = [], tone = 'accent' }) {
   const numeric = values.filter(isNumericReading).map(Number);
   if (numeric.length < 2) return <div className="sparkline-placeholder"/>;
   const min = Math.min(...numeric);
@@ -273,28 +394,72 @@ function Sparkline({ values = [] }) {
     const y = 28 - ((value - min) / spread * 24);
     return `${x},${y}`;
   }).join(' ');
-  return <svg className="sparkline" viewBox="0 0 100 32" preserveAspectRatio="none"><polyline points={points}/></svg>;
+  return <svg className={`sparkline sparkline-${tone}`} viewBox="0 0 100 32" preserveAspectRatio="none"><polyline points={points}/></svg>;
+}
+
+function TemperatureBand({ signal, historyValues }) {
+  const profile = temperatureProfile(signal);
+  const value = isNumericReading(signal.value) ? Number(signal.value) : null;
+  const position = value === null ? 0 : (clamp(value, profile.min, profile.max) - profile.min) / (profile.max - profile.min) * 100;
+  const normalStart = (profile.normalMin - profile.min) / (profile.max - profile.min) * 100;
+  const normalEnd = (profile.normalMax - profile.min) / (profile.max - profile.min) * 100;
+  const warningEnd = (profile.warningMax - profile.min) / (profile.max - profile.min) * 100;
+  const tone = toneForTemperature(value, profile);
+  return (
+    <div className={`temperature-chart tone-${tone}`}>
+      <div className="temperature-status"><span>{toneLabel(tone)}</span><small>Normal {profile.normalMin}–{profile.normalMax} °C</small></div>
+      <div className="temperature-track" style={{ '--marker': `${position}%`, '--normal-start': `${normalStart}%`, '--normal-end': `${normalEnd}%`, '--warning-end': `${warningEnd}%` }}>
+        <i className="normal-zone"/><b className="temperature-marker"/>
+      </div>
+      <div className="temperature-labels"><span>{profile.min}°</span><span>{profile.normalMax}° normal</span><span>{profile.warningMax}° haut</span><span>{profile.max}°</span></div>
+      <Sparkline values={historyValues} tone={tone === 'danger' ? 'danger' : tone === 'warning' ? 'warning' : 'temperature'}/>
+    </div>
+  );
+}
+
+function VoltageBand({ signal, historyValues }) {
+  const value = isNumericReading(signal.value) ? Number(signal.value) : null;
+  const min = 10; const max = 16;
+  const position = value === null ? 0 : (clamp(value, min, max) - min) / (max - min) * 100;
+  const tone = value === null ? 'unknown' : value < 11.8 || value > 15.2 ? 'danger' : value < 12.3 || value > 14.8 ? 'warning' : 'normal';
+  return <div className={`voltage-chart tone-${tone}`}><div className="voltage-track" style={{ '--marker': `${position}%` }}><b/></div><div className="voltage-labels"><span>10 V</span><span>12.3–14.8 V normal</span><span>16 V</span></div><Sparkline values={historyValues} tone={tone === 'danger' ? 'danger' : tone === 'warning' ? 'warning' : 'electrical'}/></div>;
+}
+
+function RangeChart({ signal, historyValues, category }) {
+  const value = isNumericReading(signal.value) ? Number(signal.value) : null;
+  const unit = signal.unit || '';
+  const percentLike = unit === '%' || /level|load|throttle|pedal|trim|torque/.test(signal.mnemonic || '');
+  const min = percentLike ? (/trim/.test(signal.mnemonic || '') ? -100 : 0) : isNumericReading(signal.min) ? Number(signal.min) : Math.min(0, value || 0);
+  const max = percentLike ? 100 : isNumericReading(signal.max) && Number(signal.max) > min ? Number(signal.max) : Math.max(1, value || 1);
+  const progress = value === null ? 0 : (clamp(value, min, max) - min) / (max - min) * 100;
+  return <div className={`range-chart range-${category}`}><div className="range-track"><i style={{ width: `${progress}%` }}/><b style={{ left: `${progress}%` }}/></div><div className="range-labels"><span>{formatValue(min)}</span><span>{formatValue(max)} {unit}</span></div><Sparkline values={historyValues} tone={category}/></div>;
+}
+
+function SignalVisualization({ signal, historyValues }) {
+  const category = categoryFor(signal);
+  if (category === 'temperature') return <TemperatureBand signal={signal} historyValues={historyValues}/>;
+  if (category === 'electrical' && /voltage/.test(signal.mnemonic || '')) return <VoltageBand signal={signal} historyValues={historyValues}/>;
+  if (['fuel', 'pressure', 'air'].includes(category) || signal.unit === '%') return <RangeChart signal={signal} historyValues={historyValues} category={category}/>;
+  return <Sparkline values={historyValues} tone={category}/>;
 }
 
 function SignalCard({ signal, favorite, onToggleFavorite, history, now }) {
   const key = signalKey(signal);
   const numeric = isNumericReading(signal.value);
-  const min = isNumericReading(signal.min) ? Number(signal.min) : null;
-  const max = isNumericReading(signal.max) ? Number(signal.max) : null;
-  const hasRange = numeric && min !== null && max !== null && max > min;
-  const progress = hasRange ? (clamp(signal.value, min, max) - min) / (max - min) * 100 : null;
   const historyValues = history[key] || [];
   const previous = historyValues.length > 1 ? Number(historyValues[historyValues.length - 2]) : null;
   const current = numeric ? Number(signal.value) : null;
   const trend = previous === null || current === null || Math.abs(current - previous) < 0.0001
     ? 'steady'
     : current > previous ? 'up' : 'down';
+  const assessment = assessSignal(signal);
+  const category = categoryFor(signal);
 
   return (
-    <article className="signal-card">
+    <article className={`signal-card category-${category} ${assessment ? `has-${assessment.level}` : ''}`}>
       <header>
         <div>
-          <span>{CATEGORIES.find((category) => category.id === categoryFor(signal))?.label || 'Autres'}</span>
+          <span>{CATEGORIES.find((item) => item.id === category)?.label || 'Autres'}</span>
           <h3>{signalLabel(signal)}</h3>
         </div>
         <button type="button" className={favorite ? 'favorite-button is-active' : 'favorite-button'} onClick={() => onToggleFavorite(key)} aria-label={favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}>
@@ -305,13 +470,59 @@ function SignalCard({ signal, favorite, onToggleFavorite, history, now }) {
         <div className="signal-value"><strong>{formatValue(signal.value)}</strong><span>{signal.unit || ''}</span></div>
         <span className={`trend trend-${trend}`}>{trend === 'up' ? '↑' : trend === 'down' ? '↓' : '—'}</span>
       </div>
-      <Sparkline values={historyValues}/>
-      {progress !== null && <div className="signal-progress"><i style={{ width: `${progress}%` }}/></div>}
+      {assessment && <div className={`signal-assessment ${assessment.level}`}>{assessment.message}</div>}
+      <SignalVisualization signal={signal} historyValues={historyValues}/>
       <footer>
         <code>{signal.source ? `${signal.source === 'gps' ? 'GPS intégré' : signal.source === 'motion' ? 'Capteur téléphone' : signal.source} · ${signal.mnemonic || 'capteur'}` : `PID ${Number(signal.pid || 0).toString(16).toUpperCase().padStart(2, '0')} · ${signal.mnemonic || 'capteur'}`}</code>
         <span><Icon name="clock"/>{ageLabel(signal.updated_at, now)}</span>
       </footer>
     </article>
+  );
+}
+
+function OverviewMetric({ label, value, unit, icon, tone = 'neutral', detail }) {
+  return <article className={`overview-metric tone-${tone}`}><span><Icon name={icon}/></span><div><small>{label}</small><strong>{formatValue(value)} <em>{unit}</em></strong>{detail && <p>{detail}</p>}</div></article>;
+}
+
+function DriveOverview({ readings, valueOf, historyOf }) {
+  const speed = readings.vehicle_speed;
+  const rpm = readings.engine_rpm;
+  const load = readings.engine_load;
+  const throttle = valueOf('accelerator_pedal_position', 'throttle_position_rel', 'throttle_position_abs');
+  const torque = valueOf('engine_torque');
+  const speedProgress = isNumericReading(speed) ? clamp(speed, 0, 240) / 240 * 100 : 0;
+  const rpmProgress = isNumericReading(rpm) ? clamp(rpm, 0, 7000) / 7000 * 100 : 0;
+  return (
+    <section className="drive-overview">
+      <header><div><span>CONDUITE</span><strong>En temps réel</strong></div><Icon name="gauge"/></header>
+      <div className="drive-main-values">
+        <div className="speed-value"><strong>{formatValue(speed, 0)}</strong><span>km/h</span></div>
+        <div className="rpm-value"><small>RÉGIME</small><strong>{formatValue(rpm, 0)}</strong><span>tr/min</span></div>
+      </div>
+      <div className="drive-bars">
+        <div><span>Vitesse</span><i><b style={{ width: `${speedProgress}%` }}/></i></div>
+        <div><span>RPM</span><i className="rpm-scale"><b style={{ width: `${rpmProgress}%` }}/></i></div>
+      </div>
+      <Sparkline values={historyOf('vehicle_speed')} tone="driving"/>
+      <footer><span><small>CHARGE</small><strong>{formatValue(load, 0)}%</strong></span><span><small>ACCÉL.</small><strong>{formatValue(throttle, 0)}%</strong></span><span><small>COUPLE</small><strong>{formatValue(torque, 0)}%</strong></span></footer>
+    </section>
+  );
+}
+
+function HealthOverview({ alerts, signals, lastCapturedAt, now }) {
+  const dangerCount = alerts.filter((item) => item.level === 'danger').length;
+  const warningCount = alerts.filter((item) => item.level === 'warning').length;
+  const tone = dangerCount ? 'danger' : warningCount ? 'warning' : signals.length ? 'normal' : 'unknown';
+  const primary = alerts.find((item) => item.level === 'danger') || alerts[0];
+  const title = dangerCount ? 'Action requise' : warningCount ? 'À surveiller' : signals.length ? 'Paramètres stables' : 'En attente';
+  return (
+    <section className={`health-overview tone-${tone}`}>
+      <header><span><Icon name="shield"/></span><i/></header>
+      <strong>{title}</strong>
+      <p>{primary?.message || (signals.length ? `${signals.length} signaux analysés en direct` : 'Connectez le véhicule pour analyser les seuils.')}</p>
+      <div className="health-counts"><span><b>{dangerCount}</b><small>critique</small></span><span><b>{warningCount}</b><small>à suivre</small></span></div>
+      <footer>{ageLabel(lastCapturedAt, now)}</footer>
+    </section>
   );
 }
 
@@ -645,6 +856,20 @@ function App() {
     return null;
   };
 
+
+  const historyOf = (...mnemonics) => {
+    for (const mnemonic of mnemonics) {
+      const signal = signalMap.get(mnemonic);
+      if (signal) return history[signalKey(signal)] || [];
+    }
+    return [];
+  };
+
+  const liveAlerts = useMemo(() => signals.map(assessSignal).filter(Boolean).sort((a, b) => {
+    const rank = { danger: 2, warning: 1 };
+    return (rank[b.level] || 0) - (rank[a.level] || 0);
+  }), [signals]);
+
   const categoryCounts = useMemo(() => signals.reduce((counts, signal) => {
     const signalCategory = categoryFor(signal);
     counts[signalCategory] = (counts[signalCategory] || 0) + 1;
@@ -710,46 +935,32 @@ function App() {
         <button className="theme-toggle" type="button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Activer le thème clair' : 'Activer le thème sombre'}><Icon name={theme === 'dark' ? 'sun' : 'moon'}/></button>
       </header>
 
-      <section className="session-strip">
-        <div><Icon name="activity"/><span><strong>{signals.length}</strong> capteurs</span></div>
-        <div><Icon name="clock"/><span>{fluxLabel}</span></div>
-        <div><Icon name="bluetooth"/><span>{connected?.name || (status === 'lost' ? 'Connexion perdue' : 'Aucun adaptateur')}</span></div>
+      <section className={`connection-summary ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`}>
+        <button type="button" onClick={connectionAction} disabled={!nativeAvailable}>
+          <span className="connection-icon"><Icon name={state.lost ? 'unlink' : connected ? 'link' : 'bluetooth'}/></span>
+          <span className="connection-copy"><small>{state.label}</small><strong>{connected?.name || (state.lost ? lastDevice?.name || 'Connexion perdue' : 'Connecter un adaptateur')}</strong></span>
+          <span className="connection-meta"><em>{signals.length} signaux</em><small>{fluxLabel}</small></span>
+          <Icon name="chevron"/>
+        </button>
       </section>
 
-      <section className={`vehicle-card ${connected ? 'is-connected' : ''} ${status === 'connecting' ? 'is-connecting' : ''} ${status === 'lost' ? 'is-lost' : ''}`}>
-        <div>
-          <span className="eyebrow">{connected ? 'ADAPTATEUR CONNECTÉ' : status === 'connecting' ? 'CONNEXION EN COURS' : status === 'lost' ? 'CONNEXION PERDUE' : 'AUCUN ADAPTATEUR'}</span>
-          <h1>{visibleDevice ? visibleDevice.name : 'Connectez votre boîtier OBD'}</h1>
-          <p>{visibleDevice ? `${mediumLabel(visibleDevice.medium)} · ${visibleDevice.address}` : 'Recherchez votre adaptateur Bluetooth directement depuis LotoT.'}</p>
-          <button className="vehicle-connect" type="button" onClick={connectionAction} disabled={!nativeAvailable}><Icon name={status === 'lost' ? 'refresh' : 'bluetooth'}/><span>{connected ? 'Gérer la connexion' : status === 'lost' && lastDevice ? 'Reconnecter cet adaptateur' : 'Choisir un appareil'}</span><Icon name="chevron"/></button>
-        </div>
-        <div className="vehicle-symbol"><Icon name={connected ? 'link' : status === 'connecting' ? 'bluetooth' : status === 'lost' ? 'unlink' : 'car'}/></div>
+      <section className="overview-dashboard">
+        <DriveOverview readings={readings} valueOf={valueOf} historyOf={historyOf}/>
+        <HealthOverview alerts={liveAlerts} signals={signals} lastCapturedAt={lastCapturedAt} now={now}/>
       </section>
 
-      <section className="speed-card">
-        <div className="card-title"><span>CONDUITE EN DIRECT</span><Icon name="gauge"/></div>
-        <div className="speed-ring" style={{ '--angle': `${speedProgress}deg` }}>
-          <div className="speed-core"><small>VITESSE</small><strong>{formatValue(readings.vehicle_speed, 0)}</strong><span>km/h</span></div>
-        </div>
-        <div className="rpm-row"><span>Régime moteur</span><strong>{formatValue(readings.engine_rpm, 0)} <small>tr/min</small></strong></div>
+      <section className="critical-overview">
+        <OverviewMetric label="LIQUIDE" value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="thermometer" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} detail="70–105 normal"/>
+        <OverviewMetric label="HUILE" value={valueOf('engine_oil_temperature')} unit="°C" icon="thermometer" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} detail="70–110 normal"/>
+        <OverviewMetric label="TENSION" value={readings.module_voltage ?? valueOf('ecu_voltage')} unit="V" icon="bolt" tone={toneForVoltage(readings.module_voltage ?? valueOf('ecu_voltage'))} detail="12.3–14.8 V"/>
+        <OverviewMetric label="CARBURANT" value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="fuel" tone={toneForFuel(valueOf('fuel_level', 'fuel_tank_level_input'))} detail={`${formatValue(valueOf('engine_fuel_rate'), 1)} L/h`}/>
+        <OverviewMetric label="ADMISSION" value={valueOf('intake_manifold_pressure')} unit="kPa" icon="wind" detail={`${formatValue(valueOf('intake_air_temperature'), 0)} °C`}/>
+        <OverviewMetric label="PRESSION" value={valueOf('fuel_pressure')} unit="kPa" icon="droplet" detail={`MAF ${formatValue(readings.maf, 1)} g/s`}/>
       </section>
 
-      <section className="metric-grid">
-        <RingGauge label="CHARGE MOTEUR" value={readings.engine_load} unit="%" max={100} icon="gauge" />
-        <RingGauge label="BATTERIE" value={readings.module_voltage} unit="V" max={16} decimals={2} icon="bolt" />
-        <RingGauge label="DÉBIT D’AIR" value={readings.maf} unit="g/s" max={50} decimals={1} icon="wind" />
-      </section>
-
-      <section className="quick-grid">
-        <QuickMetric label="LIQUIDE" value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="thermometer"/>
-        <QuickMetric label="CARBURANT" value={valueOf('engine_fuel_rate')} unit="L/h" icon="fuel"/>
-        <QuickMetric label="ADMISSION" value={valueOf('intake_manifold_pressure')} unit="kPa" icon="droplet"/>
-        <QuickMetric label="RÉSERVOIR" value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="fuel"/>
-      </section>
-
-      <section className="health-card">
+      <section className={`health-card compact-health ${liveAlerts.length ? 'has-alerts' : ''}`}>
         <span className="health-icon"><Icon name="shield"/></span>
-        <div><strong>{diagnosticCopy.title}</strong><p>{diagnosticCopy.body}</p></div>
+        <div><strong>{liveAlerts.length ? `${liveAlerts.length} point${liveAlerts.length > 1 ? 's' : ''} à vérifier` : diagnosticCopy.title}</strong><p>{liveAlerts[0]?.message || diagnosticCopy.body}</p></div>
       </section>
 
       <section className="builtins-panel">
