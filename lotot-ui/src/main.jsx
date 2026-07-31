@@ -930,7 +930,10 @@ function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="brand">Loto<span>T</span></div>
+        <div className="brand" aria-label="LotoT">
+          <img className="brand-logo brand-logo-dark" src="./logo-dark.png" alt="" />
+          <img className="brand-logo brand-logo-light" src="./logo-light.png" alt="" />
+        </div>
         <button className={`status-pill ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`} type="button" onClick={openConnection}><i/><span>{state.label}</span></button>
         <button className="theme-toggle" type="button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Activer le thème clair' : 'Activer le thème sombre'}><Icon name={theme === 'dark' ? 'sun' : 'moon'}/></button>
       </header>

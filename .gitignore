@@ -9,3 +9,5 @@
 **/*.iml
 *~
 local.properties
+**/node_modules/
+**/dist/

@@ -22,6 +22,16 @@
 
     <style name="AppTheme.Dark" parent="AppTheme" />
 
+    <style name="AppTheme.Splash" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">@color/lotot_background</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:navigationBarColor">@color/lotot_background</item>
+        <item name="android:statusBarColor">@color/lotot_background</item>
+    </style>
+
     <style name="AppTheme.Light" parent="Theme.Material3.Light">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowBackground">@color/lotot_light_background</item>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme.Splash" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:windowSplashScreenBackground">@color/lotot_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/lotot_logo_foreground</item>
+        <item name="android:windowSplashScreenAnimationDuration">300</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:navigationBarColor">@color/lotot_background</item>
+        <item name="android:statusBarColor">@color/lotot_background</item>
+    </style>
+</resources>
