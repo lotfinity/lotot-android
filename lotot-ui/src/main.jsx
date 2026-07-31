@@ -29,7 +29,7 @@ const EMPTY_BUILTINS = {
   sensors: { enabled: true, available: true, status: 'waiting', last_update: 0, error: null },
   mqtt: {
     enabled: false, status: 'disabled', broker: null, last_publish: 0, published_messages: 0, error: null,
-    config: { protocol: 'tcp://', host: '', port: 1883, username: '', password_set: false, client_id: '', prefix: 'LotoT/', qos: 0, retain: true, interval_seconds: 5, selected_signals: [] },
+    config: { protocol: 'tcp://', host: '', port: 1883, username: '', password_set: false, device_uid: '', client_id: '', prefix: '', qos: 1, retain: false, interval_seconds: 5, selected_signals: [] },
   },
 };
 
@@ -458,8 +458,8 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
       host: mqtt.host.trim(),
       port: Number(mqtt.port) || 1883,
       username: mqtt.username,
+      device_uid: mqtt.device_uid.trim(),
       client_id: mqtt.client_id,
-      prefix: mqtt.prefix,
       qos: Number(mqtt.qos) || 0,
       retain: Boolean(mqtt.retain),
       interval_seconds: Math.max(1, Number(mqtt.interval_seconds) || 5),
@@ -498,12 +498,12 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
             <label className="is-wide"><span>Serveur MQTT</span><input value={mqtt.host} onChange={(event) => updateMqtt('host', event.target.value)} placeholder="mqtt.example.com"/></label>
             <label><span>Port</span><input type="number" value={mqtt.port} onChange={(event) => updateMqtt('port', event.target.value)} inputMode="numeric"/></label>
             <label><span>Intervalle</span><div className="input-unit"><input type="number" min="1" value={mqtt.interval_seconds} onChange={(event) => updateMqtt('interval_seconds', event.target.value)}/><em>s</em></div></label>
-            <label className="is-wide"><span>Préfixe des topics</span><input value={mqtt.prefix} onChange={(event) => updateMqtt('prefix', event.target.value)} placeholder="LotoT/vehicle/"/></label>
-            <label className="is-wide"><span>Identifiant client</span><input value={mqtt.client_id} onChange={(event) => updateMqtt('client_id', event.target.value)} placeholder="Généré automatiquement"/></label>
+            <label className="is-wide"><span>Identifiant appareil Django</span><input value={mqtt.device_uid} onChange={(event) => updateMqtt('device_uid', event.target.value)} placeholder="demo-obd-001" autoCapitalize="none"/><small className="field-hint">Topic : LotoT/devices/{mqtt.device_uid?.trim() || 'android-xxxxxx'}/snapshot</small></label>
+            <label className="is-wide"><span>Identifiant client MQTT</span><input value={mqtt.client_id} onChange={(event) => updateMqtt('client_id', event.target.value)} placeholder="Généré automatiquement"/></label>
             <label><span>Utilisateur</span><input value={mqtt.username} onChange={(event) => updateMqtt('username', event.target.value)} autoCapitalize="none"/></label>
             <label><span>Mot de passe</span><input type="password" value={mqtt.password} onChange={(event) => updateMqtt('password', event.target.value)} placeholder={mqtt.password_set ? 'Enregistré · laisser vide' : 'Facultatif'}/></label>
             <label><span>QoS</span><select value={mqtt.qos} onChange={(event) => updateMqtt('qos', event.target.value)}><option value="0">0 · rapide</option><option value="1">1 · confirmé</option><option value="2">2 · exactement une fois</option></select></label>
-            <SwitchRow checked={Boolean(mqtt.retain)} onChange={(value) => updateMqtt('retain', value)} title="Messages retenus" description="Le broker conserve la dernière valeur de chaque topic."/>
+            <SwitchRow checked={Boolean(mqtt.retain)} onChange={(value) => updateMqtt('retain', value)} title="Messages retenus" description="Déconseillé pour la télémétrie live : peut rejouer une ancienne mesure."/>
           </div>
 
           <div className="signal-publish-head"><div><strong>Signaux publiés</strong><small>{selected.length ? `${selected.length} sélectionné(s)` : 'Tous les signaux live'}</small></div><button type="button" onClick={() => updateMqtt('selected_signals', [])}>TOUT PUBLIER</button></div>

@@ -30,8 +30,8 @@ final class LotoTBuiltinServices implements
     private static final String MQTT_PORT = "lotot_builtin_mqtt_port";
     private static final String MQTT_USERNAME = "lotot_builtin_mqtt_username";
     private static final String MQTT_PASSWORD = "lotot_builtin_mqtt_password";
+    private static final String MQTT_DEVICE_UID = "lotot_builtin_mqtt_device_uid";
     private static final String MQTT_CLIENT_ID = "lotot_builtin_mqtt_client_id";
-    private static final String MQTT_PREFIX = "lotot_builtin_mqtt_prefix";
     private static final String MQTT_QOS = "lotot_builtin_mqtt_qos";
     private static final String MQTT_RETAIN = "lotot_builtin_mqtt_retain";
     private static final String MQTT_INTERVAL = "lotot_builtin_mqtt_interval";
@@ -89,12 +89,12 @@ final class LotoTBuiltinServices implements
             putString(edit, MQTT_USERNAME, mqttPayload, "username");
             if (mqttPayload.has("password")) edit.putString(MQTT_PASSWORD,
                     mqttPayload.optString("password", ""));
+            putString(edit, MQTT_DEVICE_UID, mqttPayload, "device_uid");
             putString(edit, MQTT_CLIENT_ID, mqttPayload, "client_id");
-            putString(edit, MQTT_PREFIX, mqttPayload, "prefix");
             if (mqttPayload.has("qos")) edit.putInt(MQTT_QOS,
-                    mqttPayload.optInt("qos", 0));
+                    mqttPayload.optInt("qos", 1));
             if (mqttPayload.has("retain")) edit.putBoolean(MQTT_RETAIN,
-                    mqttPayload.optBoolean("retain", true));
+                    mqttPayload.optBoolean("retain", false));
             if (mqttPayload.has("interval_seconds")) edit.putInt(MQTT_INTERVAL,
                     mqttPayload.optInt("interval_seconds", 5));
             if (mqttPayload.has("selected_signals"))
@@ -166,10 +166,10 @@ final class LotoTBuiltinServices implements
         config.port = preferences.getInt(MQTT_PORT, 1883);
         config.username = preferences.getString(MQTT_USERNAME, "");
         config.password = preferences.getString(MQTT_PASSWORD, "");
+        config.deviceUid = preferences.getString(MQTT_DEVICE_UID, "");
         config.clientId = preferences.getString(MQTT_CLIENT_ID, "");
-        config.prefix = preferences.getString(MQTT_PREFIX, "LotoT/");
-        config.qos = preferences.getInt(MQTT_QOS, 0);
-        config.retain = preferences.getBoolean(MQTT_RETAIN, true);
+        config.qos = preferences.getInt(MQTT_QOS, 1);
+        config.retain = preferences.getBoolean(MQTT_RETAIN, false);
         config.intervalSeconds = preferences.getInt(MQTT_INTERVAL, 5);
         config.selectedSignals = new LinkedHashSet<>(preferences.getStringSet(
                 MQTT_SELECTED, new LinkedHashSet<>()));

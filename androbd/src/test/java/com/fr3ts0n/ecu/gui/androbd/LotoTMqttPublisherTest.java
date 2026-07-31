@@ -7,11 +7,12 @@ import static org.junit.Assert.assertEquals;
 public class LotoTMqttPublisherTest
 {
     @Test
-    public void prefixAlwaysHasSingleUsefulTrailingSeparator()
+    public void deviceUidProducesDjangoSnapshotTopicPrefix()
     {
-        assertEquals("LotoT/", LotoTMqttPublisher.normalizePrefix(""));
-        assertEquals("vehicle/42/", LotoTMqttPublisher.normalizePrefix("/vehicle/42"));
-        assertEquals("vehicle/42/", LotoTMqttPublisher.normalizePrefix("vehicle/42/"));
+        assertEquals("demo-obd-001", LotoTMqttPublisher.normalizeDeviceUid(" demo-obd-001 "));
+        assertEquals("android-bad-id", LotoTMqttPublisher.normalizeDeviceUid("android bad/id"));
+        assertEquals("LotoT/devices/demo-obd-001/",
+                LotoTMqttPublisher.topicPrefixForDevice("demo-obd-001"));
     }
 
     @Test

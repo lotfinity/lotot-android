@@ -34,10 +34,11 @@ final class LotoTMqttPublisher
         int port = 1883;
         String username = "";
         String password = "";
+        String deviceUid = "";
         String clientId = "";
-        String prefix = "LotoT/";
-        int qos;
-        boolean retain = true;
+        String prefix = "";
+        int qos = 1;
+        boolean retain = false;
         int intervalSeconds = 5;
         Set<String> selectedSignals = new LinkedHashSet<>();
 
@@ -50,6 +51,7 @@ final class LotoTMqttPublisher
             copy.port = port;
             copy.username = username;
             copy.password = password;
+            copy.deviceUid = deviceUid;
             copy.clientId = clientId;
             copy.prefix = prefix;
             copy.qos = qos;
@@ -63,6 +65,7 @@ final class LotoTMqttPublisher
     private final Listener listener;
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private final String fallbackClientId;
+    private final String fallbackDeviceUid;
     private Config config = new Config();
     private Map<String, String> latestValues = Collections.emptyMap();
     private MqttClient client;
@@ -83,6 +86,7 @@ final class LotoTMqttPublisher
         String suffix = androidId == null || androidId.length() < 6
                 ? "device" : androidId.substring(androidId.length() - 6);
         fallbackClientId = "LotoT-" + suffix;
+        fallbackDeviceUid = "android-" + suffix;
         executor.scheduleWithFixedDelay(this::tick, 1, 1, TimeUnit.SECONDS);
     }
 
@@ -92,9 +96,11 @@ final class LotoTMqttPublisher
         normalized.protocol = normalizeProtocol(normalized.protocol);
         normalized.host = safe(normalized.host);
         normalized.port = clamp(normalized.port, 1, 65535);
+        normalized.deviceUid = normalizeDeviceUid(normalized.deviceUid);
+        if (normalized.deviceUid.isEmpty()) normalized.deviceUid = fallbackDeviceUid;
         normalized.clientId = safe(normalized.clientId);
         if (normalized.clientId.isEmpty()) normalized.clientId = fallbackClientId;
-        normalized.prefix = normalizePrefix(normalized.prefix);
+        normalized.prefix = topicPrefixForDevice(normalized.deviceUid);
         normalized.qos = clamp(normalized.qos, 0, 2);
         normalized.intervalSeconds = clamp(normalized.intervalSeconds, 1, 3600);
         boolean endpointChanged = !buildBrokerUri(this.config).equals(buildBrokerUri(normalized))
@@ -196,6 +202,12 @@ final class LotoTMqttPublisher
             JSONObject snapshot = new JSONObject();
             long capturedAt = System.currentTimeMillis();
             snapshot.put("captured_at", capturedAt);
+            snapshot.put("external_id", "android-" + capturedAt);
+            snapshot.put("device_uid", current.deviceUid);
+            JSONObject metadata = new JSONObject();
+            metadata.put("app_version", BuildConfig.VERSION_NAME);
+            metadata.put("publisher", "lotot-android");
+            snapshot.put("metadata", metadata);
             JSONObject readings = new JSONObject();
             int sent = 0;
             for (Map.Entry<String, String> entry : values.entrySet())
@@ -283,6 +295,7 @@ final class LotoTMqttPublisher
         cfg.put("port", config.port);
         cfg.put("username", config.username);
         cfg.put("password_set", !safe(config.password).isEmpty());
+        cfg.put("device_uid", config.deviceUid);
         cfg.put("client_id", config.clientId);
         cfg.put("prefix", config.prefix);
         cfg.put("qos", config.qos);
@@ -322,11 +335,18 @@ final class LotoTMqttPublisher
         if (listener != null) listener.onMqttStateChanged();
     }
 
-    static String normalizePrefix(String prefix)
+    static String normalizeDeviceUid(String value)
     {
-        String normalized = safe(prefix).replaceAll("^/+", "");
-        if (normalized.isEmpty()) normalized = "LotoT/";
-        return normalized.endsWith("/") ? normalized : normalized + "/";
+        String normalized = safe(value).replaceAll("[^A-Za-z0-9._:-]+", "-")
+                .replaceAll("^-+|-+$", "");
+        return normalized.length() > 100 ? normalized.substring(0, 100) : normalized;
+    }
+
+    static String topicPrefixForDevice(String deviceUid)
+    {
+        String normalized = normalizeDeviceUid(deviceUid);
+        return normalized.isEmpty() ? "LotoT/devices/unknown/"
+                : "LotoT/devices/" + normalized + "/";
     }
 
     static String normalizeProtocol(String protocol)

@@ -163,3 +163,11 @@ signal snapshot can be placed into a Room-backed HTTP upload queue. In either
 case, Android keeps the 10 Hz local cockpit independent from the slower cloud
 transport and Django remains responsible for history, alerts, predictions and
 websocket fan-out.
+
+## Django MQTT device topics (0.6.0 spike)
+
+The built-in publisher now uses a stable `device_uid` and emits snapshots only
+under `LotoT/devices/<device_uid>/snapshot`. New configurations default to QoS
+1 with retained messages disabled, preventing stale telemetry replay. Snapshot
+payloads include `external_id`, `device_uid`, app version and publisher metadata
+for idempotent Django ingestion and auditing.
