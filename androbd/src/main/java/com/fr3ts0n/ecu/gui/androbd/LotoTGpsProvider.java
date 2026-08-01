@@ -5,7 +5,6 @@ package com.fr3ts0n.ecu.gui.androbd;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
-import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.location.Location;
@@ -13,7 +12,7 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
 
-import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import org.json.JSONObject;
 
@@ -21,7 +20,7 @@ final class LotoTGpsProvider implements LocationListener
 {
     interface Listener { void onGpsStateChanged(); }
 
-    private final Activity activity;
+    private final Context context;
     private final LotoTBuiltinSignalStore store;
     private final Listener listener;
     private final LocationManager locationManager;
@@ -31,12 +30,12 @@ final class LotoTGpsProvider implements LocationListener
     private String error;
     private long lastUpdateAt;
 
-    LotoTGpsProvider(Activity activity, LotoTBuiltinSignalStore store, Listener listener)
+    LotoTGpsProvider(Context context, LotoTBuiltinSignalStore store, Listener listener)
     {
-        this.activity = activity;
+        this.context = context.getApplicationContext();
         this.store = store;
         this.listener = listener;
-        locationManager = (LocationManager) activity.getSystemService(Context.LOCATION_SERVICE);
+        locationManager = (LocationManager) this.context.getSystemService(Context.LOCATION_SERVICE);
         store.define("GPS_LATITUDE", "Latitude GPS", "°", -90, 90, "gps");
         store.define("GPS_LONGITUDE", "Longitude GPS", "°", -180, 180, "gps");
         store.define("GPS_ALTITUDE", "Altitude GPS", "m", -500, 9000, "gps");
@@ -52,9 +51,9 @@ final class LotoTGpsProvider implements LocationListener
 
     private boolean hasPermission()
     {
-        return ActivityCompat.checkSelfPermission(activity,
+        return ContextCompat.checkSelfPermission(context,
                 Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                || ActivityCompat.checkSelfPermission(activity,
+                || ContextCompat.checkSelfPermission(context,
                 Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
     }
 

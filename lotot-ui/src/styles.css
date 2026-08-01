@@ -412,6 +412,23 @@ html[data-theme="light"] .tools-button { background: rgba(255,255,255,.72); }
 html[data-theme="light"] .app-footer { color: #7b8572; }
 
 /* Built-in GPS, motion and MQTT services */
+
+.gateway-runtime { min-height: 66px; margin: 0 0 9px; padding: 10px; display: grid; grid-template-columns: 36px minmax(0,1fr) auto; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.022); }
+.gateway-runtime > span { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 11px; background: rgba(202,255,0,.075); color: var(--accent); }
+.gateway-runtime > span svg { width: 17px; height: 17px; }
+.gateway-runtime small, .gateway-runtime strong, .gateway-runtime em { display: block; }
+.gateway-runtime small { color: var(--muted); font-size: 6px; font-weight: 900; letter-spacing: .1em; }
+.gateway-runtime strong { margin-top: 3px; font-size: 9px; }
+.gateway-runtime em { margin-top: 3px; color: var(--muted); font-size: 7px; font-style: normal; line-height: 1.35; }
+.gateway-runtime > b { min-width: 31px; padding: 7px 6px; border-radius: 9px; background: rgba(202,255,0,.07); color: var(--accent); font-size: 8px; text-align: center; }
+.gateway-runtime.queued { border-color: rgba(255,206,69,.25); }
+.gateway-runtime.queued > span, .gateway-runtime.queued > b { background: rgba(255,206,69,.08); color: var(--warning); }
+.gateway-runtime.syncing > span svg { animation: service-spin 1.4s linear infinite; }
+.gateway-security { margin: 0 0 10px; display: flex; align-items: flex-start; gap: 7px; color: var(--muted); font-size: 7px; line-height: 1.45; }
+.gateway-security svg { width: 12px; height: 12px; flex: 0 0 auto; color: var(--accent); }
+@keyframes service-spin { to { transform: rotate(360deg); } }
+html[data-theme="light"] .gateway-runtime { background: rgba(255,255,255,.72); }
+
 .builtins-panel {
   margin-top: 12px;
   padding: 14px;

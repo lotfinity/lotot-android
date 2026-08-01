@@ -28,7 +28,7 @@ const EMPTY_BUILTINS = {
   gps: { enabled: false, available: true, permission_granted: false, status: 'disabled', last_update: 0, error: null },
   sensors: { enabled: true, available: true, status: 'waiting', last_update: 0, error: null },
   mqtt: {
-    enabled: false, status: 'disabled', broker: null, last_publish: 0, published_messages: 0, error: null,
+    enabled: false, status: 'disabled', broker: null, last_publish: 0, last_attempt: 0, published_messages: 0, queue_depth: 0, queue_capacity: 10000, syncing_total: 0, syncing_remaining: 0, next_retry: 0, retry_count: 0, error: null,
     config: { protocol: 'tcp://', host: '', port: 1883, username: '', password_set: false, device_uid: '', client_id: '', prefix: '', qos: 1, retain: false, interval_seconds: 5, selected_signals: [] },
   },
 };
@@ -610,6 +610,9 @@ function ConnectionSheet({ open, onClose, bluetooth, medium, setMedium, onScan, 
 function serviceLabel(service, kind) {
   if (!service?.enabled) return 'DÉSACTIVÉ';
   if (service.status === 'active' || service.status === 'online') return 'ACTIF';
+  if (service.status === 'up_to_date') return 'À JOUR';
+  if (service.status === 'syncing') return 'SYNCHRONISATION';
+  if (service.status === 'queued') return 'HORS LIGNE · STOCKÉ';
   if (service.status === 'permission') return 'AUTORISATION';
   if (service.status === 'configuration') return 'À CONFIGURER';
   if (service.status === 'error' || service.status === 'unavailable') return 'ERREUR';
@@ -618,8 +621,8 @@ function serviceLabel(service, kind) {
 }
 
 function ServiceTile({ icon, title, service, kind, detail, onClick }) {
-  const healthy = ['active', 'online'].includes(service?.status);
-  const warning = ['permission', 'configuration', 'error', 'unavailable'].includes(service?.status);
+  const healthy = ['active', 'online', 'up_to_date'].includes(service?.status);
+  const warning = ['permission', 'configuration', 'error', 'unavailable', 'queued'].includes(service?.status);
   return (
     <button type="button" className={`service-tile ${healthy ? 'is-active' : ''} ${warning ? 'is-warning' : ''}`} onClick={onClick}>
       <span className="service-icon"><Icon name={icon}/></span>
@@ -702,7 +705,13 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
         </section>
 
         <section className="service-config-block mqtt-config-block">
-          <div className="service-config-title"><span><Icon name="cloud"/></span><div><strong>Publication MQTT intégrée</strong><small>Un topic par signal plus un snapshot JSON complet</small></div></div>
+          <div className="service-config-title"><span><Icon name="cloud"/></span><div><strong>Passerelle MQTT fiable</strong><small>Service permanent, file hors ligne et reprise automatique</small></div></div>
+          <div className={`gateway-runtime ${services.mqtt?.status || 'disabled'}`}>
+            <span><Icon name="shield"/></span>
+            <div><small>PASSERELLE DE FOND</small><strong>{services.foreground ? 'Service actif' : 'Démarrage…'}</strong><em>{services.mqtt?.queue_depth ? `${services.mqtt.queue_depth} relevé${services.mqtt.queue_depth === 1 ? '' : 's'} conservé${services.mqtt.queue_depth === 1 ? '' : 's'} sur le téléphone` : 'File locale vide · données à jour'}</em></div>
+            <b>{services.mqtt?.status === 'syncing' ? `${Math.max(0, (services.mqtt.syncing_total || 0) - (services.mqtt.syncing_remaining || 0))}/${services.mqtt.syncing_total || 0}` : services.mqtt?.queue_depth || 0}</b>
+          </div>
+          <p className="gateway-security"><Icon name="shield"/><span>Mot de passe protégé par Android Keystore · file SQLite limitée à {services.mqtt?.queue_capacity || 10000} relevés.</span></p>
           <SwitchRow checked={Boolean(mqtt.enabled)} onChange={(value) => updateMqtt('enabled', value)} title="Activer MQTT" description="Connexion automatique au broker lorsque des données sont disponibles."/>
           <div className="mqtt-form">
             <label><span>Protocole</span><select value={mqtt.protocol} onChange={(event) => updateMqtt('protocol', event.target.value)}><option value="tcp://">TCP</option><option value="ssl://">SSL/TLS</option><option value="ws://">WebSocket</option><option value="wss://">WebSocket sécurisé</option></select></label>
@@ -971,7 +980,7 @@ function App() {
         <div className="service-grid">
           <ServiceTile icon="location" title="POSITION GPS" service={services.gps} detail={services.gps?.last_update ? ageLabel(services.gps.last_update, now) : services.gps?.permission_granted ? 'Prêt à localiser' : 'Permission requise'} onClick={() => setServicesOpen(true)}/>
           <ServiceTile icon="phone" title="CAPTEURS TÉLÉPHONE" service={services.sensors} detail={services.sensors?.last_update ? ageLabel(services.sensors.last_update, now) : 'Accéléromètre natif'} onClick={() => setServicesOpen(true)}/>
-          <ServiceTile icon="cloud" title="SYNCHRONISATION MQTT" kind="mqtt" service={services.mqtt} detail={services.mqtt?.last_publish ? `Publié ${ageLabel(services.mqtt.last_publish, now)}` : services.mqtt?.broker || 'Broker non configuré'} onClick={() => setServicesOpen(true)}/>
+          <ServiceTile icon="cloud" title="PASSERELLE CLOUD" kind="mqtt" service={services.mqtt} detail={services.mqtt?.status === 'syncing' ? `${services.mqtt.syncing_remaining || 0} restant(s)` : services.mqtt?.queue_depth ? `${services.mqtt.queue_depth} relevé${services.mqtt.queue_depth === 1 ? '' : 's'} en attente` : services.mqtt?.last_publish ? `À jour · ${ageLabel(services.mqtt.last_publish, now)}` : services.mqtt?.broker || 'Broker non configuré'} onClick={() => setServicesOpen(true)}/>
         </div>
         <p className="builtins-note">Ces services font partie de LotoT. Aucun APK complémentaire ni système de plugin n’est requis.</p>
       </section>
@@ -1012,7 +1021,7 @@ function App() {
         <button className="tools-button" type="button" onClick={() => window.LotoTNative?.openNativeTools?.()} disabled={!nativeAvailable}><Icon name="tool"/><span>Diagnostics avancés AndrOBD</span><Icon name="chevron"/></button>
       </section>
 
-      <footer className="app-footer">GPL · Moteur AndrOBD · GPS, capteurs et MQTT intégrés · Interface LotoT</footer>
+      <footer className="app-footer">GPL · Moteur AndrOBD · Passerelle de fond · file hors ligne · Android Keystore · Interface LotoT</footer>
 
       <ConnectionSheet open={connectionOpen} onClose={() => setConnectionOpen(false)} bluetooth={bluetooth} medium={medium} setMedium={setMedium} onScan={(selectedMedium) => window.LotoTNative?.scanBluetooth?.(selectedMedium)} onConnect={connectDevice} onDisconnect={() => window.LotoTNative?.disconnectBluetooth?.()}/>
       <ServicesSheet open={servicesOpen} onClose={() => setServicesOpen(false)} services={services} signals={signals} onSave={(payload) => window.LotoTNative?.configureBuiltins?.(JSON.stringify(payload))} onRequestLocation={() => window.LotoTNative?.requestLocationPermission?.()} onPublishNow={() => window.LotoTNative?.publishMqttNow?.()}/>

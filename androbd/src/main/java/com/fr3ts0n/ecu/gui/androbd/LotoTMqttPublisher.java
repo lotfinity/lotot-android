@@ -1,10 +1,10 @@
 /*
- * In-process MQTT publisher adapted from AndrOBD MqttPublisher (GPLv3+).
+ * Reliable in-process MQTT gateway adapted from AndrOBD MqttPublisher (GPLv3+).
  */
 package com.fr3ts0n.ecu.gui.androbd;
 
 import android.content.Context;
-import android.provider.Settings;
+import android.content.SharedPreferences;
 
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
@@ -16,8 +16,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.Locale;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -38,7 +41,7 @@ final class LotoTMqttPublisher
         String clientId = "";
         String prefix = "";
         int qos = 1;
-        boolean retain = false;
+        boolean retain;
         int intervalSeconds = 5;
         Set<String> selectedSignals = new LinkedHashSet<>();
 
@@ -62,8 +65,12 @@ final class LotoTMqttPublisher
         }
     }
 
+    private static final int FLUSH_BATCH_SIZE = 50;
+    private static final long MAX_RETRY_DELAY_MS = 5 * 60_000L;
+
     private final Listener listener;
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+    private final LotoTGatewayQueue queue;
     private final String fallbackClientId;
     private final String fallbackDeviceUid;
     private Config config = new Config();
@@ -75,16 +82,27 @@ final class LotoTMqttPublisher
     private String error;
     private long lastPublishAt;
     private long lastAttemptAt;
+    private long lastEnqueueAt;
+    private long nextRetryAt;
     private long publishedMessages;
+    private int consecutiveFailures;
+    private int syncingTotal;
+    private int syncingRemaining;
     private boolean stopped;
 
     LotoTMqttPublisher(Context context, Listener listener)
     {
         this.listener = listener;
-        String androidId = Settings.Secure.getString(context.getContentResolver(),
-                Settings.Secure.ANDROID_ID);
-        String suffix = androidId == null || androidId.length() < 6
-                ? "device" : androidId.substring(androidId.length() - 6);
+        Context appContext = context.getApplicationContext();
+        queue = new LotoTGatewayQueue(appContext);
+        SharedPreferences identity = appContext.getSharedPreferences(
+                "lotot_gateway_identity", Context.MODE_PRIVATE);
+        String suffix = identity.getString("installation_suffix", "");
+        if (suffix == null || suffix.length() < 6)
+        {
+            suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+            identity.edit().putString("installation_suffix", suffix).apply();
+        }
         fallbackClientId = "LotoT-" + suffix;
         fallbackDeviceUid = "android-" + suffix;
         executor.scheduleWithFixedDelay(this::tick, 1, 1, TimeUnit.SECONDS);
@@ -108,6 +126,8 @@ final class LotoTMqttPublisher
                 || !safe(this.config.username).equals(safe(normalized.username))
                 || !safe(this.config.password).equals(safe(normalized.password));
         this.config = normalized;
+        consecutiveFailures = 0;
+        nextRetryAt = 0L;
         if (!normalized.enabled)
         {
             status = "disabled";
@@ -116,133 +136,206 @@ final class LotoTMqttPublisher
         }
         else
         {
-            status = normalized.host.isEmpty() ? "configuration" : "waiting";
+            status = normalized.host.isEmpty() ? "configuration"
+                    : queue.count() > 0 ? "queued" : "waiting";
             error = null;
             if (endpointChanged) disconnectLocked();
-            executor.execute(() -> publish(false));
+            executor.execute(() -> runCycle(false));
         }
         notifyState();
     }
 
-    synchronized Config getConfig()
-    {
-        return config.copy();
-    }
+    synchronized Config getConfig() { return config.copy(); }
 
     synchronized void updateSnapshot(Map<String, String> values)
     {
-        latestValues = new LinkedHashMap<>(values);
+        latestValues = values == null ? Collections.emptyMap() : new LinkedHashMap<>(values);
     }
 
-    void publishNow()
-    {
-        executor.execute(() -> publish(true));
-    }
+    void publishNow() { executor.execute(() -> runCycle(true)); }
 
-    private void tick()
+    private void tick() { runCycle(false); }
+
+    private void runCycle(boolean force)
     {
         Config current;
+        Map<String, String> values;
         long now = System.currentTimeMillis();
         synchronized (this)
         {
-            if (stopped || !config.enabled || config.host.isEmpty()) return;
-            if (now - lastAttemptAt < config.intervalSeconds * 1000L) return;
+            if (stopped || !config.enabled) return;
             current = config.copy();
+            values = new LinkedHashMap<>(latestValues);
         }
-        publishWithConfig(current, false);
-    }
 
-    private void publish(boolean force)
-    {
-        Config current;
-        synchronized (this)
+        if (current.host.isEmpty())
         {
-            if (stopped || !config.enabled)
-            {
-                status = "disabled";
-                notifyState();
-                return;
-            }
-            current = config.copy();
-        }
-        publishWithConfig(current, force);
-    }
-
-    private void publishWithConfig(Config current, boolean force)
-    {
-        Map<String, String> values;
-        synchronized (this)
-        {
-            long now = System.currentTimeMillis();
-            if (!force && now - lastAttemptAt < current.intervalSeconds * 1000L) return;
-            lastAttemptAt = now;
-            if (current.host.isEmpty())
+            synchronized (this)
             {
                 status = "configuration";
                 error = "Renseignez l’adresse du broker MQTT";
-                notifyState();
-                return;
             }
-            values = new LinkedHashMap<>(latestValues);
-            status = "connecting";
-            error = null;
-        }
-        notifyState();
-
-        if (values.isEmpty())
-        {
-            synchronized (this) { status = "waiting"; }
             notifyState();
             return;
         }
 
+        boolean due;
+        synchronized (this)
+        {
+            due = force || now - lastEnqueueAt >= current.intervalSeconds * 1000L;
+        }
+        if (due && !values.isEmpty()) enqueueSnapshot(current, values, now);
+
+        int queued = queue.count();
+        if (queued <= 0)
+        {
+            synchronized (this)
+            {
+                if (!"online".equals(status)) status = values.isEmpty() ? "waiting" : "up_to_date";
+                syncingTotal = 0;
+                syncingRemaining = 0;
+            }
+            notifyState();
+            return;
+        }
+
+        synchronized (this)
+        {
+            if (!force && now < nextRetryAt)
+            {
+                status = "queued";
+                syncingRemaining = queued;
+                notifyState();
+                return;
+            }
+        }
+        flushQueue(current);
+    }
+
+    private void enqueueSnapshot(Config current, Map<String, String> values, long capturedAt)
+    {
         try
         {
-            MqttClient active = ensureConnected(current);
             JSONObject snapshot = new JSONObject();
-            long capturedAt = System.currentTimeMillis();
             snapshot.put("captured_at", capturedAt);
-            snapshot.put("external_id", "android-" + capturedAt);
+            snapshot.put("external_id", "android-" + capturedAt + "-" + UUID.randomUUID());
             snapshot.put("device_uid", current.deviceUid);
             JSONObject metadata = new JSONObject();
             metadata.put("app_version", BuildConfig.VERSION_NAME);
-            metadata.put("publisher", "lotot-android");
+            metadata.put("publisher", "lotot-android-gateway");
+            metadata.put("queued_at", capturedAt);
             snapshot.put("metadata", metadata);
             JSONObject readings = new JSONObject();
-            int sent = 0;
             for (Map.Entry<String, String> entry : values.entrySet())
             {
                 if (!current.selectedSignals.isEmpty()
                         && !current.selectedSignals.contains(entry.getKey())) continue;
-                String key = sanitizeTopicPart(entry.getKey());
-                String value = entry.getValue();
-                active.publish(current.prefix + key,
-                        value.getBytes(StandardCharsets.UTF_8), current.qos, current.retain);
-                readings.put(entry.getKey(), parseValue(value));
-                sent++;
+                readings.put(entry.getKey(), parseValue(entry.getValue()));
             }
+            if (readings.length() == 0) return;
             snapshot.put("readings", readings);
-            active.publish(current.prefix + "snapshot",
-                    snapshot.toString().getBytes(StandardCharsets.UTF_8),
-                    current.qos, current.retain);
+            queue.enqueue(current.prefix + "snapshot", snapshot.toString(), current.qos,
+                    current.retain, capturedAt);
             synchronized (this)
             {
-                status = "online";
-                error = null;
-                lastPublishAt = capturedAt;
-                publishedMessages += sent + 1L;
+                lastEnqueueAt = capturedAt;
+                if (!"syncing".equals(status)) status = "queued";
+                syncingRemaining = queue.count();
             }
+            notifyState();
         }
         catch (Exception ex)
         {
             synchronized (this)
             {
                 status = "error";
-                error = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+                error = "File locale: " + errorMessage(ex);
+            }
+            notifyState();
+        }
+    }
+
+    private void flushQueue(Config current)
+    {
+        int initial = queue.count();
+        synchronized (this)
+        {
+            status = "syncing";
+            error = null;
+            lastAttemptAt = System.currentTimeMillis();
+            syncingTotal = initial;
+            syncingRemaining = initial;
+        }
+        notifyState();
+
+        try
+        {
+            MqttClient active = ensureConnected(current);
+            while (!stopped)
+            {
+                List<LotoTGatewayQueue.Entry> batch = queue.peek(FLUSH_BATCH_SIZE);
+                if (batch.isEmpty()) break;
+                for (LotoTGatewayQueue.Entry entry : batch)
+                {
+                    publishEntry(active, entry);
+                    queue.delete(entry.id);
+                    synchronized (this)
+                    {
+                        lastPublishAt = System.currentTimeMillis();
+                        syncingRemaining = queue.count();
+                    }
+                    notifyState();
+                }
+                if (batch.size() < FLUSH_BATCH_SIZE) break;
+            }
+            synchronized (this)
+            {
+                consecutiveFailures = 0;
+                nextRetryAt = 0L;
+                error = null;
+                syncingRemaining = queue.count();
+                status = syncingRemaining == 0 ? "up_to_date" : "syncing";
+            }
+        }
+        catch (Exception ex)
+        {
+            synchronized (this)
+            {
+                consecutiveFailures++;
+                long delay = retryDelayMs(consecutiveFailures);
+                nextRetryAt = System.currentTimeMillis() + delay;
+                syncingRemaining = queue.count();
+                status = "queued";
+                error = errorMessage(ex);
                 disconnectLocked();
             }
         }
         notifyState();
+    }
+
+    private void publishEntry(MqttClient active, LotoTGatewayQueue.Entry entry) throws Exception
+    {
+        JSONObject snapshot = new JSONObject(entry.payload);
+        JSONObject readings = snapshot.optJSONObject("readings");
+        String prefix = entry.topic.endsWith("snapshot")
+                ? entry.topic.substring(0, entry.topic.length() - "snapshot".length())
+                : entry.topic + "/";
+        int sent = 0;
+        if (readings != null)
+        {
+            java.util.Iterator<String> keys = readings.keys();
+            while (keys.hasNext())
+            {
+                String key = keys.next();
+                String value = String.valueOf(readings.opt(key));
+                active.publish(prefix + sanitizeTopicPart(key),
+                        value.getBytes(StandardCharsets.UTF_8), entry.qos, entry.retained);
+                sent++;
+            }
+        }
+        active.publish(entry.topic, entry.payload.getBytes(StandardCharsets.UTF_8),
+                entry.qos, entry.retained);
+        synchronized (this) { publishedMessages += sent + 1L; }
     }
 
     private MqttClient ensureConnected(Config current) throws MqttException
@@ -273,8 +366,6 @@ final class LotoTMqttPublisher
                 options.setUserName(current.username);
                 options.setPassword(safe(current.password).toCharArray());
             }
-            // The network handshake must not hold the publisher monitor: UI state
-            // reads and WebView updates remain responsive while a broker is slow.
             active.connect(options);
         }
         return active;
@@ -282,12 +373,20 @@ final class LotoTMqttPublisher
 
     synchronized JSONObject getState() throws org.json.JSONException
     {
+        int queued = queue.count();
         JSONObject state = new JSONObject();
         state.put("enabled", config.enabled);
         state.put("status", status);
         state.put("broker", config.host.isEmpty() ? JSONObject.NULL : buildBrokerUri(config));
         state.put("last_publish", lastPublishAt);
+        state.put("last_attempt", lastAttemptAt);
         state.put("published_messages", publishedMessages);
+        state.put("queue_depth", queued);
+        state.put("queue_capacity", LotoTGatewayQueue.MAX_ROWS);
+        state.put("syncing_total", syncingTotal);
+        state.put("syncing_remaining", syncingRemaining);
+        state.put("next_retry", nextRetryAt);
+        state.put("retry_count", consecutiveFailures);
         state.put("error", error == null ? JSONObject.NULL : error);
         JSONObject cfg = new JSONObject();
         cfg.put("protocol", config.protocol);
@@ -295,6 +394,7 @@ final class LotoTMqttPublisher
         cfg.put("port", config.port);
         cfg.put("username", config.username);
         cfg.put("password_set", !safe(config.password).isEmpty());
+        cfg.put("credentials_encrypted", true);
         cfg.put("device_uid", config.deviceUid);
         cfg.put("client_id", config.clientId);
         cfg.put("prefix", config.prefix);
@@ -313,6 +413,7 @@ final class LotoTMqttPublisher
         stopped = true;
         disconnectLocked();
         executor.shutdownNow();
+        queue.close();
         status = "disabled";
     }
 
@@ -335,6 +436,12 @@ final class LotoTMqttPublisher
         if (listener != null) listener.onMqttStateChanged();
     }
 
+    static long retryDelayMs(int failureCount)
+    {
+        int exponent = Math.max(0, Math.min(8, failureCount - 1));
+        return Math.min(MAX_RETRY_DELAY_MS, 2_000L << exponent);
+    }
+
     static String normalizeDeviceUid(String value)
     {
         String normalized = safe(value).replaceAll("[^A-Za-z0-9._:-]+", "-")
@@ -351,7 +458,7 @@ final class LotoTMqttPublisher
 
     static String normalizeProtocol(String protocol)
     {
-        String normalized = safe(protocol).toLowerCase();
+        String normalized = safe(protocol).toLowerCase(Locale.ROOT);
         if (!normalized.endsWith("://")) normalized += "://";
         if (!normalized.equals("tcp://") && !normalized.equals("ssl://")
                 && !normalized.equals("ws://") && !normalized.equals("wss://"))
@@ -374,6 +481,11 @@ final class LotoTMqttPublisher
     private static String sanitizeTopicPart(String value)
     {
         return safe(value).replace('+', '_').replace('#', '_').replace(' ', '_');
+    }
+
+    private static String errorMessage(Exception ex)
+    {
+        return ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
     }
 
     private static String safe(String value) { return value == null ? "" : value.trim(); }

@@ -5,7 +5,7 @@
  */
 package com.fr3ts0n.ecu.gui.androbd;
 
-import android.app.Activity;
+import android.content.Context;
 import android.content.SharedPreferences;
 
 import org.json.JSONArray;
@@ -38,19 +38,23 @@ final class LotoTBuiltinServices implements
     private static final String MQTT_SELECTED = "lotot_builtin_mqtt_selected";
 
     private final SharedPreferences preferences;
+    private final LotoTSecureCredentialStore secureCredentials;
     private final Listener listener;
     private final LotoTBuiltinSignalStore store = new LotoTBuiltinSignalStore();
     private final LotoTGpsProvider gps;
     private final LotoTMotionSensorProvider sensors;
     private final LotoTMqttPublisher mqtt;
 
-    LotoTBuiltinServices(Activity activity, SharedPreferences preferences, Listener listener)
+    LotoTBuiltinServices(Context context, SharedPreferences preferences, Listener listener)
     {
+        Context appContext = context.getApplicationContext();
         this.preferences = preferences;
         this.listener = listener;
-        gps = new LotoTGpsProvider(activity, store, this);
-        sensors = new LotoTMotionSensorProvider(activity, store, this);
-        mqtt = new LotoTMqttPublisher(activity, this);
+        secureCredentials = new LotoTSecureCredentialStore(appContext);
+        secureCredentials.migrateLegacyPassword(preferences, MQTT_PASSWORD);
+        gps = new LotoTGpsProvider(appContext, store, this);
+        sensors = new LotoTMotionSensorProvider(appContext, store, this);
+        mqtt = new LotoTMqttPublisher(appContext, this);
     }
 
     void start()
@@ -87,8 +91,13 @@ final class LotoTBuiltinServices implements
             if (mqttPayload.has("port")) edit.putInt(MQTT_PORT,
                     mqttPayload.optInt("port", 1883));
             putString(edit, MQTT_USERNAME, mqttPayload, "username");
-            if (mqttPayload.has("password")) edit.putString(MQTT_PASSWORD,
-                    mqttPayload.optString("password", ""));
+            if (mqttPayload.has("password"))
+            {
+                String password = mqttPayload.optString("password", "");
+                if (!secureCredentials.putPassword(password))
+                    throw new org.json.JSONException("Impossible de chiffrer le mot de passe MQTT");
+                edit.remove(MQTT_PASSWORD);
+            }
             putString(edit, MQTT_DEVICE_UID, mqttPayload, "device_uid");
             putString(edit, MQTT_CLIENT_ID, mqttPayload, "client_id");
             if (mqttPayload.has("qos")) edit.putInt(MQTT_QOS,
@@ -165,7 +174,7 @@ final class LotoTBuiltinServices implements
         config.host = preferences.getString(MQTT_HOST, "");
         config.port = preferences.getInt(MQTT_PORT, 1883);
         config.username = preferences.getString(MQTT_USERNAME, "");
-        config.password = preferences.getString(MQTT_PASSWORD, "");
+        config.password = secureCredentials.getPassword();
         config.deviceUid = preferences.getString(MQTT_DEVICE_UID, "");
         config.clientId = preferences.getString(MQTT_CLIENT_ID, "");
         config.qos = preferences.getInt(MQTT_QOS, 1);

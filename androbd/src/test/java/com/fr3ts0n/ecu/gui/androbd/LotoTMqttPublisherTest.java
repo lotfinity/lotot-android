@@ -41,4 +41,13 @@ public class LotoTMqttPublisherTest
         config.port = 99999;
         assertEquals("tcp://broker:65535", LotoTMqttPublisher.buildBrokerUri(config));
     }
+    @Test
+    public void retryBackoffStartsFastAndCapsAtFiveMinutes()
+    {
+        assertEquals(2_000L, LotoTMqttPublisher.retryDelayMs(1));
+        assertEquals(4_000L, LotoTMqttPublisher.retryDelayMs(2));
+        assertEquals(32_000L, LotoTMqttPublisher.retryDelayMs(5));
+        assertEquals(300_000L, LotoTMqttPublisher.retryDelayMs(99));
+    }
+
 }

@@ -122,7 +122,7 @@ public class MainActivity extends PluginManager
         AbsListView.MultiChoiceModeListener,
         LotoTWebBridge.Host,
         LotoTBluetoothManager.Listener,
-        LotoTBuiltinServices.Listener
+        LotoTGatewayService.Listener
 {
     /**
      * Key names for preferences
@@ -306,7 +306,48 @@ public class MainActivity extends PluginManager
     private boolean mLototReady = false;
     private String mLototStatus = "offline";
     private LotoTBluetoothManager mLototBluetoothManager;
-    private LotoTBuiltinServices mLototBuiltins;
+    private LotoTGatewayService mLototGateway;
+    private boolean mLototGatewayBound;
+    private final Handler mLototGatewayHandler = new Handler(Looper.getMainLooper());
+    private final Runnable mLototGatewaySampler = new Runnable()
+    {
+        @Override public void run()
+        {
+            try
+            {
+                if (mLototGateway != null
+                        && ("live".equals(mLototStatus) || "demo".equals(mLototStatus)))
+                    mLototGateway.updateTelemetry(getLotoTSignals());
+            }
+            catch (Exception ex)
+            {
+                log.log(Level.FINER, "Unable to feed LotoT foreground gateway", ex);
+            }
+            if (mLototGatewayBound) mLototGatewayHandler.postDelayed(this, 1000L);
+        }
+    };
+    private final ServiceConnection mLototGatewayConnection = new ServiceConnection()
+    {
+        @Override public void onServiceConnected(ComponentName name, IBinder service)
+        {
+            LotoTGatewayService.LocalBinder binder = (LotoTGatewayService.LocalBinder) service;
+            mLototGateway = binder.getService();
+            mLototGatewayBound = true;
+            mLototGateway.addListener(MainActivity.this);
+            mLototGatewayHandler.removeCallbacks(mLototGatewaySampler);
+            mLototGatewayHandler.post(mLototGatewaySampler);
+            publishLotoTBuiltinState();
+            publishLotoTTelemetry();
+        }
+
+        @Override public void onServiceDisconnected(ComponentName name)
+        {
+            if (mLototGateway != null) mLototGateway.removeListener(MainActivity.this);
+            mLototGateway = null;
+            mLototGatewayBound = false;
+            mLototGatewayHandler.removeCallbacks(mLototGatewaySampler);
+        }
+    };
     private String mLototBluetoothMedium = LotoTBluetoothManager.MEDIUM_CLASSIC;
     private String mLototBluetoothError = null;
     private String mLototPendingBluetoothAction = null;
@@ -674,8 +715,10 @@ public class MainActivity extends PluginManager
         // get list view
         mListView = getWindow().getLayoutInflater().inflate(R.layout.obd_list, null);
         mLototBluetoothManager = new LotoTBluetoothManager(this, this);
-        mLototBuiltins = new LotoTBuiltinServices(this, prefs, this);
         initializeLotoTDashboard();
+        LotoTGatewayService.start(this);
+        bindService(new Intent(this, LotoTGatewayService.class),
+                mLototGatewayConnection, Context.BIND_AUTO_CREATE);
         applyLotoTSystemBars(prefs.getString(PREF_LOTOT_THEME, "dark"));
 
         // Log program startup
@@ -686,7 +729,6 @@ public class MainActivity extends PluginManager
         // update all settings from preferences
         onSharedPreferenceChanged(prefs, null);
 
-        if (mLototBuiltins != null) mLototBuiltins.start();
 
         // set up logging system
         setupLoggers();
@@ -863,6 +905,7 @@ public class MainActivity extends PluginManager
                 }
             }
             if (allGranted) {
+                if (mLototGateway != null) mLototGateway.refreshForegroundService();
                 initSelectedMode();
             }
         } else if (requestCode == REQUEST_LOTOT_BT_PERMISSIONS) {
@@ -874,6 +917,7 @@ public class MainActivity extends PluginManager
                 }
             }
             if (allGranted) {
+                if (mLototGateway != null) mLototGateway.refreshForegroundService();
                 prepareLotoTBluetoothAction(mLototPendingBluetoothAction,
                         mLototBluetoothMedium,
                         mLototPendingBluetoothAddress);
@@ -884,9 +928,9 @@ public class MainActivity extends PluginManager
                 publishLotoTBluetoothState();
             }
         } else if (requestCode == REQUEST_LOTOT_LOCATION_PERMISSION) {
-            if (mLototBuiltins != null)
+            if (mLototGateway != null)
             {
-                mLototBuiltins.onLocationPermissionResult();
+                mLototGateway.onLocationPermissionResult();
                 publishLotoTBuiltinState();
             }
         }
@@ -986,11 +1030,15 @@ public class MainActivity extends PluginManager
             mLototBluetoothManager.destroy();
             mLototBluetoothManager = null;
         }
-        if (mLototBuiltins != null)
+        mLototGatewayHandler.removeCallbacks(mLototGatewaySampler);
+        if (mLototGateway != null) mLototGateway.removeListener(this);
+        if (mLototGatewayBound)
         {
-            mLototBuiltins.stop();
-            mLototBuiltins = null;
+            try { unbindService(mLototGatewayConnection); }
+            catch (IllegalArgumentException ignored) { }
         }
+        mLototGatewayBound = false;
+        mLototGateway = null;
 
         if (mLototWebView != null)
         {
@@ -1151,10 +1199,10 @@ public class MainActivity extends PluginManager
     @Override
     public void updateLotoTBuiltinConfig(String json)
     {
-        if (mLototBuiltins == null) return;
+        if (mLototGateway == null) return;
         try
         {
-            boolean needsPermission = mLototBuiltins.applyConfig(json);
+            boolean needsPermission = mLototGateway.applyConfig(json);
             publishLotoTBuiltinState();
             publishLotoTTelemetry();
             if (needsPermission) requestLotoTLocationPermission();
@@ -1168,10 +1216,10 @@ public class MainActivity extends PluginManager
     @Override
     public void requestLotoTLocationPermission()
     {
-        if (mLototBuiltins == null) return;
-        if (!mLototBuiltins.needsLocationPermission())
+        if (mLototGateway == null) return;
+        if (!mLototGateway.needsLocationPermission())
         {
-            mLototBuiltins.onLocationPermissionResult();
+            mLototGateway.onLocationPermissionResult();
             return;
         }
         ActivityCompat.requestPermissions(this,
@@ -1183,7 +1231,7 @@ public class MainActivity extends PluginManager
     @Override
     public void publishLotoTMqttNow()
     {
-        if (mLototBuiltins != null) mLototBuiltins.publishMqttNow();
+        if (mLototGateway != null) mLototGateway.publishMqttNow();
     }
 
     private void applyLotoTSystemBars(String theme)
@@ -1426,10 +1474,10 @@ public class MainActivity extends PluginManager
 
     private void publishLotoTBuiltinState()
     {
-        if (!mLototReady || mLototWebView == null || mLototBuiltins == null) return;
+        if (!mLototReady || mLototWebView == null || mLototGateway == null) return;
         try
         {
-            JSONObject state = mLototBuiltins.getState();
+            JSONObject state = mLototGateway.getState();
             String encoded = JSONObject.quote(state.toString());
             mLototWebView.evaluateJavascript(
                     "window.lototSetBuiltinState && window.lototSetBuiltinState(" + encoded + ");",
@@ -1443,7 +1491,7 @@ public class MainActivity extends PluginManager
     }
 
     @Override
-    public void onBuiltinServicesStateChanged()
+    public void onGatewayStateChanged()
     {
         runOnUiThread(() ->
         {
@@ -1575,7 +1623,7 @@ public class MainActivity extends PluginManager
                 signals.put(signal);
             }
             }
-            if (mLototBuiltins != null) mLototBuiltins.appendSignals(signals);
+            if (mLototGateway != null) mLototGateway.appendSignals(signals);
         }
         catch (Exception ex)
         {
@@ -1644,7 +1692,7 @@ public class MainActivity extends PluginManager
             payload.put("mode", mLototStatus);
             payload.put("readings", readings);
             JSONArray signals = getLotoTSignals();
-            if (mLototBuiltins != null) mLototBuiltins.updateTelemetry(signals);
+            if (mLototGateway != null) mLototGateway.updateTelemetry(signals);
             payload.put("signals", signals);
             payload.put("signal_count", signals.length());
             if (BuildConfig.DEBUG && capturedAt - mLototLastDebugLog >= 1000L)
