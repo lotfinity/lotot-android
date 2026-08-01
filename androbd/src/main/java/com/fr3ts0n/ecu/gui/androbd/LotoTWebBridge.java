@@ -39,6 +39,12 @@ final class LotoTWebBridge
     }
 
     @JavascriptInterface
+    public String getAppLanguage()
+    {
+        return SettingsActivity.getResolvedLanguage(activity);
+    }
+
+    @JavascriptInterface
     public void ready()
     {
         activity.runOnUiThread(host::onLotoTReady);

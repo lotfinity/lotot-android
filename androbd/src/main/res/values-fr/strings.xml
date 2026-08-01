@@ -197,4 +197,34 @@
     <string name="restart_required">Redémarrage requis pour appliquer le changement de langue</string>
     <string name="no_obd_files_found">Aucun fichier OBD trouvé</string>
     <string name="language_french">Français</string>
+
+    <string name="advanced_settings_title">Paramètres OBD avancés</string>
+    <string name="advanced_settings_subtitle">Véhicule, adaptateur, export et outils développeur</string>
+    <string name="settings_root_subtitle">Configuration LotoT</string>
+    <string name="back">Retour</string>
+
+    <string name="lotot_bt_lost">Connexion Bluetooth perdue. Vérifiez l’adaptateur puis reconnectez-vous.</string>
+    <string name="lotot_bt_unable">Connexion impossible. Vérifiez que l’adaptateur est allumé et disponible.</string>
+    <string name="lotot_bt_permission_denied">Autorisation Bluetooth refusée</string>
+    <string name="lotot_bt_disabled">Bluetooth désactivé</string>
+    <string name="lotot_bt_invalid_address">Adresse Bluetooth invalide</string>
+    <string name="lotot_bt_unavailable">Bluetooth indisponible sur cet appareil</string>
+    <string name="lotot_bt_device">Appareil Bluetooth</string>
+    <string name="lotot_obd_adapter">Adaptateur OBD</string>
+    <string name="lotot_mqtt_host_required">Renseignez l’adresse du broker MQTT</string>
+    <string name="lotot_gps_latitude">Latitude GPS</string>
+    <string name="lotot_gps_longitude">Longitude GPS</string>
+    <string name="lotot_gps_altitude">Altitude GPS</string>
+    <string name="lotot_gps_bearing">Cap GPS</string>
+    <string name="lotot_gps_speed">Vitesse GPS</string>
+    <string name="lotot_acc_lateral">Accélération latérale</string>
+    <string name="lotot_acc_longitudinal">Accélération longitudinale</string>
+    <string name="lotot_acc_vertical">Accélération verticale</string>
+    <string name="lotot_acc_unavailable">Accéléromètre indisponible</string>
+    <string name="lotot_gateway_channel">Passerelle véhicule LotoT</string>
+    <string name="lotot_gateway_active">LotoT · passerelle active</string>
+    <string name="lotot_gateway_ready">Prête à collecter et synchroniser les données véhicule</string>
+    <string name="lotot_gateway_syncing">Synchronisation · %1$d restant(s)</string>
+    <string name="lotot_gateway_offline">Hors ligne · %1$d relevé(s) stocké(s)</string>
+    <string name="lotot_gateway_current">Données véhicule à jour</string>
 </resources>

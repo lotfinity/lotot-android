@@ -264,7 +264,7 @@ final class LotoTBluetoothManager
         {
             // Permission state changed while scanning.
         }
-        return "Appareil Bluetooth";
+        return activity.getString(R.string.lotot_bt_device);
     }
 
     private boolean isUsableName(String value)

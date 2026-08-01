@@ -64,6 +64,7 @@ import android.widget.ListView;
 import android.widget.Spinner;
 import android.widget.Toast;
 import android.window.OnBackInvokedCallback;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -197,6 +198,8 @@ public class MainActivity extends PluginManager
     private static final long CONNECTION_INITIAL_GRACE_MS = 12_000L;
     private static final long CONNECTION_SILENCE_TIMEOUT_MS = 3_500L;
     private static final String PREF_LOTOT_THEME = "lotot_theme";
+    private static final String PREF_LOTOT_DEV_UI_URL = "lotot_dev_ui_url";
+    private static final String EXTRA_LOTOT_UI_URL = "lotot_ui_url";
     private static final String LOG_MASTER = "log_master";
     private static final String KEEP_SCREEN_ON = "keep_screen_on";
     private static final String ELM_CUSTOM_INIT_CMDS = "elm_custom_init_cmds";
@@ -305,6 +308,9 @@ public class MainActivity extends PluginManager
     private WebView mLototWebView;
     private boolean mLototReady = false;
     private String mLototStatus = "offline";
+    private String mLototLanguage = "en";
+    private String mLototUiUrl = "file:///android_asset/lotot/index.html";
+    private boolean mLototDevFallback;
     private LotoTBluetoothManager mLototBluetoothManager;
     private LotoTGatewayService mLototGateway;
     private boolean mLototGatewayBound;
@@ -469,7 +475,7 @@ public class MainActivity extends PluginManager
                         if (!mLototManualDisconnect)
                         {
                             mLototLossLatched = true;
-                            mLototBluetoothError = "Connexion Bluetooth perdue. Vérifiez l’adaptateur puis reconnectez-vous.";
+                            mLototBluetoothError = getString(R.string.lotot_bt_lost);
                             setLotoTStatus("lost");
                         }
                         break;
@@ -479,14 +485,14 @@ public class MainActivity extends PluginManager
                         Toast.makeText(getApplicationContext(), toastMessage, Toast.LENGTH_SHORT).show();
                         if (getString(R.string.unabletoconnect).equals(toastMessage))
                         {
-                            mLototBluetoothError = "Connexion impossible. Vérifiez que l’adaptateur est allumé et disponible.";
+                            mLototBluetoothError = getString(R.string.lotot_bt_unable);
                         }
                         else if (getString(R.string.connectionlost).equals(toastMessage))
                         {
                             if (!mLototManualDisconnect)
                             {
                                 mLototLossLatched = true;
-                                mLototBluetoothError = "Connexion Bluetooth perdue. Vérifiez l’adaptateur puis reconnectez-vous.";
+                                mLototBluetoothError = getString(R.string.lotot_bt_lost);
                                 setLotoTStatus("lost");
                             }
                         }
@@ -715,6 +721,7 @@ public class MainActivity extends PluginManager
         // get list view
         mListView = getWindow().getLayoutInflater().inflate(R.layout.obd_list, null);
         mLototBluetoothManager = new LotoTBluetoothManager(this, this);
+        mLototLanguage = SettingsActivity.getResolvedLanguage(this);
         initializeLotoTDashboard();
         LotoTGatewayService.start(this);
         bindService(new Intent(this, LotoTGatewayService.class),
@@ -924,7 +931,7 @@ public class MainActivity extends PluginManager
             } else {
                 mLototPendingBluetoothAction = null;
                 mLototPendingBluetoothAddress = null;
-                mLototBluetoothError = "Autorisation Bluetooth refusée";
+                mLototBluetoothError = getString(R.string.lotot_bt_permission_denied);
                 publishLotoTBluetoothState();
             }
         } else if (requestCode == REQUEST_LOTOT_LOCATION_PERMISSION) {
@@ -949,8 +956,14 @@ public class MainActivity extends PluginManager
 
     @Override protected void onResume()
     {
-        // Apply locale on resume (in case it was changed in settings)
+        // Apply locale on resume (in case it was changed in settings).
         SettingsActivity.applyLocale(this);
+        String resolvedLanguage = SettingsActivity.getResolvedLanguage(this);
+        if (!resolvedLanguage.equals(mLototLanguage))
+        {
+            mLototLanguage = resolvedLanguage;
+            publishLotoTLanguage();
+        }
 
         // set up data display update timer
         updateTimer = new Timer();
@@ -1054,6 +1067,66 @@ public class MainActivity extends PluginManager
         super.onDestroy();
     }
 
+    private static final String LOTOT_BUNDLED_UI = "file:///android_asset/lotot/index.html";
+
+    private String resolveLotoTUiUrl()
+    {
+        if (!BuildConfig.DEBUG) return LOTOT_BUNDLED_UI;
+        String requested = getIntent() == null ? null
+                : getIntent().getStringExtra(EXTRA_LOTOT_UI_URL);
+        if ("bundled".equalsIgnoreCase(requested == null ? "" : requested.trim()))
+        {
+            prefs.edit().remove(PREF_LOTOT_DEV_UI_URL).apply();
+            return LOTOT_BUNDLED_UI;
+        }
+        if (isAllowedLotoTDevUrl(requested))
+        {
+            prefs.edit().putString(PREF_LOTOT_DEV_UI_URL, requested.trim()).apply();
+            return requested.trim();
+        }
+        String saved = prefs.getString(PREF_LOTOT_DEV_UI_URL, "");
+        return isAllowedLotoTDevUrl(saved) ? saved.trim() : LOTOT_BUNDLED_UI;
+    }
+
+    private boolean isAllowedLotoTDevUrl(String value)
+    {
+        if (!BuildConfig.DEBUG || value == null || value.trim().isEmpty()) return false;
+        try
+        {
+            Uri uri = Uri.parse(value.trim());
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (!("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+                    || host == null) return false;
+            String normalized = host.toLowerCase(java.util.Locale.ROOT);
+            if ("localhost".equals(normalized) || "127.0.0.1".equals(normalized)
+                    || "::1".equals(normalized) || normalized.endsWith(".local")
+                    || normalized.endsWith(".ts.net")) return true;
+            String[] parts = normalized.split("\\.");
+            if (parts.length != 4) return false;
+            int a = Integer.parseInt(parts[0]);
+            int b = Integer.parseInt(parts[1]);
+            return a == 10 || (a == 172 && b >= 16 && b <= 31)
+                    || (a == 192 && b == 168) || (a == 100 && b >= 64 && b <= 127);
+        }
+        catch (Exception ignored)
+        {
+            return false;
+        }
+    }
+
+    private boolean isLotoTInternalUrl(Uri uri)
+    {
+        if (uri == null) return false;
+        String url = uri.toString();
+        if (url.startsWith("file:///android_asset/lotot/")) return true;
+        if (!BuildConfig.DEBUG || !isAllowedLotoTDevUrl(mLototUiUrl)) return false;
+        Uri dev = Uri.parse(mLototUiUrl);
+        return java.util.Objects.equals(dev.getScheme(), uri.getScheme())
+                && java.util.Objects.equals(dev.getHost(), uri.getHost())
+                && dev.getPort() == uri.getPort();
+    }
+
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     private void initializeLotoTDashboard()
     {
@@ -1061,6 +1134,8 @@ public class MainActivity extends PluginManager
         mLototView = getLayoutInflater().inflate(R.layout.lotot_dashboard, contentRoot, false);
         mLototWebView = mLototView.findViewById(R.id.lotot_webview);
         mLototWebView.setBackgroundColor(Color.rgb(7, 9, 11));
+        mLototUiUrl = resolveLotoTUiUrl();
+        mLototDevFallback = false;
 
         WebSettings settings = mLototWebView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -1069,15 +1144,16 @@ public class MainActivity extends PluginManager
         settings.setAllowFileAccess(true);
         settings.setAllowFileAccessFromFileURLs(false);
         settings.setAllowUniversalAccessFromFileURLs(false);
+        if (BuildConfig.DEBUG && isAllowedLotoTDevUrl(mLototUiUrl))
+            settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
 
         mLototWebView.addJavascriptInterface(new LotoTWebBridge(this, this), "LotoTNative");
         mLototWebView.setWebViewClient(new WebViewClient()
         {
             private boolean handleUrl(Uri uri)
             {
-                String url = uri != null ? uri.toString() : "";
-                if (url.startsWith("file:///android_asset/lotot/")) return false;
-                if (!url.isEmpty())
+                if (isLotoTInternalUrl(uri)) return false;
+                if (uri != null)
                 {
                     try
                     {
@@ -1103,9 +1179,23 @@ public class MainActivity extends PluginManager
             {
                 return handleUrl(Uri.parse(url));
             }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request,
+                                        WebResourceError error)
+            {
+                super.onReceivedError(view, request, error);
+                if (request != null && request.isForMainFrame()
+                        && isAllowedLotoTDevUrl(mLototUiUrl) && !mLototDevFallback)
+                {
+                    mLototDevFallback = true;
+                    mLototUiUrl = LOTOT_BUNDLED_UI;
+                    view.loadUrl(LOTOT_BUNDLED_UI);
+                }
+            }
         });
         if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true);
-        mLototWebView.loadUrl("file:///android_asset/lotot/index.html");
+        mLototWebView.loadUrl(mLototUiUrl);
     }
 
     private void showLotoTDashboard()
@@ -1114,6 +1204,7 @@ public class MainActivity extends PluginManager
         ActionBar actionBar = getActionBar();
         if (actionBar != null) actionBar.hide();
         publishLotoTStatus();
+        publishLotoTLanguage();
         publishLotoTTelemetry();
         publishLotoTBluetoothState();
     }
@@ -1123,6 +1214,7 @@ public class MainActivity extends PluginManager
     {
         mLototReady = true;
         publishLotoTStatus();
+        publishLotoTLanguage();
         publishLotoTTelemetry();
         publishLotoTBluetoothState();
         publishLotoTBuiltinState();
@@ -1155,7 +1247,7 @@ public class MainActivity extends PluginManager
     {
         if (address == null || address.trim().isEmpty())
         {
-            mLototBluetoothError = "Adresse Bluetooth invalide";
+            mLototBluetoothError = getString(R.string.lotot_bt_invalid_address);
             publishLotoTBluetoothState();
             return;
         }
@@ -1259,9 +1351,8 @@ public class MainActivity extends PluginManager
     @Override
     public void openLotoTNativeTools()
     {
-        ActionBar actionBar = getActionBar();
-        if (actionBar != null) actionBar.show();
-        openOptionsMenu();
+        Intent settingsIntent = new Intent(this, SettingsActivity.class);
+        startActivityForResult(settingsIntent, REQUEST_SETTINGS);
     }
 
     @Override
@@ -1286,7 +1377,7 @@ public class MainActivity extends PluginManager
 
         if (mLototBluetoothManager == null || !mLototBluetoothManager.isAvailable())
         {
-            mLototBluetoothError = "Bluetooth indisponible sur cet appareil";
+            mLototBluetoothError = getString(R.string.lotot_bt_unavailable);
             publishLotoTBluetoothState();
             return;
         }
@@ -1416,7 +1507,7 @@ public class MainActivity extends PluginManager
                 if (selectedName == null || selectedName.trim().isEmpty())
                     selectedName = mLototSelectedDeviceName;
                 if (selectedName == null || selectedName.trim().isEmpty())
-                    selectedName = "Adaptateur OBD";
+                    selectedName = getString(R.string.lotot_obd_adapter);
                 selected.put("name", selectedName);
                 selected.put("address", mLototConnectedAddress);
                 selected.put("medium", mLototConnectedMedium == null
@@ -1433,7 +1524,7 @@ public class MainActivity extends PluginManager
                 JSONObject connected = new JSONObject();
                 String name = mConnectedDeviceName;
                 if (name == null || name.trim().isEmpty()) name = mLototSelectedDeviceName;
-                if (name == null || name.trim().isEmpty()) name = "Adaptateur OBD";
+                if (name == null || name.trim().isEmpty()) name = getString(R.string.lotot_obd_adapter);
                 connected.put("name", name);
                 connected.put("address", mLototConnectedAddress);
                 connected.put("medium", mLototConnectedMedium == null
@@ -1449,7 +1540,7 @@ public class MainActivity extends PluginManager
             {
                 JSONObject lastDevice = new JSONObject();
                 lastDevice.put("name", mLototLastDeviceName == null
-                        ? "Adaptateur OBD" : mLototLastDeviceName);
+                        ? getString(R.string.lotot_obd_adapter) : mLototLastDeviceName);
                 lastDevice.put("address", mLototLastDeviceAddress);
                 lastDevice.put("medium", mLototLastDeviceMedium == null
                         ? mLototBluetoothMedium : mLototLastDeviceMedium);
@@ -1498,6 +1589,15 @@ public class MainActivity extends PluginManager
             publishLotoTBuiltinState();
             publishLotoTTelemetry();
         });
+    }
+
+    private void publishLotoTLanguage()
+    {
+        if (!mLototReady || mLototWebView == null) return;
+        String language = JSONObject.quote(mLototLanguage == null ? "en" : mLototLanguage);
+        mLototWebView.evaluateJavascript(
+                "window.lototSetLanguage && window.lototSetLanguage(" + language + ");",
+                null);
     }
 
     private void setLotoTStatus(String status)
@@ -2037,7 +2137,7 @@ public class MainActivity extends PluginManager
                 {
                     mLototPendingBluetoothAction = null;
                     mLototPendingBluetoothAddress = null;
-                    mLototBluetoothError = "Bluetooth désactivé";
+                    mLototBluetoothError = getString(R.string.lotot_bt_disabled);
                     publishLotoTBluetoothState();
                 }
                 break;
@@ -3426,7 +3526,7 @@ public class MainActivity extends PluginManager
         String name = mConnectedDeviceName;
         if (name == null || name.trim().isEmpty()) name = mLototSelectedDeviceName;
         mLototLastDeviceName = name == null || name.trim().isEmpty()
-                ? "Adaptateur OBD" : name;
+                ? getString(R.string.lotot_obd_adapter) : name;
     }
 
     private void checkLotoTConnectionWatchdog(long nowMs)
@@ -3491,7 +3591,7 @@ public class MainActivity extends PluginManager
         mCommService = null;
         if (mLototLossLatched && !mLototManualDisconnect)
         {
-            mLototBluetoothError = "Connexion Bluetooth perdue. Vérifiez l’adaptateur puis reconnectez-vous.";
+            mLototBluetoothError = getString(R.string.lotot_bt_lost);
             setLotoTStatus("lost");
         }
         else

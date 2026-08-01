@@ -68,6 +68,7 @@ final class LotoTMqttPublisher
     private static final int FLUSH_BATCH_SIZE = 50;
     private static final long MAX_RETRY_DELAY_MS = 5 * 60_000L;
 
+    private final Context context;
     private final Listener listener;
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private final LotoTGatewayQueue queue;
@@ -92,8 +93,9 @@ final class LotoTMqttPublisher
 
     LotoTMqttPublisher(Context context, Listener listener)
     {
+        this.context = context.getApplicationContext();
         this.listener = listener;
-        Context appContext = context.getApplicationContext();
+        Context appContext = this.context;
         queue = new LotoTGatewayQueue(appContext);
         SharedPreferences identity = appContext.getSharedPreferences(
                 "lotot_gateway_identity", Context.MODE_PRIVATE);
@@ -173,7 +175,7 @@ final class LotoTMqttPublisher
             synchronized (this)
             {
                 status = "configuration";
-                error = "Renseignez l’adresse du broker MQTT";
+                error = context.getString(R.string.lotot_mqtt_host_required);
             }
             notifyState();
             return;

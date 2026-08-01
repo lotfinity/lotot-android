@@ -36,11 +36,11 @@ final class LotoTGpsProvider implements LocationListener
         this.store = store;
         this.listener = listener;
         locationManager = (LocationManager) this.context.getSystemService(Context.LOCATION_SERVICE);
-        store.define("GPS_LATITUDE", "Latitude GPS", "°", -90, 90, "gps");
-        store.define("GPS_LONGITUDE", "Longitude GPS", "°", -180, 180, "gps");
-        store.define("GPS_ALTITUDE", "Altitude GPS", "m", -500, 9000, "gps");
-        store.define("GPS_BEARING", "Cap GPS", "°", 0, 360, "gps");
-        store.define("GPS_SPEED", "Vitesse GPS", "km/h", 0, 350, "gps");
+        store.define("GPS_LATITUDE", this.context.getString(R.string.lotot_gps_latitude), "°", -90, 90, "gps");
+        store.define("GPS_LONGITUDE", this.context.getString(R.string.lotot_gps_longitude), "°", -180, 180, "gps");
+        store.define("GPS_ALTITUDE", this.context.getString(R.string.lotot_gps_altitude), "m", -500, 9000, "gps");
+        store.define("GPS_BEARING", this.context.getString(R.string.lotot_gps_bearing), "°", 0, 360, "gps");
+        store.define("GPS_SPEED", this.context.getString(R.string.lotot_gps_speed), "km/h", 0, 350, "gps");
     }
 
     void setEnabled(boolean enabled)

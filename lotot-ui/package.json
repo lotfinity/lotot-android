@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build && node scripts/postbuild.mjs"
+    "build": "vite build && node scripts/postbuild.mjs",
+    "dev": "vite --host 0.0.0.0 --port 5173"
   },
   "dependencies": {
     "react": "^18.3.1",

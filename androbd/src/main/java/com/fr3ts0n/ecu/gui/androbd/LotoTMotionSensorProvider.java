@@ -16,6 +16,7 @@ final class LotoTMotionSensorProvider implements SensorEventListener
 {
     interface Listener { void onSensorStateChanged(); }
 
+    private final Context context;
     private final LotoTBuiltinSignalStore store;
     private final Listener listener;
     private final SensorManager sensorManager;
@@ -27,14 +28,15 @@ final class LotoTMotionSensorProvider implements SensorEventListener
 
     LotoTMotionSensorProvider(Context context, LotoTBuiltinSignalStore store, Listener listener)
     {
+        this.context = context.getApplicationContext();
         this.store = store;
         this.listener = listener;
         sensorManager = (SensorManager) context.getSystemService(Context.SENSOR_SERVICE);
         accelerometer = sensorManager == null ? null
                 : sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-        store.define("ACC_X", "Accélération latérale", "m/s²", -20, 20, "motion");
-        store.define("ACC_Y", "Accélération longitudinale", "m/s²", -20, 20, "motion");
-        store.define("ACC_Z", "Accélération verticale", "m/s²", -20, 20, "motion");
+        store.define("ACC_X", context.getString(R.string.lotot_acc_lateral), "m/s²", -20, 20, "motion");
+        store.define("ACC_Y", context.getString(R.string.lotot_acc_longitudinal), "m/s²", -20, 20, "motion");
+        store.define("ACC_Z", context.getString(R.string.lotot_acc_vertical), "m/s²", -20, 20, "motion");
     }
 
     void setEnabled(boolean enabled)
@@ -92,7 +94,7 @@ final class LotoTMotionSensorProvider implements SensorEventListener
         state.put("status", status);
         state.put("last_update", lastUpdateAt);
         state.put("error", accelerometer == null
-                ? "Accéléromètre indisponible" : JSONObject.NULL);
+                ? context.getString(R.string.lotot_acc_unavailable) : JSONObject.NULL);
         return state;
     }
 

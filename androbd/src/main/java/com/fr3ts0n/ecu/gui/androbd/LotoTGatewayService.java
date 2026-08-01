@@ -178,7 +178,7 @@ public final class LotoTGatewayService extends Service
     {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
-                "Passerelle véhicule LotoT", NotificationManager.IMPORTANCE_LOW);
+                getString(R.string.lotot_gateway_channel), NotificationManager.IMPORTANCE_LOW);
         channel.setDescription("Maintient la collecte OBD et la synchronisation hors ligne");
         channel.setShowBadge(false);
         NotificationManager manager = getSystemService(NotificationManager.class);
@@ -187,8 +187,8 @@ public final class LotoTGatewayService extends Service
 
     private Notification buildNotification()
     {
-        String title = "LotoT · passerelle active";
-        String text = "Prête à collecter et synchroniser les données véhicule";
+        String title = getString(R.string.lotot_gateway_active);
+        String text = getString(R.string.lotot_gateway_ready);
         try
         {
             JSONObject mqtt = getState().optJSONObject("mqtt");
@@ -200,9 +200,9 @@ public final class LotoTGatewayService extends Service
                     text = "Synchronisation · " + mqtt.optInt("syncing_remaining", queued)
                             + "/" + Math.max(queued, mqtt.optInt("syncing_total", queued));
                 else if (queued > 0)
-                    text = "Hors ligne · " + queued + " relevé" + (queued == 1 ? " stocké" : "s stockés");
+                    text = getString(R.string.lotot_gateway_offline, queued);
                 else if ("up_to_date".equals(status) || "online".equals(status))
-                    text = "Données véhicule à jour";
+                    text = getString(R.string.lotot_gateway_current);
                 else if ("configuration".equals(status))
                     text = "MQTT en attente de configuration";
             }

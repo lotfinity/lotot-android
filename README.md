@@ -72,3 +72,6 @@ The original AndrOBD README is preserved at [`docs/ANDROBD_UPSTREAM_README.md`](
 ## License
 
 Licensed under the GNU General Public License v3.0. See [`LICENSE`](LICENSE).
+## Live UI development
+
+The debug build supports Vite hot reload over a private LAN or Tailscale connection. See [`docs/LIVE_UI_DEVELOPMENT.md`](docs/LIVE_UI_DEVELOPMENT.md).

@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <!-- LotoT styling for all remaining native AndrOBD screens. -->
     <style name="AppTheme" parent="Theme.Material3.Dark">
         <item name="android:fontFamily">sans</item>
@@ -11,7 +11,7 @@
         <item name="android:navigationBarColor">@color/lotot_background</item>
         <item name="android:statusBarColor">@color/lotot_background</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
         <item name="android:actionMenuTextColor">@color/lotot_accent</item>
         <item name="android:panelColorBackground">@color/lotot_surface_raised</item>
         <item name="android:windowActionModeOverlay">true</item>
@@ -43,12 +43,40 @@
         <item name="android:navigationBarColor">@color/lotot_light_background</item>
         <item name="android:statusBarColor">@color/lotot_light_background</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
         <item name="android:actionMenuTextColor">@color/lotot_light_accent</item>
         <item name="android:panelColorBackground">@color/lotot_light_surface_raised</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:activatedBackgroundIndicator">@drawable/activated_background</item>
         <item name="android:listDivider">@color/lotot_light_divider</item>
         <item name="android:fitsSystemWindows">true</item>
+    </style>
+
+    <style name="AppTheme.LotoTSettings" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">@color/lotot_background</item>
+        <item name="android:navigationBarColor">@color/lotot_background</item>
+        <item name="android:statusBarColor">@color/lotot_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+        <item name="android:colorAccent">@color/lotot_accent</item>
+        <item name="android:colorControlActivated">@color/lotot_accent</item>
+        <item name="android:textColorPrimary">@color/lotot_text</item>
+        <item name="android:textColorSecondary">@color/lotot_muted</item>
+        <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Material</item>
+    </style>
+
+    <style name="AppTheme.LotoTSettings.Light" parent="Theme.Material3.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">@color/lotot_light_background</item>
+        <item name="android:navigationBarColor">@color/lotot_light_background</item>
+        <item name="android:statusBarColor">@color/lotot_light_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
+        <item name="android:colorAccent">@color/lotot_light_accent</item>
+        <item name="android:colorControlActivated">@color/lotot_light_accent</item>
+        <item name="android:textColorPrimary">@color/lotot_light_text</item>
+        <item name="android:textColorSecondary">@color/lotot_light_muted</item>
+        <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Material</item>
     </style>
 </resources>

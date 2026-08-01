@@ -21,16 +21,23 @@ package com.fr3ts0n.ecu.gui.androbd;
 
 import android.app.Activity;
 import android.content.ClipData;
+import android.content.Context;
 import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.content.res.ColorStateList;
 import android.os.Build;
 import android.os.Bundle;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.view.View;
 import android.widget.Toast;
+import android.widget.ImageButton;
+import android.widget.ImageView;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -38,10 +45,13 @@ import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.core.content.ContextCompat;
+import androidx.recyclerview.widget.RecyclerView;
 import androidx.preference.EditTextPreference;
 import androidx.preference.ListPreference;
 import androidx.preference.MultiSelectListPreference;
 import androidx.preference.Preference;
+import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
 import androidx.preference.PreferenceScreen;
@@ -60,6 +70,10 @@ import java.util.logging.Logger;
 public class SettingsActivity extends AppCompatActivity
 	implements PreferenceFragmentCompat.OnPreferenceStartScreenCallback
 {
+	private TextView settingsTitle;
+	private TextView settingsSubtitle;
+	private boolean lightSettings;
+
 	// Preference keys referenced from outside this class (MainActivity, ObdItemAdapter) -
 	// kept at this level, unlike the Settings-internal-only keys below, so those external
 	// call sites don't need to change.
@@ -73,23 +87,29 @@ public class SettingsActivity extends AppCompatActivity
 	static final String KEY_COMM_MEDIUM = "comm_medium";
 	static final String ELM_MIN_TIMEOUT = "elm_min_timeout";
 	static final String ELM_CMD_DISABLE = "elm_cmd_disable";
-	private static final String KEY_APP_LANGUAGE = "app_language";
+	static final String KEY_APP_LANGUAGE = "app_language";
 
 	/**
 	 * Apply locale based on user preference
 	 *
 	 * @param activity Activity context
 	 */
+	static String getResolvedLanguage(Context context)
+	{
+		SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+		String language = prefs.getString(KEY_APP_LANGUAGE, "system");
+		if ("system".equals(language))
+		{
+			Locale systemLocale = Resources.getSystem().getConfiguration().locale;
+			return systemLocale == null ? "en" : systemLocale.getLanguage();
+		}
+		return language == null || language.trim().isEmpty() ? "en" : language.trim();
+	}
+
 	public static void applyLocale(Activity activity)
 	{
-		SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(activity);
-		String language = prefs.getString(KEY_APP_LANGUAGE, "system");
-		Locale locale;
-		if ("system".equals(language)) {
-			locale = Resources.getSystem().getConfiguration().locale;
-		} else {
-			locale = new Locale(language);
-		}
+		String language = getResolvedLanguage(activity);
+		Locale locale = new Locale(language);
 		Locale.setDefault(locale);
 
 		Resources resources = activity.getResources();
@@ -105,18 +125,57 @@ public class SettingsActivity extends AppCompatActivity
 	@Override
 	protected void onCreate(Bundle savedInstanceState)
 	{
-		// Apply locale before calling super.onCreate()
 		applyLocale(this);
-		setTheme(MainActivity.nightMode ? R.style.AppTheme_Dark : R.style.AppTheme);
+		SharedPreferences appPrefs = PreferenceManager.getDefaultSharedPreferences(this);
+		lightSettings = "light".equals(appPrefs.getString("lotot_theme", "dark"));
+		setTheme(lightSettings ? R.style.AppTheme_LotoTSettings_Light
+				: R.style.AppTheme_LotoTSettings);
 		super.onCreate(savedInstanceState);
+		setContentView(R.layout.activity_lotot_settings);
+
+		settingsTitle = findViewById(R.id.settings_title);
+		settingsSubtitle = findViewById(R.id.settings_subtitle);
+		ImageButton back = findViewById(R.id.settings_back);
+		back.setOnClickListener(v -> getOnBackPressedDispatcher().onBackPressed());
+		applySettingsSurfaceColors();
+
+		getSupportFragmentManager().addOnBackStackChangedListener(() ->
+		{
+			if (getSupportFragmentManager().getBackStackEntryCount() == 0)
+				setSettingsHeader(getString(R.string.advanced_settings_title),
+						getString(R.string.advanced_settings_subtitle));
+		});
 
 		if (savedInstanceState == null)
 		{
 			getSupportFragmentManager()
 				.beginTransaction()
-				.replace(android.R.id.content, new SettingsFragment())
+				.replace(R.id.settings_content, new SettingsFragment())
 				.commit();
 		}
+	}
+
+	private void applySettingsSurfaceColors()
+	{
+		int background = ContextCompat.getColor(this, lightSettings
+				? R.color.lotot_light_background : R.color.lotot_background);
+		int surface = ContextCompat.getColor(this, lightSettings
+				? R.color.lotot_light_surface : R.color.lotot_surface);
+		int text = ContextCompat.getColor(this, lightSettings
+				? R.color.lotot_light_text : R.color.lotot_text);
+		int muted = ContextCompat.getColor(this, lightSettings
+				? R.color.lotot_light_muted : R.color.lotot_muted);
+		findViewById(android.R.id.content).setBackgroundColor(background);
+		findViewById(R.id.settings_header).setBackgroundColor(surface);
+		findViewById(R.id.settings_content).setBackgroundColor(background);
+		settingsTitle.setTextColor(text);
+		settingsSubtitle.setTextColor(muted);
+	}
+
+	void setSettingsHeader(CharSequence title, CharSequence subtitle)
+	{
+		if (settingsTitle != null) settingsTitle.setText(title);
+		if (settingsSubtitle != null) settingsSubtitle.setText(subtitle);
 	}
 
 	/**
@@ -133,9 +192,10 @@ public class SettingsActivity extends AppCompatActivity
 		args.putString(PreferenceFragmentCompat.ARG_PREFERENCE_ROOT, pref.getKey());
 		fragment.setArguments(args);
 
+		setSettingsHeader(pref.getTitle(), getString(R.string.settings_root_subtitle));
 		getSupportFragmentManager()
 			.beginTransaction()
-			.replace(android.R.id.content, fragment)
+			.replace(R.id.settings_content, fragment)
 			.addToBackStack(pref.getKey())
 			.commit();
 		return true;
@@ -197,6 +257,17 @@ public class SettingsActivity extends AppCompatActivity
 
 			setPreferencesFromResource(R.xml.settings, rootKey);
 
+			if (requireActivity() instanceof SettingsActivity)
+			{
+				CharSequence title = rootKey == null
+						? getString(R.string.advanced_settings_title)
+						: getPreferenceScreen().getTitle();
+				CharSequence subtitle = rootKey == null
+						? getString(R.string.advanced_settings_subtitle)
+						: getString(R.string.settings_root_subtitle);
+				((SettingsActivity) requireActivity()).setSettingsHeader(title, subtitle);
+			}
+
 			for (String key : extKeys)
 			{
 				setPrefsText(key);
@@ -236,47 +307,74 @@ public class SettingsActivity extends AppCompatActivity
 		public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState)
 		{
 			super.onViewCreated(view, savedInstanceState);
-			view.post(() -> fixUnpaddedListContainer(view));
+			RecyclerView list = getListView();
+			list.setClipToPadding(false);
+			int side = dp(10);
+			list.setPadding(side, dp(12), side, dp(28));
+			list.setBackgroundColor(ContextCompat.getColor(requireContext(),
+					isLightSettings() ? R.color.lotot_light_background : R.color.lotot_background));
+			setDivider(null);
+			list.addOnChildAttachStateChangeListener(new RecyclerView.OnChildAttachStateChangeListener()
+			{
+				@Override public void onChildViewAttachedToWindow(@NonNull View child)
+				{
+					stylePreferenceRow(child);
+				}
+
+				@Override public void onChildViewDetachedFromWindow(@NonNull View child) { }
+			});
+			view.post(() ->
+			{
+				for (int i = 0; i < list.getChildCount(); i++)
+					stylePreferenceRow(list.getChildAt(i));
+			});
 		}
 
-		private void fixUnpaddedListContainer(@NonNull View fragmentView)
+		private boolean isLightSettings()
 		{
-			View listContainer = fragmentView.findViewById(android.R.id.list_container);
-			if (listContainer == null) return;
+			return requireActivity() instanceof SettingsActivity
+					&& ((SettingsActivity) requireActivity()).lightSettings;
+		}
 
-			int statusBarHeight = 0;
-			WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(fragmentView);
-			if (insets != null)
-			{
-				statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top;
-			}
+		private int dp(int value)
+		{
+			return Math.round(value * getResources().getDisplayMetrics().density);
+		}
 
-			int actionBarHeight = 0;
-			if (requireActivity() instanceof AppCompatActivity)
-			{
-				ActionBar actionBar = ((AppCompatActivity) requireActivity()).getSupportActionBar();
-				if (actionBar != null)
-				{
-					actionBarHeight = actionBar.getHeight();
-				}
-			}
-			int expectedTop = statusBarHeight + actionBarHeight;
+		private void stylePreferenceRow(@NonNull View item)
+		{
+			RecyclerView.LayoutParams params = item.getLayoutParams() instanceof RecyclerView.LayoutParams
+					? (RecyclerView.LayoutParams) item.getLayoutParams()
+					: new RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT,
+							RecyclerView.LayoutParams.WRAP_CONTENT);
+			TextView title = item.findViewById(android.R.id.title);
+			TextView summary = item.findViewById(android.R.id.summary);
+			ImageView icon = item.findViewById(android.R.id.icon);
 
-			int[] screenLocation = new int[2];
-			listContainer.getLocationOnScreen(screenLocation);
-			int actualTop = screenLocation[1];
+			int text = ContextCompat.getColor(requireContext(), isLightSettings()
+					? R.color.lotot_light_text : R.color.lotot_text);
+			int muted = ContextCompat.getColor(requireContext(), isLightSettings()
+					? R.color.lotot_light_muted : R.color.lotot_muted);
+			int accent = ContextCompat.getColor(requireContext(), isLightSettings()
+					? R.color.lotot_light_accent : R.color.lotot_accent);
+			int surface = ContextCompat.getColor(requireContext(), isLightSettings()
+					? R.color.lotot_light_surface : R.color.lotot_surface);
+			int line = ContextCompat.getColor(requireContext(), isLightSettings()
+					? R.color.lotot_light_divider : R.color.lotot_divider);
 
-			// Comfortably below "unpadded" (0) but still well short of the correct offset -
-			// avoids both a false negative from minor measurement variance and a false
-			// positive that would double-pad an already-correct layout.
-			if (actualTop < statusBarHeight)
-			{
-				listContainer.setPadding(
-					listContainer.getPaddingLeft(),
-					listContainer.getPaddingTop() + (expectedTop - actualTop),
-					listContainer.getPaddingRight(),
-					listContainer.getPaddingBottom());
-			}
+			GradientDrawable card = new GradientDrawable();
+			card.setColor(surface);
+			card.setCornerRadius(dp(16));
+			card.setStroke(dp(1), line);
+			ColorStateList rippleColor = ColorStateList.valueOf(
+					android.graphics.Color.argb(32, 202, 255, 0));
+			item.setBackground(new RippleDrawable(rippleColor, card, null));
+			params.setMargins(dp(6), dp(4), dp(6), dp(4));
+			item.setMinimumHeight(dp(68));
+			item.setLayoutParams(params);
+			if (title != null) title.setTextColor(text);
+			if (summary != null) summary.setTextColor(muted);
+			if (icon != null) icon.setColorFilter(accent);
 		}
 
 		/**
@@ -632,13 +730,8 @@ public class SettingsActivity extends AppCompatActivity
 
 			if(KEY_APP_LANGUAGE.equals(key))
 			{
-				// Apply new language immediately
 				SettingsActivity.applyLocale(requireActivity());
-
-				// Show restart message
-				Toast.makeText(requireContext(),
-				              getString(R.string.restart_required),
-				              Toast.LENGTH_LONG).show();
+				requireActivity().recreate();
 			}
 		}
 	}

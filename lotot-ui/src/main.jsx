@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
+import { getLanguage, setLanguage, t } from './i18n.js';
 
 const EMPTY_READINGS = {
   vehicle_speed: null,
@@ -33,82 +34,21 @@ const EMPTY_BUILTINS = {
   },
 };
 
-const LABEL_OVERRIDES = {
-  number_fault_codes: 'Codes défaut détectés',
-  status_mil: 'Voyant moteur (MIL)',
-  status_component_test: 'Moniteur composants',
-  status_fuel_system: 'Moniteur système carburant',
-  status_ignition_monitoring: 'Surveillance allumage',
-  status_misfires: 'Moniteur ratés moteur',
-  status_ac_refrigerant_test: 'Moniteur climatisation',
-  status_catalyst_test: 'Moniteur catalyseur',
-  status_catalyst_test_nox_monitor: 'Moniteur catalyseur / NOx',
-  status_egr_system_test: 'Moniteur système EGR',
-  status_evaporative_system_test: 'Moniteur système EVAP',
-  status_oxygen_sensor_heater_test: 'Moniteur chauffage sonde O₂',
-  status_oxygen_sensor_test: 'Moniteur sonde O₂',
-  status_secondary_air_system_test: 'Moniteur air secondaire',
-  engine_load_calculated: 'Charge moteur calculée',
-  engine_load: 'Charge moteur absolue',
-  engine_coolant_temperature: 'Température liquide moteur',
-  coolant_temp: 'Température liquide moteur',
-  fuel_trim_short_b1: 'Correction carburant courte B1',
-  fuel_trim_long_b1: 'Correction carburant longue B1',
-  fuel_trim_short_b2: 'Correction carburant courte B2',
-  fuel_trim_long_b2: 'Correction carburant longue B2',
-  fuel_pressure: 'Pression carburant',
-  fuel_pressure_rel: 'Pression carburant relative',
-  frp_relative: 'Pression rampe relative',
-  intake_manifold_pressure: 'Pression collecteur admission',
-  engine_speed: 'Régime moteur',
-  vehicle_speed: 'Vitesse véhicule',
-  ignition_timing_advance_cyl1: 'Avance allumage cylindre 1',
-  timing_advance_cycle_1: 'Avance allumage',
-  intake_air_temperature: 'Température air admission',
-  mass_airflow: 'Débit d’air MAF',
-  throttle_position_abs: 'Position papillon absolue',
-  throttle_position_rel: 'Position papillon relative',
-  running_time: 'Temps moteur actif',
-  seconds_since_engine_start: 'Temps moteur actif',
-  fuel_level: 'Niveau carburant',
-  fuel_tank_level_input: 'Niveau carburant',
-  barometric_pressure: 'Pression atmosphérique',
-  ecu_voltage: 'Tension ECU',
-  module_voltage: 'Tension module',
-  ambient_air_temperature: 'Température extérieure',
-  ethanol_fuel_percentage: 'Taux d’éthanol',
-  accelerator_pedal_position: 'Position pédale accélérateur',
-  engine_oil_temperature: 'Température huile moteur',
-  fuel_injection_timing: 'Avance injection',
-  engine_fuel_rate: 'Débit carburant',
-  engine_torque_demand: 'Demande de couple moteur',
-  engine_torque: 'Couple moteur actuel',
-  engine_torque_reference: 'Couple moteur de référence',
-  GPS_LATITUDE: 'Latitude GPS',
-  GPS_LONGITUDE: 'Longitude GPS',
-  GPS_ALTITUDE: 'Altitude GPS',
-  GPS_BEARING: 'Cap GPS',
-  GPS_SPEED: 'Vitesse GPS',
-  ACC_X: 'Accélération latérale',
-  ACC_Y: 'Accélération longitudinale',
-  ACC_Z: 'Accélération verticale',
-};
-
 const CATEGORIES = [
-  { id: 'all', label: 'Tout', icon: 'activity' },
-  { id: 'favorites', label: 'Favoris', icon: 'star' },
-  { id: 'diagnostic', label: 'Diagnostic', icon: 'shield' },
-  { id: 'engine', label: 'Moteur', icon: 'gauge' },
-  { id: 'driving', label: 'Conduite', icon: 'car' },
-  { id: 'temperature', label: 'Températures', icon: 'thermometer' },
-  { id: 'fuel', label: 'Carburant', icon: 'fuel' },
-  { id: 'air', label: 'Air', icon: 'wind' },
-  { id: 'pressure', label: 'Pressions', icon: 'droplet' },
-  { id: 'electrical', label: 'Électrique', icon: 'bolt' },
-  { id: 'emissions', label: 'Émissions', icon: 'leaf' },
-  { id: 'location', label: 'GPS', icon: 'location' },
-  { id: 'motion', label: 'Mouvement', icon: 'phone' },
-  { id: 'other', label: 'Autres', icon: 'grid' },
+  { id: 'all', labelKey: 'category.all', icon: 'activity' },
+  { id: 'favorites', labelKey: 'category.favorites', icon: 'star' },
+  { id: 'diagnostic', labelKey: 'category.diagnostic', icon: 'shield' },
+  { id: 'engine', labelKey: 'category.engine', icon: 'gauge' },
+  { id: 'driving', labelKey: 'category.driving', icon: 'car' },
+  { id: 'temperature', labelKey: 'category.temperature', icon: 'thermometer' },
+  { id: 'fuel', labelKey: 'category.fuel', icon: 'fuel' },
+  { id: 'air', labelKey: 'category.air', icon: 'wind' },
+  { id: 'pressure', labelKey: 'category.pressure', icon: 'droplet' },
+  { id: 'electrical', labelKey: 'category.electrical', icon: 'bolt' },
+  { id: 'emissions', labelKey: 'category.emissions', icon: 'leaf' },
+  { id: 'location', labelKey: 'category.location', icon: 'location' },
+  { id: 'motion', labelKey: 'category.motion', icon: 'phone' },
+  { id: 'other', labelKey: 'category.other', icon: 'grid' },
 ];
 
 const telemetryBridge = window.lototTelemetryBridge = window.lototTelemetryBridge || {
@@ -197,13 +137,19 @@ window.lototSetBuiltinState = (payload) => {
   }
 };
 
+
+window.lototSetLanguage = (language) => {
+  const normalized = setLanguage(language);
+  window.dispatchEvent(new CustomEvent('lotot:language', { detail: { language: normalized } }));
+};
+
 const isNumericReading = (value) => value !== null
   && value !== undefined
   && value !== ''
   && Number.isFinite(Number(value));
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, isNumericReading(value) ? Number(value) : min));
-const mediumLabel = (medium) => medium === 'ble' ? 'Bluetooth LE' : 'Bluetooth classique';
+const mediumLabel = (medium) => medium === 'ble' ? t('connection.bluetooth_le') : t('connection.bluetooth_classic');
 const signalKey = (signal) => signal?.key || signal?.mnemonic || signal?.label || 'unknown';
 const cleanText = (value) => String(value || '').trim();
 
@@ -219,7 +165,8 @@ function formatValue(value, decimals = null) {
 }
 
 function signalLabel(signal) {
-  return LABEL_OVERRIDES[signal?.mnemonic] || cleanText(signal?.label) || cleanText(signal?.mnemonic) || 'Capteur OBD';
+  const mnemonic = cleanText(signal?.mnemonic);
+  return t(`signal.${mnemonic}`, {}, '') || cleanText(signal?.label) || mnemonic || t('generic.obd_sensor');
 }
 
 function categoryFor(signal) {
@@ -242,18 +189,18 @@ function categoryFor(signal) {
 function ageLabel(timestamp, now) {
   if (!Number.isFinite(Number(timestamp)) || Number(timestamp) <= 0) return '—';
   const age = Math.max(0, now - Number(timestamp));
-  if (age < 1000) return 'maintenant';
+  if (age < 1000) return t('generic.now');
   if (age < 60000) return `${Math.floor(age / 1000)} s`;
   return `${Math.floor(age / 60000)} min`;
 }
 
 
 const TEMPERATURE_PROFILES = {
-  engine_coolant_temperature: { min: 0, max: 130, normalMin: 70, normalMax: 105, warningMax: 115, short: 'Liquide moteur' },
-  coolant_temp: { min: 0, max: 130, normalMin: 70, normalMax: 105, warningMax: 115, short: 'Liquide moteur' },
-  engine_oil_temperature: { min: 0, max: 150, normalMin: 70, normalMax: 110, warningMax: 125, short: 'Huile moteur' },
-  intake_air_temperature: { min: -20, max: 100, normalMin: -10, normalMax: 60, warningMax: 80, short: 'Air admission' },
-  ambient_air_temperature: { min: -30, max: 60, normalMin: -10, normalMax: 40, warningMax: 50, short: 'Air extérieur' },
+  engine_coolant_temperature: { min: 0, max: 130, normalMin: 70, normalMax: 105, warningMax: 115, shortKey: 'temperature.coolant' },
+  coolant_temp: { min: 0, max: 130, normalMin: 70, normalMax: 105, warningMax: 115, shortKey: 'temperature.coolant' },
+  engine_oil_temperature: { min: 0, max: 150, normalMin: 70, normalMax: 110, warningMax: 125, shortKey: 'temperature.oil' },
+  intake_air_temperature: { min: -20, max: 100, normalMin: -10, normalMax: 60, warningMax: 80, shortKey: 'temperature.intake' },
+  ambient_air_temperature: { min: -30, max: 60, normalMin: -10, normalMax: 40, warningMax: 50, shortKey: 'temperature.ambient' },
 };
 
 function temperatureProfile(signal) {
@@ -268,31 +215,31 @@ function assessSignal(signal) {
   const value = Number(signal.value);
   const absolute = Math.abs(value);
   const issue = (level, message) => ({ level, message, signal });
-  if (mnemonic === 'number_fault_codes' && value > 0) return issue('danger', `${formatValue(value, 0)} code(s) défaut enregistré(s)`);
-  if (mnemonic === 'status_mil' && value > 0) return issue('danger', 'Voyant moteur allumé');
+  if (mnemonic === 'number_fault_codes' && value > 0) return issue('danger', t('alert.fault_count', { count: formatValue(value, 0) }));
+  if (mnemonic === 'status_mil' && value > 0) return issue('danger', t('alert.mil'));
   if (['engine_coolant_temperature', 'coolant_temp'].includes(mnemonic)) {
-    if (value > 115) return issue('danger', `Liquide moteur critique à ${formatValue(value, 0)} °C`);
-    if (value > 105) return issue('warning', `Liquide moteur élevé à ${formatValue(value, 0)} °C`);
+    if (value > 115) return issue('danger', t('alert.coolant_critical', { value: formatValue(value, 0) }));
+    if (value > 105) return issue('warning', t('alert.coolant_high', { value: formatValue(value, 0) }));
   }
   if (mnemonic === 'engine_oil_temperature') {
-    if (value > 125) return issue('danger', `Huile moteur critique à ${formatValue(value, 0)} °C`);
-    if (value > 110) return issue('warning', `Huile moteur élevée à ${formatValue(value, 0)} °C`);
+    if (value > 125) return issue('danger', t('alert.oil_critical', { value: formatValue(value, 0) }));
+    if (value > 110) return issue('warning', t('alert.oil_high', { value: formatValue(value, 0) }));
   }
   if (mnemonic === 'intake_air_temperature') {
-    if (value > 80) return issue('danger', `Air d’admission critique à ${formatValue(value, 0)} °C`);
-    if (value > 60) return issue('warning', `Air d’admission chaud à ${formatValue(value, 0)} °C`);
+    if (value > 80) return issue('danger', t('alert.intake_critical', { value: formatValue(value, 0) }));
+    if (value > 60) return issue('warning', t('alert.intake_high', { value: formatValue(value, 0) }));
   }
   if (['ecu_voltage', 'module_voltage'].includes(mnemonic)) {
-    if (value < 11.8 || value > 15.2) return issue('danger', `Tension électrique anormale : ${formatValue(value, 2)} V`);
-    if (value < 12.3 || value > 14.8) return issue('warning', `Tension électrique à surveiller : ${formatValue(value, 2)} V`);
+    if (value < 11.8 || value > 15.2) return issue('danger', t('alert.voltage_abnormal', { value: formatValue(value, 2) }));
+    if (value < 12.3 || value > 14.8) return issue('warning', t('alert.voltage_watch', { value: formatValue(value, 2) }));
   }
   if (['fuel_level', 'fuel_tank_level_input'].includes(mnemonic)) {
-    if (value < 10) return issue('danger', `Réservoir presque vide : ${formatValue(value, 0)} %`);
-    if (value < 20) return issue('warning', `Niveau carburant bas : ${formatValue(value, 0)} %`);
+    if (value < 10) return issue('danger', t('alert.fuel_empty', { value: formatValue(value, 0) }));
+    if (value < 20) return issue('warning', t('alert.fuel_low', { value: formatValue(value, 0) }));
   }
   if (/fuel_trim_(short|long)_b[12]/.test(mnemonic)) {
-    if (absolute > 25) return issue('danger', `${signalLabel(signal)} hors plage : ${formatValue(value, 1)} %`);
-    if (absolute > 15) return issue('warning', `${signalLabel(signal)} élevé : ${formatValue(value, 1)} %`);
+    if (absolute > 25) return issue('danger', t('alert.trim_range', { label: signalLabel(signal), value: formatValue(value, 1) }));
+    if (absolute > 15) return issue('warning', t('alert.trim_high', { label: signalLabel(signal), value: formatValue(value, 1) }));
   }
   return null;
 }
@@ -307,7 +254,7 @@ function toneForTemperature(value, profile) {
 }
 
 function toneLabel(tone) {
-  return tone === 'danger' ? 'CRITIQUE' : tone === 'warning' ? 'ÉLEVÉ' : tone === 'cold' ? 'FROID' : tone === 'normal' ? 'NORMAL' : 'INDISPONIBLE';
+  return tone === 'danger' ? t('generic.critical') : tone === 'warning' ? t('generic.high') : tone === 'cold' ? t('generic.cold') : tone === 'normal' ? t('generic.normal') : t('generic.unavailable');
 }
 
 function toneForVoltage(value) {
@@ -407,11 +354,11 @@ function TemperatureBand({ signal, historyValues }) {
   const tone = toneForTemperature(value, profile);
   return (
     <div className={`temperature-chart tone-${tone}`}>
-      <div className="temperature-status"><span>{toneLabel(tone)}</span><small>Normal {profile.normalMin}–{profile.normalMax} °C</small></div>
+      <div className="temperature-status"><span>{toneLabel(tone)}</span><small>{t('temperature.normal_range', { min: profile.normalMin, max: profile.normalMax })}</small></div>
       <div className="temperature-track" style={{ '--marker': `${position}%`, '--normal-start': `${normalStart}%`, '--normal-end': `${normalEnd}%`, '--warning-end': `${warningEnd}%` }}>
         <i className="normal-zone"/><b className="temperature-marker"/>
       </div>
-      <div className="temperature-labels"><span>{profile.min}°</span><span>{profile.normalMax}° normal</span><span>{profile.warningMax}° haut</span><span>{profile.max}°</span></div>
+      <div className="temperature-labels"><span>{profile.min}°</span><span>{t('temperature.normal_mark', { value: profile.normalMax })}</span><span>{t('temperature.high_mark', { value: profile.warningMax })}</span><span>{profile.max}°</span></div>
       <Sparkline values={historyValues} tone={tone === 'danger' ? 'danger' : tone === 'warning' ? 'warning' : 'temperature'}/>
     </div>
   );
@@ -454,15 +401,16 @@ function SignalCard({ signal, favorite, onToggleFavorite, history, now }) {
     : current > previous ? 'up' : 'down';
   const assessment = assessSignal(signal);
   const category = categoryFor(signal);
+  const categoryLabel = t(CATEGORIES.find((item) => item.id === category)?.labelKey || 'category.other');
+  const sourceLabel = signal.source
+    ? `${signal.source === 'gps' ? t('source.gps') : signal.source === 'motion' ? t('source.motion') : signal.source} · ${signal.mnemonic || t('source.sensor')}`
+    : `PID ${Number(signal.pid || 0).toString(16).toUpperCase().padStart(2, '0')} · ${signal.mnemonic || t('source.sensor')}`;
 
   return (
     <article className={`signal-card category-${category} ${assessment ? `has-${assessment.level}` : ''}`}>
       <header>
-        <div>
-          <span>{CATEGORIES.find((item) => item.id === category)?.label || 'Autres'}</span>
-          <h3>{signalLabel(signal)}</h3>
-        </div>
-        <button type="button" className={favorite ? 'favorite-button is-active' : 'favorite-button'} onClick={() => onToggleFavorite(key)} aria-label={favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}>
+        <div><span>{categoryLabel}</span><h3>{signalLabel(signal)}</h3></div>
+        <button type="button" className={favorite ? 'favorite-button is-active' : 'favorite-button'} onClick={() => onToggleFavorite(key)} aria-label={favorite ? t('explorer.remove_favorite') : t('explorer.add_favorite')}>
           <Icon name="star"/>
         </button>
       </header>
@@ -472,10 +420,7 @@ function SignalCard({ signal, favorite, onToggleFavorite, history, now }) {
       </div>
       {assessment && <div className={`signal-assessment ${assessment.level}`}>{assessment.message}</div>}
       <SignalVisualization signal={signal} historyValues={historyValues}/>
-      <footer>
-        <code>{signal.source ? `${signal.source === 'gps' ? 'GPS intégré' : signal.source === 'motion' ? 'Capteur téléphone' : signal.source} · ${signal.mnemonic || 'capteur'}` : `PID ${Number(signal.pid || 0).toString(16).toUpperCase().padStart(2, '0')} · ${signal.mnemonic || 'capteur'}`}</code>
-        <span><Icon name="clock"/>{ageLabel(signal.updated_at, now)}</span>
-      </footer>
+      <footer><code>{sourceLabel}</code><span><Icon name="clock"/>{ageLabel(signal.updated_at, now)}</span></footer>
     </article>
   );
 }
@@ -494,17 +439,17 @@ function DriveOverview({ readings, valueOf, historyOf }) {
   const rpmProgress = isNumericReading(rpm) ? clamp(rpm, 0, 7000) / 7000 * 100 : 0;
   return (
     <section className="drive-overview">
-      <header><div><span>CONDUITE</span><strong>En temps réel</strong></div><Icon name="gauge"/></header>
+      <header><div><span>{t('drive.title')}</span><strong>{t('drive.live')}</strong></div><Icon name="gauge"/></header>
       <div className="drive-main-values">
         <div className="speed-value"><strong>{formatValue(speed, 0)}</strong><span>km/h</span></div>
-        <div className="rpm-value"><small>RÉGIME</small><strong>{formatValue(rpm, 0)}</strong><span>tr/min</span></div>
+        <div className="rpm-value"><small>{t('drive.rpm')}</small><strong>{formatValue(rpm, 0)}</strong><span>rpm</span></div>
       </div>
       <div className="drive-bars">
-        <div><span>Vitesse</span><i><b style={{ width: `${speedProgress}%` }}/></i></div>
+        <div><span>{t('drive.speed')}</span><i><b style={{ width: `${speedProgress}%` }}/></i></div>
         <div><span>RPM</span><i className="rpm-scale"><b style={{ width: `${rpmProgress}%` }}/></i></div>
       </div>
       <Sparkline values={historyOf('vehicle_speed')} tone="driving"/>
-      <footer><span><small>CHARGE</small><strong>{formatValue(load, 0)}%</strong></span><span><small>ACCÉL.</small><strong>{formatValue(throttle, 0)}%</strong></span><span><small>COUPLE</small><strong>{formatValue(torque, 0)}%</strong></span></footer>
+      <footer><span><small>{t('drive.load')}</small><strong>{formatValue(load, 0)}%</strong></span><span><small>{t('drive.accelerator')}</small><strong>{formatValue(throttle, 0)}%</strong></span><span><small>{t('drive.torque')}</small><strong>{formatValue(torque, 0)}%</strong></span></footer>
     </section>
   );
 }
@@ -514,13 +459,13 @@ function HealthOverview({ alerts, signals, lastCapturedAt, now }) {
   const warningCount = alerts.filter((item) => item.level === 'warning').length;
   const tone = dangerCount ? 'danger' : warningCount ? 'warning' : signals.length ? 'normal' : 'unknown';
   const primary = alerts.find((item) => item.level === 'danger') || alerts[0];
-  const title = dangerCount ? 'Action requise' : warningCount ? 'À surveiller' : signals.length ? 'Paramètres stables' : 'En attente';
+  const title = dangerCount ? t('health.action') : warningCount ? t('health.watch') : signals.length ? t('health.stable') : t('health.waiting');
   return (
     <section className={`health-overview tone-${tone}`}>
       <header><span><Icon name="shield"/></span><i/></header>
       <strong>{title}</strong>
-      <p>{primary?.message || (signals.length ? `${signals.length} signaux analysés en direct` : 'Connectez le véhicule pour analyser les seuils.')}</p>
-      <div className="health-counts"><span><b>{dangerCount}</b><small>critique</small></span><span><b>{warningCount}</b><small>à suivre</small></span></div>
+      <p>{primary?.message || (signals.length ? t('health.signals', { count: signals.length }) : t('health.connect'))}</p>
+      <div className="health-counts"><span><b>{dangerCount}</b><small>{t('health.critical')}</small></span><span><b>{warningCount}</b><small>{t('health.follow')}</small></span></div>
       <footer>{ageLabel(lastCapturedAt, now)}</footer>
     </section>
   );
@@ -533,14 +478,14 @@ function DeviceRow({ device, connected, selected, connecting, onConnect }) {
     <button type="button" className={`device-row ${isConnected ? 'is-connected' : ''} ${isConnecting ? 'is-connecting' : ''}`} onClick={() => onConnect(device)} disabled={isConnected || connecting}>
       <span className="device-icon"><Icon name="bluetooth"/></span>
       <span className="device-copy">
-        <strong>{device.name || 'Adaptateur Bluetooth'}</strong>
+        <strong>{device.name || t('connection.adapter')}</strong>
         <small>{device.address}</small>
         <span className="device-badges">
-          {device.paired && <em>ASSOCIÉ</em>}
+          {device.paired && <em>{t('connection.paired')}</em>}
           {Number.isFinite(device.rssi) && <em className="signal-badge"><Icon name="signal"/>{device.rssi} dBm</em>}
         </span>
       </span>
-      <span className="device-action">{isConnected ? 'CONNECTÉ' : isConnecting ? 'CONNEXION…' : 'CONNECTER'}</span>
+      <span className="device-action">{isConnected ? t('connection.connected') : isConnecting ? t('connection.connecting') : t('connection.connect')}</span>
     </button>
   );
 }
@@ -561,29 +506,29 @@ function ConnectionSheet({ open, onClose, bluetooth, medium, setMedium, onScan, 
 
   return (
     <div className="sheet-backdrop" role="presentation" onClick={onClose}>
-      <section className="connection-sheet" role="dialog" aria-modal="true" aria-label="Connexion Bluetooth" onClick={(event) => event.stopPropagation()}>
+      <section className="connection-sheet" role="dialog" aria-modal="true" aria-label={t('connection.dialog')} onClick={(event) => event.stopPropagation()}>
         <div className="sheet-handle"/>
         <header className="sheet-header">
-          <div><span>CONNEXION OBD</span><h2>Choisir un adaptateur</h2></div>
-          <button className="icon-button" type="button" onClick={onClose} aria-label="Fermer"><Icon name="close"/></button>
+          <div><span>{t('connection.section')}</span><h2>{t('connection.choose')}</h2></div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label={t('generic.close')}><Icon name="close"/></button>
         </header>
 
         {bluetooth.connectedDevice && (
           <article className="connected-banner">
             <span className="connected-icon"><Icon name="link"/></span>
-            <div><small>ADAPTATEUR ACTIF</small><strong>{bluetooth.connectedDevice.name}</strong><span>{bluetooth.connectedDevice.address} · {mediumLabel(bluetooth.connectedDevice.medium)}</span></div>
-            <button type="button" onClick={onDisconnect}><Icon name="unlink"/><span>Déconnecter</span></button>
+            <div><small>{t('connection.active_adapter')}</small><strong>{bluetooth.connectedDevice.name}</strong><span>{bluetooth.connectedDevice.address} · {mediumLabel(bluetooth.connectedDevice.medium)}</span></div>
+            <button type="button" onClick={onDisconnect}><Icon name="unlink"/><span>{t('connection.disconnect')}</span></button>
           </article>
         )}
 
         <div className="medium-tabs" role="tablist">
-          <button type="button" className={medium === 'classic' ? 'is-active' : ''} onClick={() => setMedium('classic')}>CLASSIQUE</button>
+          <button type="button" className={medium === 'classic' ? 'is-active' : ''} onClick={() => setMedium('classic')}>{t('connection.classic')}</button>
           <button type="button" className={medium === 'ble' ? 'is-active' : ''} onClick={() => setMedium('ble')}>BLE</button>
         </div>
 
         <div className="scan-toolbar">
-          <div><strong>{mediumLabel(medium)}</strong><span>{devices.length} appareil{devices.length === 1 ? '' : 's'}</span></div>
-          <button type="button" onClick={() => onScan(medium)} disabled={bluetooth.scanning}><Icon name="refresh"/><span>{bluetooth.scanning ? 'Recherche…' : 'Actualiser'}</span></button>
+          <div><strong>{mediumLabel(medium)}</strong><span>{t('connection.device_count', { count: devices.length })}</span></div>
+          <button type="button" onClick={() => onScan(medium)} disabled={bluetooth.scanning}><Icon name="refresh"/><span>{bluetooth.scanning ? t('connection.searching') : t('connection.refresh')}</span></button>
         </div>
 
         {bluetooth.error && <div className="connection-error">{bluetooth.error}</div>}
@@ -595,29 +540,28 @@ function ConnectionSheet({ open, onClose, bluetooth, medium, setMedium, onScan, 
           {!devices.length && (
             <div className="empty-devices">
               <span className={bluetooth.scanning ? 'scanner-orbit is-scanning' : 'scanner-orbit'}><Icon name="bluetooth"/></span>
-              <strong>{bluetooth.scanning ? 'Recherche des adaptateurs…' : 'Aucun adaptateur trouvé'}</strong>
-              <p>Allumez le boîtier OBD, rapprochez-le du téléphone puis relancez la recherche.</p>
+              <strong>{bluetooth.scanning ? t('connection.searching_adapters') : t('connection.none')}</strong>
+              <p>{t('connection.none_help')}</p>
             </div>
           )}
         </div>
-        <p className="sheet-note">Les adaptateurs ELM327 classiques doivent parfois être associés dans les réglages Bluetooth Android avec le code 1234 ou 0000.</p>
+        <p className="sheet-note">{t('connection.pairing_note')}</p>
       </section>
     </div>
   );
 }
 
-
 function serviceLabel(service, kind) {
-  if (!service?.enabled) return 'DÉSACTIVÉ';
-  if (service.status === 'active' || service.status === 'online') return 'ACTIF';
-  if (service.status === 'up_to_date') return 'À JOUR';
-  if (service.status === 'syncing') return 'SYNCHRONISATION';
-  if (service.status === 'queued') return 'HORS LIGNE · STOCKÉ';
-  if (service.status === 'permission') return 'AUTORISATION';
-  if (service.status === 'configuration') return 'À CONFIGURER';
-  if (service.status === 'error' || service.status === 'unavailable') return 'ERREUR';
-  if (service.status === 'connecting') return 'CONNEXION';
-  return kind === 'mqtt' ? 'EN ATTENTE DU FLUX' : 'EN ATTENTE';
+  if (!service?.enabled) return t('generic.disabled');
+  if (service.status === 'active' || service.status === 'online') return t('generic.active');
+  if (service.status === 'up_to_date') return t('generic.up_to_date');
+  if (service.status === 'syncing') return t('generic.syncing');
+  if (service.status === 'queued') return t('generic.offline_stored');
+  if (service.status === 'permission') return t('generic.permission');
+  if (service.status === 'configuration') return t('generic.configuration');
+  if (service.status === 'error' || service.status === 'unavailable') return t('generic.error');
+  if (service.status === 'connecting') return t('generic.connection');
+  return kind === 'mqtt' ? t('generic.waiting_stream') : t('generic.waiting');
 }
 
 function ServiceTile({ icon, title, service, kind, detail, onClick }) {
@@ -683,63 +627,68 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
     onSave({ gps_enabled: gpsEnabled, sensors_enabled: sensorsEnabled, mqtt: mqttPayload });
   };
 
+  const queued = Number(services.mqtt?.queue_depth || 0);
+  const gatewayDetail = queued
+    ? t('service.local_saved', { count: queued })
+    : t('service.local_empty');
+
   return (
     <div className="sheet-backdrop services-backdrop" role="presentation" onClick={onClose}>
-      <section className="connection-sheet services-sheet" role="dialog" aria-modal="true" aria-label="Services intégrés" onClick={(event) => event.stopPropagation()}>
+      <section className="connection-sheet services-sheet" role="dialog" aria-modal="true" aria-label={t('service.dialog')} onClick={(event) => event.stopPropagation()}>
         <div className="sheet-handle"/>
         <header className="sheet-header">
-          <div><span>SERVICES NATIFS LOTOT</span><h2>Sources et synchronisation</h2></div>
-          <button className="icon-button" type="button" onClick={onClose} aria-label="Fermer"><Icon name="close"/></button>
+          <div><span>{t('service.native_title')}</span><h2>{t('service.sources_sync')}</h2></div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label={t('generic.close')}><Icon name="close"/></button>
         </header>
 
         <section className="service-config-block">
-          <div className="service-config-title"><span><Icon name="location"/></span><div><strong>Position GPS intégrée</strong><small>Latitude, longitude, altitude, cap et vitesse GPS</small></div></div>
-          <SwitchRow checked={gpsEnabled} onChange={setGpsEnabled} title="Activer la position" description="Alimente le tableau de bord et MQTT sans application séparée." disabled={!services.gps?.available}/>
-          {gpsEnabled && !services.gps?.permission_granted && <button className="permission-button" type="button" onClick={onRequestLocation}><Icon name="location"/><span>Autoriser la localisation</span></button>}
+          <div className="service-config-title"><span><Icon name="location"/></span><div><strong>{t('service.gps_integrated')}</strong><small>{t('service.gps_detail')}</small></div></div>
+          <SwitchRow checked={gpsEnabled} onChange={setGpsEnabled} title={t('service.enable_position')} description={t('service.enable_position_detail')} disabled={!services.gps?.available}/>
+          {gpsEnabled && !services.gps?.permission_granted && <button className="permission-button" type="button" onClick={onRequestLocation}><Icon name="location"/><span>{t('service.allow_location')}</span></button>}
           {services.gps?.error && <p className="inline-service-error">{services.gps.error}</p>}
         </section>
 
         <section className="service-config-block">
-          <div className="service-config-title"><span><Icon name="phone"/></span><div><strong>Capteurs du téléphone</strong><small>Accélérations latérale, longitudinale et verticale</small></div></div>
-          <SwitchRow checked={sensorsEnabled} onChange={setSensorsEnabled} title="Activer l’accéléromètre" description="Échantillonnage natif à 10 Hz, affichage réduit à la cadence du dashboard." disabled={!services.sensors?.available}/>
+          <div className="service-config-title"><span><Icon name="phone"/></span><div><strong>{t('service.phone_title')}</strong><small>{t('service.phone_detail')}</small></div></div>
+          <SwitchRow checked={sensorsEnabled} onChange={setSensorsEnabled} title={t('service.enable_accelerometer')} description={t('service.accelerometer_detail')} disabled={!services.sensors?.available}/>
         </section>
 
         <section className="service-config-block mqtt-config-block">
-          <div className="service-config-title"><span><Icon name="cloud"/></span><div><strong>Passerelle MQTT fiable</strong><small>Service permanent, file hors ligne et reprise automatique</small></div></div>
+          <div className="service-config-title"><span><Icon name="cloud"/></span><div><strong>{t('service.gateway_title')}</strong><small>{t('service.gateway_detail')}</small></div></div>
           <div className={`gateway-runtime ${services.mqtt?.status || 'disabled'}`}>
             <span><Icon name="shield"/></span>
-            <div><small>PASSERELLE DE FOND</small><strong>{services.foreground ? 'Service actif' : 'Démarrage…'}</strong><em>{services.mqtt?.queue_depth ? `${services.mqtt.queue_depth} relevé${services.mqtt.queue_depth === 1 ? '' : 's'} conservé${services.mqtt.queue_depth === 1 ? '' : 's'} sur le téléphone` : 'File locale vide · données à jour'}</em></div>
-            <b>{services.mqtt?.status === 'syncing' ? `${Math.max(0, (services.mqtt.syncing_total || 0) - (services.mqtt.syncing_remaining || 0))}/${services.mqtt.syncing_total || 0}` : services.mqtt?.queue_depth || 0}</b>
+            <div><small>{t('service.background_gateway')}</small><strong>{services.foreground ? t('service.running') : t('service.starting')}</strong><em>{gatewayDetail}</em></div>
+            <b>{services.mqtt?.status === 'syncing' ? `${Math.max(0, (services.mqtt.syncing_total || 0) - (services.mqtt.syncing_remaining || 0))}/${services.mqtt.syncing_total || 0}` : queued}</b>
           </div>
-          <p className="gateway-security"><Icon name="shield"/><span>Mot de passe protégé par Android Keystore · file SQLite limitée à {services.mqtt?.queue_capacity || 10000} relevés.</span></p>
-          <SwitchRow checked={Boolean(mqtt.enabled)} onChange={(value) => updateMqtt('enabled', value)} title="Activer MQTT" description="Connexion automatique au broker lorsque des données sont disponibles."/>
+          <p className="gateway-security"><Icon name="shield"/><span>{t('service.security', { count: services.mqtt?.queue_capacity || 10000 })}</span></p>
+          <SwitchRow checked={Boolean(mqtt.enabled)} onChange={(value) => updateMqtt('enabled', value)} title={t('service.enable_mqtt')} description={t('service.enable_mqtt_detail')}/>
           <div className="mqtt-form">
-            <label><span>Protocole</span><select value={mqtt.protocol} onChange={(event) => updateMqtt('protocol', event.target.value)}><option value="tcp://">TCP</option><option value="ssl://">SSL/TLS</option><option value="ws://">WebSocket</option><option value="wss://">WebSocket sécurisé</option></select></label>
-            <label className="is-wide"><span>Serveur MQTT</span><input value={mqtt.host} onChange={(event) => updateMqtt('host', event.target.value)} placeholder="mqtt.example.com"/></label>
-            <label><span>Port</span><input type="number" value={mqtt.port} onChange={(event) => updateMqtt('port', event.target.value)} inputMode="numeric"/></label>
-            <label><span>Intervalle</span><div className="input-unit"><input type="number" min="1" value={mqtt.interval_seconds} onChange={(event) => updateMqtt('interval_seconds', event.target.value)}/><em>s</em></div></label>
-            <label className="is-wide"><span>Identifiant appareil Django</span><input value={mqtt.device_uid} onChange={(event) => updateMqtt('device_uid', event.target.value)} placeholder="demo-obd-001" autoCapitalize="none"/><small className="field-hint">Topic : LotoT/devices/{mqtt.device_uid?.trim() || 'android-xxxxxx'}/snapshot</small></label>
-            <label className="is-wide"><span>Identifiant client MQTT</span><input value={mqtt.client_id} onChange={(event) => updateMqtt('client_id', event.target.value)} placeholder="Généré automatiquement"/></label>
-            <label><span>Utilisateur</span><input value={mqtt.username} onChange={(event) => updateMqtt('username', event.target.value)} autoCapitalize="none"/></label>
-            <label><span>Mot de passe</span><input type="password" value={mqtt.password} onChange={(event) => updateMqtt('password', event.target.value)} placeholder={mqtt.password_set ? 'Enregistré · laisser vide' : 'Facultatif'}/></label>
-            <label><span>QoS</span><select value={mqtt.qos} onChange={(event) => updateMqtt('qos', event.target.value)}><option value="0">0 · rapide</option><option value="1">1 · confirmé</option><option value="2">2 · exactement une fois</option></select></label>
-            <SwitchRow checked={Boolean(mqtt.retain)} onChange={(value) => updateMqtt('retain', value)} title="Messages retenus" description="Déconseillé pour la télémétrie live : peut rejouer une ancienne mesure."/>
+            <label><span>{t('service.protocol')}</span><select value={mqtt.protocol} onChange={(event) => updateMqtt('protocol', event.target.value)}><option value="tcp://">TCP</option><option value="ssl://">SSL/TLS</option><option value="ws://">WebSocket</option><option value="wss://">Secure WebSocket</option></select></label>
+            <label className="is-wide"><span>{t('service.server')}</span><input value={mqtt.host} onChange={(event) => updateMqtt('host', event.target.value)} placeholder="mqtt.example.com"/></label>
+            <label><span>{t('service.port')}</span><input type="number" value={mqtt.port} onChange={(event) => updateMqtt('port', event.target.value)} inputMode="numeric"/></label>
+            <label><span>{t('service.interval')}</span><div className="input-unit"><input type="number" min="1" value={mqtt.interval_seconds} onChange={(event) => updateMqtt('interval_seconds', event.target.value)}/><em>s</em></div></label>
+            <label className="is-wide"><span>{t('service.device_uid')}</span><input value={mqtt.device_uid} onChange={(event) => updateMqtt('device_uid', event.target.value)} placeholder="demo-obd-001" autoCapitalize="none"/><small className="field-hint">{t('service.topic')}: LotoT/devices/{mqtt.device_uid?.trim() || 'android-xxxxxx'}/snapshot</small></label>
+            <label className="is-wide"><span>{t('service.client_id')}</span><input value={mqtt.client_id} onChange={(event) => updateMqtt('client_id', event.target.value)} placeholder={t('service.generated')}/></label>
+            <label><span>{t('service.username')}</span><input value={mqtt.username} onChange={(event) => updateMqtt('username', event.target.value)} autoCapitalize="none"/></label>
+            <label><span>{t('service.password')}</span><input type="password" value={mqtt.password} onChange={(event) => updateMqtt('password', event.target.value)} placeholder={mqtt.password_set ? t('service.saved_leave_blank') : t('service.optional')}/></label>
+            <label><span>QoS</span><select value={mqtt.qos} onChange={(event) => updateMqtt('qos', event.target.value)}><option value="0">0 · {t('service.qos_fast')}</option><option value="1">1 · {t('service.qos_confirmed')}</option><option value="2">2 · {t('service.qos_exactly_once')}</option></select></label>
+            <SwitchRow checked={Boolean(mqtt.retain)} onChange={(value) => updateMqtt('retain', value)} title={t('service.retained')} description={t('service.retained_detail')}/>
           </div>
 
-          <div className="signal-publish-head"><div><strong>Signaux publiés</strong><small>{selected.length ? `${selected.length} sélectionné(s)` : 'Tous les signaux live'}</small></div><button type="button" onClick={() => updateMqtt('selected_signals', [])}>TOUT PUBLIER</button></div>
+          <div className="signal-publish-head"><div><strong>{t('service.published_signals')}</strong><small>{selected.length ? t('service.selected', { count: selected.length }) : t('service.all_live')}</small></div><button type="button" onClick={() => updateMqtt('selected_signals', [])}>{t('service.publish_all')}</button></div>
           <div className="publish-signal-list">
             {signals.map((signal) => {
               const mnemonic = signal.mnemonic || signalKey(signal);
               const active = !selected.length || selected.includes(mnemonic);
               return <button type="button" key={signalKey(signal)} className={active ? 'is-selected' : ''} onClick={() => toggleSignal(mnemonic)}><i/><span>{signalLabel(signal)}</span><code>{mnemonic}</code></button>;
             })}
-            {!signals.length && <p>Les signaux apparaîtront ici après la première session OBD ou GPS.</p>}
+            {!signals.length && <p>{t('service.signals_later')}</p>}
           </div>
           {services.mqtt?.error && <p className="inline-service-error">{services.mqtt.error}</p>}
-          <button className="mqtt-test-button" type="button" onClick={onPublishNow} disabled={!services.mqtt?.enabled}><Icon name="cloud"/><span>Publier un test maintenant</span><em>{serviceLabel(services.mqtt, 'mqtt')}</em></button>
+          <button className="mqtt-test-button" type="button" onClick={onPublishNow} disabled={!services.mqtt?.enabled}><Icon name="cloud"/><span>{t('service.publish_test')}</span><em>{serviceLabel(services.mqtt, 'mqtt')}</em></button>
         </section>
 
-        <div className="services-actions"><button type="button" className="secondary" onClick={onClose}>Annuler</button><button type="button" className="primary" onClick={save}>Enregistrer</button></div>
+        <div className="services-actions"><button type="button" className="secondary" onClick={onClose}>{t('generic.cancel')}</button><button type="button" className="primary" onClick={save}>{t('generic.save')}</button></div>
       </section>
     </div>
   );
@@ -747,6 +696,8 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
 
 function App() {
   const retainedPayload = telemetryBridge.lastPayload || {};
+  const [language, setLanguageState] = useState(getLanguage());
+  setLanguage(language);
   const [readings, setReadings] = useState({ ...EMPTY_READINGS, ...(retainedPayload.readings || {}) });
   const [signals, setSignals] = useState(Array.isArray(retainedPayload.signals) ? retainedPayload.signals : []);
   const [history, setHistory] = useState({});
@@ -782,6 +733,10 @@ function App() {
     localStorage.setItem('lotot-theme', theme);
     window.LotoTNative?.setTheme?.(theme);
   }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
 
   useEffect(() => {
     localStorage.setItem('lotot-signal-favorites', JSON.stringify(favorites));
@@ -821,12 +776,16 @@ function App() {
       if (event.detail?.medium) setMediumState(event.detail.medium);
     };
     const onBuiltins = (event) => setServices(event.detail || EMPTY_BUILTINS);
+    const onLanguage = (event) => setLanguageState(setLanguage(event.detail?.language || 'en'));
     window.addEventListener('lotot:telemetry', onTelemetry);
     window.addEventListener('lotot:fast-telemetry', onFastTelemetry);
     window.addEventListener('lotot:telemetry-status', onStatus);
     window.addEventListener('lotot:bluetooth-state', onBluetooth);
     window.addEventListener('lotot:builtin-state', onBuiltins);
+    window.addEventListener('lotot:language', onLanguage);
     setNativeAvailable(Boolean(window.LotoTNative));
+    const nativeLanguage = window.LotoTNative?.getAppLanguage?.();
+    if (nativeLanguage) setLanguageState(setLanguage(nativeLanguage));
     window.LotoTNative?.ready?.();
     return () => {
       window.removeEventListener('lotot:telemetry', onTelemetry);
@@ -834,6 +793,7 @@ function App() {
       window.removeEventListener('lotot:telemetry-status', onStatus);
       window.removeEventListener('lotot:bluetooth-state', onBluetooth);
       window.removeEventListener('lotot:builtin-state', onBuiltins);
+      window.removeEventListener('lotot:language', onLanguage);
     };
   }, []);
 
@@ -841,15 +801,15 @@ function App() {
     live: ['live', 'demo'].includes(status),
     lost: status === 'lost',
     label: status === 'demo'
-      ? 'MODE DÉMO'
+      ? t('status.demo')
       : status === 'live'
-        ? 'EN DIRECT'
+        ? t('status.live')
         : status === 'connecting'
-          ? 'CONNEXION'
+          ? t('status.connecting')
           : status === 'lost'
-            ? 'CONNEXION PERDUE'
-            : 'HORS LIGNE',
-  }), [status]);
+            ? t('status.lost')
+            : t('status.offline'),
+  }), [status, language]);
 
   const signalMap = useMemo(() => {
     const map = new Map();
@@ -865,7 +825,6 @@ function App() {
     return null;
   };
 
-
   const historyOf = (...mnemonics) => {
     for (const mnemonic of mnemonics) {
       const signal = signalMap.get(mnemonic);
@@ -877,7 +836,7 @@ function App() {
   const liveAlerts = useMemo(() => signals.map(assessSignal).filter(Boolean).sort((a, b) => {
     const rank = { danger: 2, warning: 1 };
     return (rank[b.level] || 0) - (rank[a.level] || 0);
-  }), [signals]);
+  }), [signals, language]);
 
   const categoryCounts = useMemo(() => signals.reduce((counts, signal) => {
     const signalCategory = categoryFor(signal);
@@ -902,27 +861,29 @@ function App() {
         if (categoryDifference) return categoryDifference;
         return signalLabel(a).localeCompare(signalLabel(b));
       });
-  }, [signals, category, query, favorites]);
+  }, [signals, category, query, favorites, language]);
 
   const connected = bluetooth.connectedDevice;
-  const selectedDevice = bluetooth.selectedDevice;
   const lastDevice = bluetooth.lastDevice;
-  const visibleDevice = connected || selectedDevice || (status === 'lost' ? lastDevice : null);
-  const speedAvailable = isNumericReading(readings.vehicle_speed);
-  const speedProgress = speedAvailable ? clamp(readings.vehicle_speed, 0, 240) / 240 * 270 : 0;
   const toggleFavorite = (key) => setFavorites((current) => current.includes(key) ? current.filter((entry) => entry !== key) : [...current, key]);
   const lastAge = lastCapturedAt ? Math.max(0, now - lastCapturedAt) : null;
-  const fluxLabel = !['live', 'demo'].includes(status) ? 'Flux arrêté' : lastAge === null ? 'Aucun flux' : lastAge < 1500 ? 'Flux instantané' : `${Math.floor(lastAge / 1000)} s de retard`;
+  const fluxLabel = !['live', 'demo'].includes(status)
+    ? t('status.flow_stopped')
+    : lastAge === null
+      ? t('status.no_flow')
+      : lastAge < 1500
+        ? t('status.instant')
+        : t('status.delay', { seconds: Math.floor(lastAge / 1000) });
 
   const diagnosticCopy = signals.length
-    ? { title: `${signals.length} capteur${signals.length === 1 ? '' : 's'} en direct`, body: `Dernier paquet reçu ${ageLabel(lastCapturedAt, now)} · ${packetCount} mises à jour depuis l’ouverture.` }
+    ? { title: t('diagnostic.live_sensors', { count: signals.length }), body: t('diagnostic.last_packet', { age: ageLabel(lastCapturedAt, now), count: packetCount }) }
     : connected
-      ? { title: 'Connexion active · attente des PIDs', body: 'L’adaptateur répond, mais aucune mesure valide n’a encore été décodée.' }
+      ? { title: t('diagnostic.pid_wait'), body: t('diagnostic.pid_wait_detail') }
       : status === 'demo'
-        ? { title: 'Simulation AndrOBD active', body: 'Les valeurs de démonstration alimentent le cockpit.' }
+        ? { title: t('diagnostic.demo'), body: t('diagnostic.demo_detail') }
         : status === 'lost'
-          ? { title: 'Connexion Bluetooth perdue', body: `${lastDevice?.name || 'L’adaptateur'} ne répond plus. La session a été arrêtée automatiquement.` }
-          : { title: 'Prêt pour le diagnostic', body: 'Connectez un adaptateur ou lancez la simulation.' };
+          ? { title: t('diagnostic.lost'), body: t('diagnostic.lost_detail', { name: lastDevice?.name || t('connection.adapter') }) }
+          : { title: t('diagnostic.ready'), body: t('diagnostic.ready_detail') };
 
   const openConnection = () => {
     setConnectionOpen(true);
@@ -935,6 +896,13 @@ function App() {
   const connectDevice = (device) => window.LotoTNative?.connectBluetooth?.(device.address, device.medium || medium);
   const reconnectLastDevice = () => lastDevice ? connectDevice(lastDevice) : openConnection();
   const connectionAction = status === 'lost' && lastDevice ? reconnectLastDevice : openConnection;
+  const gatewayDetail = services.mqtt?.status === 'syncing'
+    ? t('service.remaining', { count: services.mqtt.syncing_remaining || 0 })
+    : services.mqtt?.queue_depth
+      ? t('service.queued', { count: services.mqtt.queue_depth })
+      : services.mqtt?.last_publish
+        ? t('service.updated', { age: ageLabel(services.mqtt.last_publish, now) })
+        : services.mqtt?.broker || t('service.no_broker');
 
   return (
     <main className="app-shell">
@@ -944,14 +912,14 @@ function App() {
           <img className="brand-logo brand-logo-light" src="./logo-light.png" alt="" />
         </div>
         <button className={`status-pill ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`} type="button" onClick={openConnection}><i/><span>{state.label}</span></button>
-        <button className="theme-toggle" type="button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Activer le thème clair' : 'Activer le thème sombre'}><Icon name={theme === 'dark' ? 'sun' : 'moon'}/></button>
+        <button className="theme-toggle" type="button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? t('theme.light') : t('theme.dark')}><Icon name={theme === 'dark' ? 'sun' : 'moon'}/></button>
       </header>
 
       <section className={`connection-summary ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`}>
         <button type="button" onClick={connectionAction} disabled={!nativeAvailable}>
           <span className="connection-icon"><Icon name={state.lost ? 'unlink' : connected ? 'link' : 'bluetooth'}/></span>
-          <span className="connection-copy"><small>{state.label}</small><strong>{connected?.name || (state.lost ? lastDevice?.name || 'Connexion perdue' : 'Connecter un adaptateur')}</strong></span>
-          <span className="connection-meta"><em>{signals.length} signaux</em><small>{fluxLabel}</small></span>
+          <span className="connection-copy"><small>{state.label}</small><strong>{connected?.name || (state.lost ? lastDevice?.name || t('connection.lost') : t('connection.connect_adapter'))}</strong></span>
+          <span className="connection-meta"><em>{t('connection.live_signals', { count: signals.length })}</em><small>{fluxLabel}</small></span>
           <Icon name="chevron"/>
         </button>
       </section>
@@ -962,46 +930,46 @@ function App() {
       </section>
 
       <section className="critical-overview">
-        <OverviewMetric label="LIQUIDE" value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="thermometer" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} detail="70–105 normal"/>
-        <OverviewMetric label="HUILE" value={valueOf('engine_oil_temperature')} unit="°C" icon="thermometer" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} detail="70–110 normal"/>
-        <OverviewMetric label="TENSION" value={readings.module_voltage ?? valueOf('ecu_voltage')} unit="V" icon="bolt" tone={toneForVoltage(readings.module_voltage ?? valueOf('ecu_voltage'))} detail="12.3–14.8 V"/>
-        <OverviewMetric label="CARBURANT" value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="fuel" tone={toneForFuel(valueOf('fuel_level', 'fuel_tank_level_input'))} detail={`${formatValue(valueOf('engine_fuel_rate'), 1)} L/h`}/>
-        <OverviewMetric label="ADMISSION" value={valueOf('intake_manifold_pressure')} unit="kPa" icon="wind" detail={`${formatValue(valueOf('intake_air_temperature'), 0)} °C`}/>
-        <OverviewMetric label="PRESSION" value={valueOf('fuel_pressure')} unit="kPa" icon="droplet" detail={`MAF ${formatValue(readings.maf, 1)} g/s`}/>
+        <OverviewMetric label={t('overview.coolant')} value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="thermometer" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} detail="70–105 normal"/>
+        <OverviewMetric label={t('overview.oil')} value={valueOf('engine_oil_temperature')} unit="°C" icon="thermometer" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} detail="70–110 normal"/>
+        <OverviewMetric label={t('overview.voltage')} value={readings.module_voltage ?? valueOf('ecu_voltage')} unit="V" icon="bolt" tone={toneForVoltage(readings.module_voltage ?? valueOf('ecu_voltage'))} detail="12.3–14.8 V"/>
+        <OverviewMetric label={t('overview.fuel')} value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="fuel" tone={toneForFuel(valueOf('fuel_level', 'fuel_tank_level_input'))} detail={`${formatValue(valueOf('engine_fuel_rate'), 1)} L/h`}/>
+        <OverviewMetric label={t('overview.intake')} value={valueOf('intake_manifold_pressure')} unit="kPa" icon="wind" detail={`${formatValue(valueOf('intake_air_temperature'), 0)} °C`}/>
+        <OverviewMetric label={t('overview.pressure')} value={valueOf('fuel_pressure')} unit="kPa" icon="droplet" detail={`MAF ${formatValue(readings.maf, 1)} g/s`}/>
       </section>
 
       <section className={`health-card compact-health ${liveAlerts.length ? 'has-alerts' : ''}`}>
         <span className="health-icon"><Icon name="shield"/></span>
-        <div><strong>{liveAlerts.length ? `${liveAlerts.length} point${liveAlerts.length > 1 ? 's' : ''} à vérifier` : diagnosticCopy.title}</strong><p>{liveAlerts[0]?.message || diagnosticCopy.body}</p></div>
+        <div><strong>{liveAlerts.length ? t('health.points', { count: liveAlerts.length }) : diagnosticCopy.title}</strong><p>{liveAlerts[0]?.message || diagnosticCopy.body}</p></div>
       </section>
 
       <section className="builtins-panel">
-        <header className="builtins-header"><div><span>SERVICES INTÉGRÉS</span><h2>Sources natives et cloud</h2></div><button type="button" onClick={() => setServicesOpen(true)}><Icon name="sliders"/><span>Configurer</span></button></header>
+        <header className="builtins-header"><div><span>{t('service.integrated')}</span><h2>{t('service.sources_cloud')}</h2></div><button type="button" onClick={() => setServicesOpen(true)}><Icon name="sliders"/><span>{t('generic.configure')}</span></button></header>
         <div className="service-grid">
-          <ServiceTile icon="location" title="POSITION GPS" service={services.gps} detail={services.gps?.last_update ? ageLabel(services.gps.last_update, now) : services.gps?.permission_granted ? 'Prêt à localiser' : 'Permission requise'} onClick={() => setServicesOpen(true)}/>
-          <ServiceTile icon="phone" title="CAPTEURS TÉLÉPHONE" service={services.sensors} detail={services.sensors?.last_update ? ageLabel(services.sensors.last_update, now) : 'Accéléromètre natif'} onClick={() => setServicesOpen(true)}/>
-          <ServiceTile icon="cloud" title="PASSERELLE CLOUD" kind="mqtt" service={services.mqtt} detail={services.mqtt?.status === 'syncing' ? `${services.mqtt.syncing_remaining || 0} restant(s)` : services.mqtt?.queue_depth ? `${services.mqtt.queue_depth} relevé${services.mqtt.queue_depth === 1 ? '' : 's'} en attente` : services.mqtt?.last_publish ? `À jour · ${ageLabel(services.mqtt.last_publish, now)}` : services.mqtt?.broker || 'Broker non configuré'} onClick={() => setServicesOpen(true)}/>
+          <ServiceTile icon="location" title={t('service.gps_position')} service={services.gps} detail={services.gps?.last_update ? ageLabel(services.gps.last_update, now) : services.gps?.permission_granted ? t('service.ready_location') : t('service.permission_required')} onClick={() => setServicesOpen(true)}/>
+          <ServiceTile icon="phone" title={t('service.phone_sensors')} service={services.sensors} detail={services.sensors?.last_update ? ageLabel(services.sensors.last_update, now) : t('service.accelerometer')} onClick={() => setServicesOpen(true)}/>
+          <ServiceTile icon="cloud" title={t('service.cloud_gateway')} kind="mqtt" service={services.mqtt} detail={gatewayDetail} onClick={() => setServicesOpen(true)}/>
         </div>
-        <p className="builtins-note">Ces services font partie de LotoT. Aucun APK complémentaire ni système de plugin n’est requis.</p>
+        <p className="builtins-note">{t('service.note')}</p>
       </section>
 
       <section className="data-panel">
         <header className="data-panel-header">
-          <div><span>EXPLORATEUR OBD</span><h2>Toutes les données live</h2></div>
+          <div><span>{t('explorer.kicker')}</span><h2>{t('explorer.title')}</h2></div>
           <strong>{filteredSignals.length}/{signals.length}</strong>
         </header>
 
         <label className="search-box">
           <Icon name="search"/>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Rechercher un capteur, PID ou unité…" />
-          {query && <button type="button" onClick={() => setQuery('')} aria-label="Effacer"><Icon name="close"/></button>}
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('explorer.search')} />
+          {query && <button type="button" onClick={() => setQuery('')} aria-label={t('generic.clear')}><Icon name="close"/></button>}
         </label>
 
-        <nav className="category-tabs" aria-label="Catégories des capteurs">
+        <nav className="category-tabs" aria-label={t('explorer.categories')}>
           {CATEGORIES.map((item) => {
             const count = item.id === 'all' ? signals.length : item.id === 'favorites' ? favorites.filter((key) => signals.some((signal) => signalKey(signal) === key)).length : (categoryCounts[item.id] || 0);
             if (!['all', 'favorites'].includes(item.id) && count === 0) return null;
-            return <button type="button" key={item.id} className={category === item.id ? 'is-active' : ''} onClick={() => setCategory(item.id)}><Icon name={item.icon}/><span>{item.label}</span><em>{count}</em></button>;
+            return <button type="button" key={item.id} className={category === item.id ? 'is-active' : ''} onClick={() => setCategory(item.id)}><Icon name={item.icon}/><span>{t(item.labelKey)}</span><em>{count}</em></button>;
           })}
         </nav>
 
@@ -1010,18 +978,18 @@ function App() {
             <SignalCard key={signalKey(signal)} signal={signal} favorite={favorites.includes(signalKey(signal))} onToggleFavorite={toggleFavorite} history={history} now={now}/>
           ))}
           {!filteredSignals.length && (
-            <div className="empty-signals"><Icon name="activity"/><strong>{signals.length ? 'Aucun capteur ne correspond' : 'En attente des données OBD'}</strong><p>{signals.length ? 'Modifiez la recherche ou la catégorie.' : 'Les mesures valides apparaîtront ici automatiquement.'}</p></div>
+            <div className="empty-signals"><Icon name="activity"/><strong>{signals.length ? t('explorer.none_match') : t('explorer.waiting')}</strong><p>{signals.length ? t('explorer.adjust') : t('explorer.valid_later')}</p></div>
           )}
         </div>
       </section>
 
       <section className="actions">
-        <button className="primary" type="button" onClick={connectionAction} disabled={!nativeAvailable}><Icon name={status === 'lost' ? 'refresh' : 'bluetooth'}/><span>{connected ? 'Connexion' : status === 'lost' && lastDevice ? 'Reconnecter' : 'Connecter'}</span></button>
-        <button className="secondary" type="button" onClick={() => window.LotoTNative?.startDemo?.()} disabled={!nativeAvailable}><Icon name="play"/><span>Mode démo</span></button>
-        <button className="tools-button" type="button" onClick={() => window.LotoTNative?.openNativeTools?.()} disabled={!nativeAvailable}><Icon name="tool"/><span>Diagnostics avancés AndrOBD</span><Icon name="chevron"/></button>
+        <button className="primary" type="button" onClick={connectionAction} disabled={!nativeAvailable}><Icon name={status === 'lost' ? 'refresh' : 'bluetooth'}/><span>{connected ? t('action.connection') : status === 'lost' && lastDevice ? t('action.reconnect') : t('action.connect')}</span></button>
+        <button className="secondary" type="button" onClick={() => window.LotoTNative?.startDemo?.()} disabled={!nativeAvailable}><Icon name="play"/><span>{t('action.demo')}</span></button>
+        <button className="tools-button" type="button" onClick={() => window.LotoTNative?.openNativeTools?.()} disabled={!nativeAvailable}><Icon name="tool"/><span>{t('action.advanced_settings')}</span><Icon name="chevron"/></button>
       </section>
 
-      <footer className="app-footer">GPL · Moteur AndrOBD · Passerelle de fond · file hors ligne · Android Keystore · Interface LotoT</footer>
+      <footer className="app-footer">{t('footer.copy')}</footer>
 
       <ConnectionSheet open={connectionOpen} onClose={() => setConnectionOpen(false)} bluetooth={bluetooth} medium={medium} setMedium={setMedium} onScan={(selectedMedium) => window.LotoTNative?.scanBluetooth?.(selectedMedium)} onConnect={connectDevice} onDisconnect={() => window.LotoTNative?.disconnectBluetooth?.()}/>
       <ServicesSheet open={servicesOpen} onClose={() => setServicesOpen(false)} services={services} signals={signals} onSave={(payload) => window.LotoTNative?.configureBuiltins?.(JSON.stringify(payload))} onRequestLocation={() => window.LotoTNative?.requestLocationPermission?.()} onPublishNow={() => window.LotoTNative?.publishMqttNow?.()}/>
