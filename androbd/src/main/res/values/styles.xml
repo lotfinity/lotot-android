@@ -28,6 +28,7 @@
         <item name="android:windowBackground">@color/lotot_background</item>
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowNoTitle">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <item name="android:navigationBarColor">@color/lotot_background</item>
         <item name="android:statusBarColor">@color/lotot_background</item>
     </style>

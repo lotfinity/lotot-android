@@ -23,6 +23,8 @@ final class LotoTWebBridge
         void connectLotoTBluetoothDevice(String address, String medium);
         void disconnectLotoTBluetooth();
         void setLotoTTheme(String theme);
+        String getLotoTAppearanceSettings();
+        void setLotoTAppearanceSettings(String json);
         void updateLotoTBuiltinConfig(String json);
         void requestLotoTLocationPermission();
         void publishLotoTMqttNow();
@@ -78,6 +80,18 @@ final class LotoTWebBridge
     public void setTheme(String theme)
     {
         activity.runOnUiThread(() -> host.setLotoTTheme(theme));
+    }
+
+    @JavascriptInterface
+    public String getAppearanceSettings()
+    {
+        return host.getLotoTAppearanceSettings();
+    }
+
+    @JavascriptInterface
+    public void setAppearanceSettings(String json)
+    {
+        activity.runOnUiThread(() -> host.setLotoTAppearanceSettings(json));
     }
 
     @JavascriptInterface

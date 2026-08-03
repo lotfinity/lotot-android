@@ -198,6 +198,8 @@ public class MainActivity extends PluginManager
     private static final long CONNECTION_INITIAL_GRACE_MS = 12_000L;
     private static final long CONNECTION_SILENCE_TIMEOUT_MS = 3_500L;
     private static final String PREF_LOTOT_THEME = "lotot_theme";
+    private static final String PREF_LOTOT_FONT_FAMILY = "lotot_font_family";
+    private static final String PREF_LOTOT_FONT_SCALE = "lotot_font_scale";
     private static final String PREF_LOTOT_DEV_UI_URL = "lotot_dev_ui_url";
     private static final String EXTRA_LOTOT_UI_URL = "lotot_ui_url";
     private static final String LOG_MASTER = "log_master";
@@ -1286,6 +1288,64 @@ public class MainActivity extends PluginManager
         if (prefs == null) prefs = PreferenceManager.getDefaultSharedPreferences(this);
         prefs.edit().putString(PREF_LOTOT_THEME, normalized).apply();
         applyLotoTSystemBars(normalized);
+    }
+
+    private String normalizeLotoTFontFamily(String family)
+    {
+        if ("clean".equals(family) || "compact".equals(family)
+                || "technical".equals(family)) return family;
+        return "system";
+    }
+
+    private int normalizeLotoTFontScale(int scale)
+    {
+        int bounded = Math.max(90, Math.min(140, scale));
+        return Math.round(bounded / 5f) * 5;
+    }
+
+    @Override
+    public String getLotoTAppearanceSettings()
+    {
+        if (prefs == null) prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        JSONObject state = new JSONObject();
+        try
+        {
+            state.put("theme", prefs.getString(PREF_LOTOT_THEME, "dark"));
+            state.put("font_family", normalizeLotoTFontFamily(
+                    prefs.getString(PREF_LOTOT_FONT_FAMILY, "system")));
+            state.put("font_scale", normalizeLotoTFontScale(
+                    prefs.getInt(PREF_LOTOT_FONT_SCALE, 115)));
+        }
+        catch (Exception ex)
+        {
+            log.log(Level.FINER, "Unable to encode LotoT appearance settings", ex);
+        }
+        return state.toString();
+    }
+
+    @Override
+    public void setLotoTAppearanceSettings(String json)
+    {
+        if (prefs == null) prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        try
+        {
+            JSONObject state = new JSONObject(json == null ? "{}" : json);
+            String theme = "light".equalsIgnoreCase(state.optString("theme", "dark"))
+                    ? "light" : "dark";
+            String family = normalizeLotoTFontFamily(
+                    state.optString("font_family", "system"));
+            int scale = normalizeLotoTFontScale(state.optInt("font_scale", 115));
+            prefs.edit()
+                    .putString(PREF_LOTOT_THEME, theme)
+                    .putString(PREF_LOTOT_FONT_FAMILY, family)
+                    .putInt(PREF_LOTOT_FONT_SCALE, scale)
+                    .apply();
+            applyLotoTSystemBars(theme);
+        }
+        catch (Exception ex)
+        {
+            log.log(Level.WARNING, "Invalid LotoT appearance settings", ex);
+        }
     }
 
     @Override

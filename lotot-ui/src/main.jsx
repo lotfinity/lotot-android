@@ -34,6 +34,34 @@ const EMPTY_BUILTINS = {
   },
 };
 
+const PRIMARY_NAV = [
+  { id: 'overview', labelKey: 'nav.overview', icon: 'home' },
+  { id: 'live', labelKey: 'nav.live', icon: 'activity' },
+  { id: 'health', labelKey: 'nav.health', icon: 'shield' },
+  { id: 'more', labelKey: 'nav.more', icon: 'grid' },
+];
+
+const FONT_FAMILIES = [
+  { id: 'system', labelKey: 'appearance.font_system', stack: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
+  { id: 'clean', labelKey: 'appearance.font_clean', stack: 'sans-serif' },
+  { id: 'compact', labelKey: 'appearance.font_compact', stack: '"sans-serif-condensed", sans-serif' },
+  { id: 'technical', labelKey: 'appearance.font_technical', stack: 'ui-monospace, "Roboto Mono", monospace' },
+];
+const DEFAULT_FONT_FAMILY = 'system';
+const DEFAULT_FONT_SCALE = 115;
+const clampFontScale = (value) => Math.min(140, Math.max(90, Math.round(Number(value) / 5) * 5 || DEFAULT_FONT_SCALE));
+const fontFamilyOption = (id) => FONT_FAMILIES.find((item) => item.id === id) || FONT_FAMILIES[0];
+
+function readNativeAppearanceSettings() {
+  try {
+    const raw = window.LotoTNative?.getAppearanceSettings?.();
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
 const CATEGORIES = [
   { id: 'all', labelKey: 'category.all', icon: 'activity' },
   { id: 'favorites', labelKey: 'category.favorites', icon: 'star' },
@@ -275,6 +303,7 @@ function toneForFuel(value) {
 
 function Icon({ name }) {
   const paths = {
+    home: <><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></>,
     car: <><path d="M4 13l1.5-4.5A2 2 0 0 1 7.4 7h9.2a2 2 0 0 1 1.9 1.5L20 13"/><path d="M5 13h14a2 2 0 0 1 2 2v3H3v-3a2 2 0 0 1 2-2Z"/><path d="M5 18v2M19 18v2M7 15h.01M17 15h.01"/></>,
     bolt: <path d="m13 2-8 12h7l-1 8 8-12h-7l1-8Z" />,
     gauge: <><path d="M4.9 19a9 9 0 1 1 14.2 0"/><path d="m12 13 3-3"/><path d="M12 19v.01"/></>,
@@ -303,6 +332,7 @@ function Icon({ name }) {
     location: <><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,
     cloud: <><path d="M17.5 19H7a5 5 0 0 1-.6-10A7 7 0 0 1 20 11.5 3.8 3.8 0 0 1 17.5 19Z"/><path d="M9 14h6M12 11v6"/></>,
     phone: <><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 18h4"/></>,
+    type: <><path d="M5 5V3h14v2"/><path d="M12 3v18"/><path d="M8 21h8"/></>,
     sliders: <><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="18" r="2"/></>,
   };
   return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name] || paths.activity}</svg>;
@@ -427,6 +457,36 @@ function SignalCard({ signal, favorite, onToggleFavorite, history, now }) {
 
 function OverviewMetric({ label, value, unit, icon, tone = 'neutral', detail }) {
   return <article className={`overview-metric tone-${tone}`}><span><Icon name={icon}/></span><div><small>{label}</small><strong>{formatValue(value)} <em>{unit}</em></strong>{detail && <p>{detail}</p>}</div></article>;
+}
+
+function PageHeader({ kicker, title, detail }) {
+  return (
+    <header className="page-header">
+      <div><span>{kicker}</span><h1>{title}</h1></div>
+      {detail && <small>{detail}</small>}
+    </header>
+  );
+}
+
+function BottomNavigation({ active, onChange }) {
+  return (
+    <nav className="bottom-navigation" aria-label={t('nav.label')}>
+      <div className="bottom-navigation-inner">
+        {PRIMARY_NAV.map((item) => (
+          <button
+            type="button"
+            key={item.id}
+            className={active === item.id ? 'is-active' : ''}
+            aria-current={active === item.id ? 'page' : undefined}
+            onClick={() => onChange(item.id)}
+          >
+            <span><Icon name={item.icon}/></span>
+            <small>{t(item.labelKey)}</small>
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
 }
 
 function DriveOverview({ readings, valueOf, historyOf }) {
@@ -590,9 +650,16 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
   const [gpsEnabled, setGpsEnabled] = useState(false);
   const [sensorsEnabled, setSensorsEnabled] = useState(true);
   const [mqtt, setMqtt] = useState({ ...EMPTY_BUILTINS.mqtt.config, enabled: false, password: '' });
+  const [dirty, setDirty] = useState(false);
+  const initializedForOpen = React.useRef(false);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initializedForOpen.current = false;
+      return;
+    }
+    if (initializedForOpen.current) return;
+    initializedForOpen.current = true;
     setGpsEnabled(Boolean(services.gps?.enabled));
     setSensorsEnabled(Boolean(services.sensors?.enabled));
     setMqtt({
@@ -601,11 +668,23 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
       enabled: Boolean(services.mqtt?.enabled),
       password: '',
     });
+    setDirty(false);
   }, [open, services]);
 
   if (!open) return null;
   const selected = Array.isArray(mqtt.selected_signals) ? mqtt.selected_signals : [];
-  const updateMqtt = (key, value) => setMqtt((current) => ({ ...current, [key]: value }));
+  const updateMqtt = (key, value) => {
+    setDirty(true);
+    setMqtt((current) => ({ ...current, [key]: value }));
+  };
+  const updateGpsEnabled = (value) => {
+    setDirty(true);
+    setGpsEnabled(value);
+  };
+  const updateSensorsEnabled = (value) => {
+    setDirty(true);
+    setSensorsEnabled(value);
+  };
   const toggleSignal = (mnemonic) => updateMqtt('selected_signals', selected.includes(mnemonic)
     ? selected.filter((item) => item !== mnemonic)
     : [...selected, mnemonic]);
@@ -625,6 +704,7 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
     };
     if (mqtt.password) mqttPayload.password = mqtt.password;
     onSave({ gps_enabled: gpsEnabled, sensors_enabled: sensorsEnabled, mqtt: mqttPayload });
+    setDirty(false);
   };
 
   const queued = Number(services.mqtt?.queue_depth || 0);
@@ -643,14 +723,14 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
 
         <section className="service-config-block">
           <div className="service-config-title"><span><Icon name="location"/></span><div><strong>{t('service.gps_integrated')}</strong><small>{t('service.gps_detail')}</small></div></div>
-          <SwitchRow checked={gpsEnabled} onChange={setGpsEnabled} title={t('service.enable_position')} description={t('service.enable_position_detail')} disabled={!services.gps?.available}/>
+          <SwitchRow checked={gpsEnabled} onChange={updateGpsEnabled} title={t('service.enable_position')} description={t('service.enable_position_detail')} disabled={!services.gps?.available}/>
           {gpsEnabled && !services.gps?.permission_granted && <button className="permission-button" type="button" onClick={onRequestLocation}><Icon name="location"/><span>{t('service.allow_location')}</span></button>}
           {services.gps?.error && <p className="inline-service-error">{services.gps.error}</p>}
         </section>
 
         <section className="service-config-block">
           <div className="service-config-title"><span><Icon name="phone"/></span><div><strong>{t('service.phone_title')}</strong><small>{t('service.phone_detail')}</small></div></div>
-          <SwitchRow checked={sensorsEnabled} onChange={setSensorsEnabled} title={t('service.enable_accelerometer')} description={t('service.accelerometer_detail')} disabled={!services.sensors?.available}/>
+          <SwitchRow checked={sensorsEnabled} onChange={updateSensorsEnabled} title={t('service.enable_accelerometer')} description={t('service.accelerometer_detail')} disabled={!services.sensors?.available}/>
         </section>
 
         <section className="service-config-block mqtt-config-block">
@@ -688,7 +768,73 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
           <button className="mqtt-test-button" type="button" onClick={onPublishNow} disabled={!services.mqtt?.enabled}><Icon name="cloud"/><span>{t('service.publish_test')}</span><em>{serviceLabel(services.mqtt, 'mqtt')}</em></button>
         </section>
 
-        <div className="services-actions"><button type="button" className="secondary" onClick={onClose}>{t('generic.cancel')}</button><button type="button" className="primary" onClick={save}>{t('generic.save')}</button></div>
+        <div className={`services-actions ${dirty ? 'is-dirty' : ''}`}><button type="button" className="secondary" onClick={onClose}>{t('generic.cancel')}</button><button type="button" className="primary" onClick={save} disabled={!dirty}>{dirty ? t('generic.save_changes') : t('generic.saved')}</button></div>
+      </section>
+    </div>
+  );
+}
+
+
+function AppearanceSheet({ open, onClose, theme, onThemeChange, fontFamily, onFontFamilyChange, fontScale, onFontScaleChange }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    document.body.classList.add('sheet-open');
+    return () => document.body.classList.remove('sheet-open');
+  }, [open]);
+
+  if (!open) return null;
+  const selectedFamily = fontFamilyOption(fontFamily);
+  const changeScale = (value) => onFontScaleChange(clampFontScale(value));
+
+  return (
+    <div className="sheet-backdrop appearance-backdrop" role="presentation" onClick={onClose}>
+      <section className="connection-sheet appearance-sheet" role="dialog" aria-modal="true" aria-label={t('appearance.title')} onClick={(event) => event.stopPropagation()}>
+        <div className="sheet-handle"/>
+        <header className="sheet-header">
+          <div><span>{t('appearance.kicker')}</span><h2>{t('appearance.title')}</h2></div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label={t('generic.close')}><Icon name="close"/></button>
+        </header>
+
+        <div className="appearance-preview" style={{ fontFamily: selectedFamily.stack }}>
+          <span>{t('appearance.preview_kicker')}</span>
+          <strong>{t('appearance.preview_title')}</strong>
+          <p>{t('appearance.preview_body')}</p>
+          <div><b>92</b><small>km/h</small><em>{fontScale}%</em></div>
+        </div>
+
+        <section className="appearance-setting-block">
+          <div className="appearance-setting-title"><span><Icon name={theme === 'dark' ? 'moon' : 'sun'}/></span><div><strong>{t('appearance.theme')}</strong><small>{t('appearance.theme_detail')}</small></div></div>
+          <div className="appearance-choice-grid theme-choice-grid">
+            <button type="button" className={theme === 'dark' ? 'is-selected' : ''} onClick={() => onThemeChange('dark')}><Icon name="moon"/><span>{t('appearance.dark')}</span></button>
+            <button type="button" className={theme === 'light' ? 'is-selected' : ''} onClick={() => onThemeChange('light')}><Icon name="sun"/><span>{t('appearance.light')}</span></button>
+          </div>
+        </section>
+
+        <section className="appearance-setting-block">
+          <div className="appearance-setting-title"><span><Icon name="type"/></span><div><strong>{t('appearance.font_family')}</strong><small>{t('appearance.font_family_detail')}</small></div></div>
+          <div className="appearance-choice-grid font-choice-grid">
+            {FONT_FAMILIES.map((item) => (
+              <button type="button" key={item.id} className={fontFamily === item.id ? 'is-selected' : ''} onClick={() => onFontFamilyChange(item.id)} style={{ fontFamily: item.stack }}>
+                <b>Aa</b><span>{t(item.labelKey)}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="appearance-setting-block text-scale-block">
+          <div className="appearance-setting-title"><span><Icon name="sliders"/></span><div><strong>{t('appearance.text_size')}</strong><small>{t('appearance.text_size_detail')}</small></div><output>{fontScale}%</output></div>
+          <div className="font-scale-control">
+            <button type="button" onClick={() => changeScale(fontScale - 5)} disabled={fontScale <= 90} aria-label={t('appearance.smaller')}>A−</button>
+            <input type="range" min="90" max="140" step="5" value={fontScale} onChange={(event) => changeScale(event.target.value)} aria-label={t('appearance.text_size')} aria-valuetext={`${fontScale}%`}/>
+            <button type="button" onClick={() => changeScale(fontScale + 5)} disabled={fontScale >= 140} aria-label={t('appearance.larger')}>A+</button>
+          </div>
+          <div className="font-scale-labels"><span>90%</span><span>{t('appearance.recommended')}</span><span>140%</span></div>
+        </section>
+
+        <div className="appearance-actions">
+          <button type="button" className="secondary" onClick={() => { onFontFamilyChange(DEFAULT_FONT_FAMILY); onFontScaleChange(DEFAULT_FONT_SCALE); }}>{t('appearance.reset')}</button>
+          <button type="button" className="primary" onClick={onClose}>{t('generic.done')}</button>
+        </div>
       </section>
     </div>
   );
@@ -696,6 +842,7 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
 
 function App() {
   const retainedPayload = telemetryBridge.lastPayload || {};
+  const [initialAppearance] = useState(readNativeAppearanceSettings);
   const [language, setLanguageState] = useState(getLanguage());
   setLanguage(language);
   const [readings, setReadings] = useState({ ...EMPTY_READINGS, ...(retainedPayload.readings || {}) });
@@ -707,13 +854,23 @@ function App() {
   const [nativeAvailable, setNativeAvailable] = useState(Boolean(window.LotoTNative));
   const [connectionOpen, setConnectionOpen] = useState(false);
   const [servicesOpen, setServicesOpen] = useState(false);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [fontFamily, setFontFamily] = useState(() => {
+    const saved = initialAppearance.font_family || localStorage.getItem('lotot-font-family');
+    return FONT_FAMILIES.some((item) => item.id === saved) ? saved : DEFAULT_FONT_FAMILY;
+  });
+  const [fontScale, setFontScale] = useState(() => clampFontScale(initialAppearance.font_scale || localStorage.getItem('lotot-font-scale') || DEFAULT_FONT_SCALE));
   const [medium, setMediumState] = useState(bluetooth.medium || 'classic');
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [lastCapturedAt, setLastCapturedAt] = useState(Number(retainedPayload.captured_at) || 0);
   const [packetCount, setPacketCount] = useState(0);
   const [now, setNow] = useState(Date.now());
-  const [theme, setTheme] = useState(() => localStorage.getItem('lotot-theme') === 'light' ? 'light' : 'dark');
+  const [theme, setTheme] = useState(() => (initialAppearance.theme || localStorage.getItem('lotot-theme')) === 'light' ? 'light' : 'dark');
+  const [activeTab, setActiveTab] = useState(() => {
+    const saved = localStorage.getItem('lotot-active-tab');
+    return PRIMARY_NAV.some((item) => item.id === saved) ? saved : 'overview';
+  });
   const [favorites, setFavorites] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('lotot-signal-favorites') || '[]');
@@ -735,8 +892,32 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
+    const selected = fontFamilyOption(fontFamily);
+    document.documentElement.dataset.fontFamily = selected.id;
+    document.documentElement.style.setProperty('--app-font-family', selected.stack);
+    document.documentElement.style.webkitTextSizeAdjust = `${fontScale}%`;
+    document.documentElement.style.textSizeAdjust = `${fontScale}%`;
+    localStorage.setItem('lotot-font-family', selected.id);
+    localStorage.setItem('lotot-font-scale', String(fontScale));
+    try {
+      window.LotoTNative?.setAppearanceSettings?.(JSON.stringify({
+        theme,
+        font_family: selected.id,
+        font_scale: fontScale,
+      }));
+    } catch (_) {
+      // Older debug APKs simply keep using localStorage until the native bridge is updated.
+    }
+  }, [theme, fontFamily, fontScale]);
+
+  useEffect(() => {
     document.documentElement.lang = language;
   }, [language]);
+
+  useEffect(() => {
+    localStorage.setItem('lotot-active-tab', activeTab);
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, [activeTab]);
 
   useEffect(() => {
     localStorage.setItem('lotot-signal-favorites', JSON.stringify(favorites));
@@ -838,6 +1019,8 @@ function App() {
     return (rank[b.level] || 0) - (rank[a.level] || 0);
   }), [signals, language]);
 
+  const alertSignals = useMemo(() => liveAlerts.map((item) => item.signal).filter(Boolean), [liveAlerts]);
+
   const categoryCounts = useMemo(() => signals.reduce((counts, signal) => {
     const signalCategory = categoryFor(signal);
     counts[signalCategory] = (counts[signalCategory] || 0) + 1;
@@ -912,87 +1095,157 @@ function App() {
           <img className="brand-logo brand-logo-light" src="./logo-light.png" alt="" />
         </div>
         <button className={`status-pill ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`} type="button" onClick={openConnection}><i/><span>{state.label}</span></button>
-        <button className="theme-toggle" type="button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? t('theme.light') : t('theme.dark')}><Icon name={theme === 'dark' ? 'sun' : 'moon'}/></button>
+        <div className="topbar-actions">
+          <button className="topbar-icon-button topbar-settings" type="button" onClick={() => window.LotoTNative?.openNativeTools?.()} disabled={!nativeAvailable} aria-label={t('action.advanced_settings')} title={t('action.advanced_settings')}><Icon name="tool"/></button>
+          <button className="topbar-icon-button theme-toggle" type="button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? t('theme.light') : t('theme.dark')} title={theme === 'dark' ? t('theme.light') : t('theme.dark')}><Icon name={theme === 'dark' ? 'sun' : 'moon'}/></button>
+        </div>
       </header>
 
-      <section className={`connection-summary ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`}>
-        <button type="button" onClick={connectionAction} disabled={!nativeAvailable}>
-          <span className="connection-icon"><Icon name={state.lost ? 'unlink' : connected ? 'link' : 'bluetooth'}/></span>
-          <span className="connection-copy"><small>{state.label}</small><strong>{connected?.name || (state.lost ? lastDevice?.name || t('connection.lost') : t('connection.connect_adapter'))}</strong></span>
-          <span className="connection-meta"><em>{t('connection.live_signals', { count: signals.length })}</em><small>{fluxLabel}</small></span>
-          <Icon name="chevron"/>
-        </button>
-      </section>
+      <div className="page-stack" data-active-page={activeTab}>
+        {activeTab === 'overview' && (
+          <section className="app-page app-page-overview">
+            <section className={`connection-summary ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`}>
+              <button type="button" onClick={connectionAction} disabled={!nativeAvailable}>
+                <span className="connection-icon"><Icon name={state.lost ? 'unlink' : connected ? 'link' : 'bluetooth'}/></span>
+                <span className="connection-copy"><small>{state.label}</small><strong>{connected?.name || (state.lost ? lastDevice?.name || t('connection.lost') : t('connection.connect_adapter'))}</strong></span>
+                <span className="connection-meta"><em>{t('connection.live_signals', { count: signals.length })}</em><small>{fluxLabel}</small></span>
+                <Icon name="chevron"/>
+              </button>
+            </section>
 
-      <section className="overview-dashboard">
-        <DriveOverview readings={readings} valueOf={valueOf} historyOf={historyOf}/>
-        <HealthOverview alerts={liveAlerts} signals={signals} lastCapturedAt={lastCapturedAt} now={now}/>
-      </section>
+            <section className="overview-dashboard">
+              <DriveOverview readings={readings} valueOf={valueOf} historyOf={historyOf}/>
+              <HealthOverview alerts={liveAlerts} signals={signals} lastCapturedAt={lastCapturedAt} now={now}/>
+            </section>
 
-      <section className="critical-overview">
-        <OverviewMetric label={t('overview.coolant')} value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="thermometer" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} detail="70–105 normal"/>
-        <OverviewMetric label={t('overview.oil')} value={valueOf('engine_oil_temperature')} unit="°C" icon="thermometer" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} detail="70–110 normal"/>
-        <OverviewMetric label={t('overview.voltage')} value={readings.module_voltage ?? valueOf('ecu_voltage')} unit="V" icon="bolt" tone={toneForVoltage(readings.module_voltage ?? valueOf('ecu_voltage'))} detail="12.3–14.8 V"/>
-        <OverviewMetric label={t('overview.fuel')} value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="fuel" tone={toneForFuel(valueOf('fuel_level', 'fuel_tank_level_input'))} detail={`${formatValue(valueOf('engine_fuel_rate'), 1)} L/h`}/>
-        <OverviewMetric label={t('overview.intake')} value={valueOf('intake_manifold_pressure')} unit="kPa" icon="wind" detail={`${formatValue(valueOf('intake_air_temperature'), 0)} °C`}/>
-        <OverviewMetric label={t('overview.pressure')} value={valueOf('fuel_pressure')} unit="kPa" icon="droplet" detail={`MAF ${formatValue(readings.maf, 1)} g/s`}/>
-      </section>
+            <section className="critical-overview">
+              <OverviewMetric label={t('overview.coolant')} value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="thermometer" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} detail="70–105 normal"/>
+              <OverviewMetric label={t('overview.oil')} value={valueOf('engine_oil_temperature')} unit="°C" icon="thermometer" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} detail="70–110 normal"/>
+              <OverviewMetric label={t('overview.voltage')} value={readings.module_voltage ?? valueOf('ecu_voltage')} unit="V" icon="bolt" tone={toneForVoltage(readings.module_voltage ?? valueOf('ecu_voltage'))} detail="12.3–14.8 V"/>
+              <OverviewMetric label={t('overview.fuel')} value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="fuel" tone={toneForFuel(valueOf('fuel_level', 'fuel_tank_level_input'))} detail={`${formatValue(valueOf('engine_fuel_rate'), 1)} L/h`}/>
+              <OverviewMetric label={t('overview.intake')} value={valueOf('intake_manifold_pressure')} unit="kPa" icon="wind" detail={`${formatValue(valueOf('intake_air_temperature'), 0)} °C`}/>
+              <OverviewMetric label={t('overview.pressure')} value={valueOf('fuel_pressure')} unit="kPa" icon="droplet" detail={`MAF ${formatValue(readings.maf, 1)} g/s`}/>
+            </section>
 
-      <section className={`health-card compact-health ${liveAlerts.length ? 'has-alerts' : ''}`}>
-        <span className="health-icon"><Icon name="shield"/></span>
-        <div><strong>{liveAlerts.length ? t('health.points', { count: liveAlerts.length }) : diagnosticCopy.title}</strong><p>{liveAlerts[0]?.message || diagnosticCopy.body}</p></div>
-      </section>
+            <section className={`health-card compact-health ${liveAlerts.length ? 'has-alerts' : ''}`} onClick={() => setActiveTab('health')} role="button" tabIndex="0">
+              <span className="health-icon"><Icon name="shield"/></span>
+              <div><strong>{liveAlerts.length ? t('health.points', { count: liveAlerts.length }) : diagnosticCopy.title}</strong><p>{liveAlerts[0]?.message || diagnosticCopy.body}</p></div>
+              <Icon name="chevron"/>
+            </section>
+          </section>
+        )}
 
-      <section className="builtins-panel">
-        <header className="builtins-header"><div><span>{t('service.integrated')}</span><h2>{t('service.sources_cloud')}</h2></div><button type="button" onClick={() => setServicesOpen(true)}><Icon name="sliders"/><span>{t('generic.configure')}</span></button></header>
-        <div className="service-grid">
-          <ServiceTile icon="location" title={t('service.gps_position')} service={services.gps} detail={services.gps?.last_update ? ageLabel(services.gps.last_update, now) : services.gps?.permission_granted ? t('service.ready_location') : t('service.permission_required')} onClick={() => setServicesOpen(true)}/>
-          <ServiceTile icon="phone" title={t('service.phone_sensors')} service={services.sensors} detail={services.sensors?.last_update ? ageLabel(services.sensors.last_update, now) : t('service.accelerometer')} onClick={() => setServicesOpen(true)}/>
-          <ServiceTile icon="cloud" title={t('service.cloud_gateway')} kind="mqtt" service={services.mqtt} detail={gatewayDetail} onClick={() => setServicesOpen(true)}/>
-        </div>
-        <p className="builtins-note">{t('service.note')}</p>
-      </section>
+        {activeTab === 'live' && (
+          <section className="app-page app-page-live">
+            <PageHeader kicker={t('page.live.kicker')} title={t('page.live.title')} detail={t('page.live.detail', { count: signals.length })}/>
+            <section className="data-panel">
+              <header className="data-panel-header">
+                <div><span>{t('explorer.kicker')}</span><h2>{t('explorer.title')}</h2></div>
+                <strong>{filteredSignals.length}/{signals.length}</strong>
+              </header>
 
-      <section className="data-panel">
-        <header className="data-panel-header">
-          <div><span>{t('explorer.kicker')}</span><h2>{t('explorer.title')}</h2></div>
-          <strong>{filteredSignals.length}/{signals.length}</strong>
-        </header>
+              <label className="search-box">
+                <Icon name="search"/>
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('explorer.search')} />
+                {query && <button type="button" onClick={() => setQuery('')} aria-label={t('generic.clear')}><Icon name="close"/></button>}
+              </label>
 
-        <label className="search-box">
-          <Icon name="search"/>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('explorer.search')} />
-          {query && <button type="button" onClick={() => setQuery('')} aria-label={t('generic.clear')}><Icon name="close"/></button>}
-        </label>
+              <nav className="category-tabs" aria-label={t('explorer.categories')}>
+                {CATEGORIES.map((item) => {
+                  const count = item.id === 'all' ? signals.length : item.id === 'favorites' ? favorites.filter((key) => signals.some((signal) => signalKey(signal) === key)).length : (categoryCounts[item.id] || 0);
+                  if (!['all', 'favorites'].includes(item.id) && count === 0) return null;
+                  return <button type="button" key={item.id} className={category === item.id ? 'is-active' : ''} onClick={() => setCategory(item.id)}><Icon name={item.icon}/><span>{t(item.labelKey)}</span><em>{count}</em></button>;
+                })}
+              </nav>
 
-        <nav className="category-tabs" aria-label={t('explorer.categories')}>
-          {CATEGORIES.map((item) => {
-            const count = item.id === 'all' ? signals.length : item.id === 'favorites' ? favorites.filter((key) => signals.some((signal) => signalKey(signal) === key)).length : (categoryCounts[item.id] || 0);
-            if (!['all', 'favorites'].includes(item.id) && count === 0) return null;
-            return <button type="button" key={item.id} className={category === item.id ? 'is-active' : ''} onClick={() => setCategory(item.id)}><Icon name={item.icon}/><span>{t(item.labelKey)}</span><em>{count}</em></button>;
-          })}
-        </nav>
+              <div className="signal-grid">
+                {filteredSignals.map((signal) => (
+                  <SignalCard key={signalKey(signal)} signal={signal} favorite={favorites.includes(signalKey(signal))} onToggleFavorite={toggleFavorite} history={history} now={now}/>
+                ))}
+                {!filteredSignals.length && (
+                  <div className="empty-signals"><Icon name="activity"/><strong>{signals.length ? t('explorer.none_match') : t('explorer.waiting')}</strong><p>{signals.length ? t('explorer.adjust') : t('explorer.valid_later')}</p></div>
+                )}
+              </div>
+            </section>
+          </section>
+        )}
 
-        <div className="signal-grid">
-          {filteredSignals.map((signal) => (
-            <SignalCard key={signalKey(signal)} signal={signal} favorite={favorites.includes(signalKey(signal))} onToggleFavorite={toggleFavorite} history={history} now={now}/>
-          ))}
-          {!filteredSignals.length && (
-            <div className="empty-signals"><Icon name="activity"/><strong>{signals.length ? t('explorer.none_match') : t('explorer.waiting')}</strong><p>{signals.length ? t('explorer.adjust') : t('explorer.valid_later')}</p></div>
-          )}
-        </div>
-      </section>
+        {activeTab === 'health' && (
+          <section className="app-page app-page-health">
+            <PageHeader kicker={t('page.health.kicker')} title={t('page.health.title')} detail={t('page.health.detail', { count: liveAlerts.length })}/>
 
-      <section className="actions">
-        <button className="primary" type="button" onClick={connectionAction} disabled={!nativeAvailable}><Icon name={status === 'lost' ? 'refresh' : 'bluetooth'}/><span>{connected ? t('action.connection') : status === 'lost' && lastDevice ? t('action.reconnect') : t('action.connect')}</span></button>
-        <button className="secondary" type="button" onClick={() => window.LotoTNative?.startDemo?.()} disabled={!nativeAvailable}><Icon name="play"/><span>{t('action.demo')}</span></button>
-        <button className="tools-button" type="button" onClick={() => window.LotoTNative?.openNativeTools?.()} disabled={!nativeAvailable}><Icon name="tool"/><span>{t('action.advanced_settings')}</span><Icon name="chevron"/></button>
-      </section>
+            <section className="health-page-summary">
+              <HealthOverview alerts={liveAlerts} signals={signals} lastCapturedAt={lastCapturedAt} now={now}/>
+              <section className={`health-card health-page-message ${liveAlerts.length ? 'has-alerts' : ''}`}>
+                <span className="health-icon"><Icon name="shield"/></span>
+                <div><strong>{liveAlerts.length ? t('health.points', { count: liveAlerts.length }) : t('health.no_alerts')}</strong><p>{liveAlerts[0]?.message || t('health.no_alerts_detail')}</p></div>
+              </section>
+            </section>
 
-      <footer className="app-footer">{t('footer.copy')}</footer>
+            <section className="critical-overview">
+              <OverviewMetric label={t('overview.coolant')} value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="thermometer" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} detail="70–105 normal"/>
+              <OverviewMetric label={t('overview.oil')} value={valueOf('engine_oil_temperature')} unit="°C" icon="thermometer" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} detail="70–110 normal"/>
+              <OverviewMetric label={t('overview.voltage')} value={readings.module_voltage ?? valueOf('ecu_voltage')} unit="V" icon="bolt" tone={toneForVoltage(readings.module_voltage ?? valueOf('ecu_voltage'))} detail="12.3–14.8 V"/>
+              <OverviewMetric label={t('overview.fuel')} value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="fuel" tone={toneForFuel(valueOf('fuel_level', 'fuel_tank_level_input'))} detail={`${formatValue(valueOf('engine_fuel_rate'), 1)} L/h`}/>
+              <OverviewMetric label={t('overview.intake')} value={valueOf('intake_manifold_pressure')} unit="kPa" icon="wind" detail={`${formatValue(valueOf('intake_air_temperature'), 0)} °C`}/>
+              <OverviewMetric label={t('overview.pressure')} value={valueOf('fuel_pressure')} unit="kPa" icon="droplet" detail={`MAF ${formatValue(readings.maf, 1)} g/s`}/>
+            </section>
+
+            <section className="data-panel health-alert-panel">
+              <header className="data-panel-header">
+                <div><span>{t('page.health.active_kicker')}</span><h2>{t('page.health.active_title')}</h2></div>
+                <strong>{alertSignals.length}</strong>
+              </header>
+              <div className="signal-grid health-alert-grid">
+                {alertSignals.map((signal) => (
+                  <SignalCard key={signalKey(signal)} signal={signal} favorite={favorites.includes(signalKey(signal))} onToggleFavorite={toggleFavorite} history={history} now={now}/>
+                ))}
+                {!alertSignals.length && (
+                  <div className="empty-signals health-clear-state"><Icon name="shield"/><strong>{t('health.no_alerts')}</strong><p>{t('health.no_alerts_detail')}</p></div>
+                )}
+              </div>
+            </section>
+          </section>
+        )}
+
+        {activeTab === 'more' && (
+          <section className="app-page app-page-more">
+            <PageHeader kicker={t('page.more.kicker')} title={t('page.more.title')} detail={t('page.more.detail')}/>
+            <section className="builtins-panel">
+              <header className="builtins-header"><div><span>{t('service.integrated')}</span><h2>{t('service.sources_cloud')}</h2></div><button type="button" onClick={() => setServicesOpen(true)}><Icon name="sliders"/><span>{t('generic.configure')}</span></button></header>
+              <div className="service-grid">
+                <ServiceTile icon="location" title={t('service.gps_position')} service={services.gps} detail={services.gps?.last_update ? ageLabel(services.gps.last_update, now) : services.gps?.permission_granted ? t('service.ready_location') : t('service.permission_required')} onClick={() => setServicesOpen(true)}/>
+                <ServiceTile icon="phone" title={t('service.phone_sensors')} service={services.sensors} detail={services.sensors?.last_update ? ageLabel(services.sensors.last_update, now) : t('service.accelerometer')} onClick={() => setServicesOpen(true)}/>
+                <ServiceTile icon="cloud" title={t('service.cloud_gateway')} kind="mqtt" service={services.mqtt} detail={gatewayDetail} onClick={() => setServicesOpen(true)}/>
+              </div>
+              <p className="builtins-note">{t('service.note')}</p>
+            </section>
+
+            <section className="appearance-panel">
+              <header><div><span>{t('appearance.kicker')}</span><h2>{t('appearance.title')}</h2></div><button type="button" onClick={() => setAppearanceOpen(true)}><Icon name="sliders"/><span>{t('generic.configure')}</span></button></header>
+              <button className="appearance-entry" type="button" onClick={() => setAppearanceOpen(true)}>
+                <span className="appearance-entry-icon"><Icon name="type"/></span>
+                <span className="appearance-entry-copy"><small>{t('appearance.font_and_size')}</small><strong>{t(fontFamilyOption(fontFamily).labelKey)} · {fontScale}%</strong><em>{t('appearance.entry_detail')}</em></span>
+                <Icon name="chevron"/>
+              </button>
+            </section>
+
+            <section className="actions">
+              <button className="primary" type="button" onClick={connectionAction} disabled={!nativeAvailable}><Icon name={status === 'lost' ? 'refresh' : 'bluetooth'}/><span>{connected ? t('action.connection') : status === 'lost' && lastDevice ? t('action.reconnect') : t('action.connect')}</span></button>
+              <button className="secondary" type="button" onClick={() => window.LotoTNative?.startDemo?.()} disabled={!nativeAvailable}><Icon name="play"/><span>{t('action.demo')}</span></button>
+              <button className="tools-button" type="button" onClick={() => window.LotoTNative?.openNativeTools?.()} disabled={!nativeAvailable}><Icon name="tool"/><span>{t('action.advanced_settings')}</span><Icon name="chevron"/></button>
+            </section>
+
+            <footer className="app-footer">{t('footer.copy')}</footer>
+          </section>
+        )}
+      </div>
+
+      <BottomNavigation active={activeTab} onChange={setActiveTab}/>
 
       <ConnectionSheet open={connectionOpen} onClose={() => setConnectionOpen(false)} bluetooth={bluetooth} medium={medium} setMedium={setMedium} onScan={(selectedMedium) => window.LotoTNative?.scanBluetooth?.(selectedMedium)} onConnect={connectDevice} onDisconnect={() => window.LotoTNative?.disconnectBluetooth?.()}/>
       <ServicesSheet open={servicesOpen} onClose={() => setServicesOpen(false)} services={services} signals={signals} onSave={(payload) => window.LotoTNative?.configureBuiltins?.(JSON.stringify(payload))} onRequestLocation={() => window.LotoTNative?.requestLocationPermission?.()} onPublishNow={() => window.LotoTNative?.publishMqttNow?.()}/>
+      <AppearanceSheet open={appearanceOpen} onClose={() => setAppearanceOpen(false)} theme={theme} onThemeChange={setTheme} fontFamily={fontFamily} onFontFamilyChange={setFontFamily} fontScale={fontScale} onFontScaleChange={(value) => setFontScale(clampFontScale(value))}/>
     </main>
   );
 }
