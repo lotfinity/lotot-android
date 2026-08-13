@@ -25,10 +25,18 @@ final class LotoTWebBridge
         void setLotoTTheme(String theme);
         String getLotoTAppearanceSettings();
         void setLotoTAppearanceSettings(String json);
+        String getLotoTOnboardingState();
+        void setLotoTOnboardingComplete(boolean complete);
+        void requestLotoTNotificationPermission();
+        void startLotoTUsbConnection();
+        void connectLotoTNetwork(String address, int port);
         void updateLotoTBuiltinConfig(String json);
         void requestLotoTLocationPermission();
         void publishLotoTMqttNow();
         void openLotoTNativeTools();
+        String getLoToTiAiStatus();
+        void askLoToTiAi(String json);
+        String lookupLoToTiDtc(String code, String manufacturer);
     }
 
     private final Activity activity;
@@ -95,6 +103,36 @@ final class LotoTWebBridge
     }
 
     @JavascriptInterface
+    public String getOnboardingState()
+    {
+        return host.getLotoTOnboardingState();
+    }
+
+    @JavascriptInterface
+    public void setOnboardingComplete(boolean complete)
+    {
+        activity.runOnUiThread(() -> host.setLotoTOnboardingComplete(complete));
+    }
+
+    @JavascriptInterface
+    public void requestNotificationPermission()
+    {
+        activity.runOnUiThread(host::requestLotoTNotificationPermission);
+    }
+
+    @JavascriptInterface
+    public void startUsbConnection()
+    {
+        activity.runOnUiThread(host::startLotoTUsbConnection);
+    }
+
+    @JavascriptInterface
+    public void connectNetwork(String address, int port)
+    {
+        activity.runOnUiThread(() -> host.connectLotoTNetwork(address, port));
+    }
+
+    @JavascriptInterface
     public void configureBuiltins(String json)
     {
         activity.runOnUiThread(() -> host.updateLotoTBuiltinConfig(json));
@@ -116,5 +154,23 @@ final class LotoTWebBridge
     public void openNativeTools()
     {
         activity.runOnUiThread(host::openLotoTNativeTools);
+    }
+
+    @JavascriptInterface
+    public String getAiStatus()
+    {
+        return host.getLoToTiAiStatus();
+    }
+
+    @JavascriptInterface
+    public void askAi(String json)
+    {
+        activity.runOnUiThread(() -> host.askLoToTiAi(json));
+    }
+
+    @JavascriptInterface
+    public String lookupDtc(String code, String manufacturer)
+    {
+        return host.lookupLoToTiDtc(code, manufacturer);
     }
 }

@@ -47,6 +47,8 @@ public final class LotoTGatewayService extends Service
     private LotoTBuiltinServices builtins;
     private long lastNotificationAt;
     private String lastNotificationFingerprint = "";
+    private boolean vehicleSessionActive;
+    private boolean foregroundActive;
 
     static void start(Context context)
     {
@@ -61,7 +63,6 @@ public final class LotoTGatewayService extends Service
     {
         super.onCreate();
         createNotificationChannel();
-        refreshForegroundNotification(true);
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
         builtins = new LotoTBuiltinServices(getApplicationContext(), preferences, this);
         builtins.start();
@@ -69,8 +70,8 @@ public final class LotoTGatewayService extends Service
 
     @Override public int onStartCommand(Intent intent, int flags, int startId)
     {
-        refreshForegroundNotification(true);
-        return START_STICKY;
+        reconcileForeground(true);
+        return requiresForeground() ? START_STICKY : START_NOT_STICKY;
     }
 
     @Override public IBinder onBind(Intent intent) { return binder; }
@@ -98,19 +99,43 @@ public final class LotoTGatewayService extends Service
     boolean applyConfig(String json) throws org.json.JSONException
     {
         boolean permission = builtins != null && builtins.applyConfig(json);
-        refreshForegroundNotification(true);
+        reconcileForeground(true);
         return permission;
     }
 
     void onLocationPermissionResult()
     {
         if (builtins != null) builtins.onLocationPermissionResult();
-        refreshForegroundNotification(true);
+        reconcileForeground(true);
     }
 
     boolean needsLocationPermission()
     {
         return builtins != null && builtins.needsLocationPermission();
+    }
+
+    void setVehicleSessionActive(boolean active)
+    {
+        vehicleSessionActive = active;
+        reconcileForeground(true);
+    }
+
+    boolean requiresForeground()
+    {
+        if (vehicleSessionActive) return true;
+        try
+        {
+            JSONObject state = builtins == null ? null : builtins.getState();
+            if (state == null) return false;
+            JSONObject gps = state.optJSONObject("gps");
+            JSONObject mqtt = state.optJSONObject("mqtt");
+            return (gps != null && gps.optBoolean("enabled"))
+                    || (mqtt != null && mqtt.optBoolean("enabled"));
+        }
+        catch (Exception ignored)
+        {
+            return vehicleSessionActive;
+        }
     }
 
     void publishMqttNow()
@@ -131,20 +156,40 @@ public final class LotoTGatewayService extends Service
     JSONObject getState() throws org.json.JSONException
     {
         JSONObject state = builtins == null ? new JSONObject() : builtins.getState();
-        state.put("foreground", true);
-        state.put("service", "running");
+        state.put("foreground", foregroundActive);
+        state.put("service", foregroundActive ? "foreground" : "bound");
+        state.put("vehicle_session", vehicleSessionActive);
         return state;
     }
 
     @Override public void onBuiltinServicesStateChanged()
     {
-        refreshForegroundNotification(false);
+        reconcileForeground(false);
         for (Listener listener : listeners) listener.onGatewayStateChanged();
     }
 
     void refreshForegroundService()
     {
-        refreshForegroundNotification(true);
+        reconcileForeground(true);
+    }
+
+    private void reconcileForeground(boolean force)
+    {
+        if (!requiresForeground())
+        {
+            if (foregroundActive)
+            {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
+                    stopForeground(STOP_FOREGROUND_REMOVE);
+                else
+                    stopForeground(true);
+                foregroundActive = false;
+            }
+            lastNotificationFingerprint = "";
+            stopSelf();
+            return;
+        }
+        refreshForegroundNotification(force);
     }
 
     private void refreshForegroundNotification(boolean force)
@@ -156,6 +201,7 @@ public final class LotoTGatewayService extends Service
         lastNotificationFingerprint = fingerprint;
         lastNotificationAt = now;
         startForegroundSafely(buildNotification());
+        foregroundActive = true;
     }
 
     private String notificationFingerprint()
@@ -164,7 +210,7 @@ public final class LotoTGatewayService extends Service
         {
             JSONObject mqtt = getState().optJSONObject("mqtt");
             if (mqtt == null) return "starting";
-            return mqtt.optBoolean("enabled") + ":" + mqtt.optString("status", "")
+            return vehicleSessionActive + ":" + mqtt.optBoolean("enabled") + ":" + mqtt.optString("status", "")
                     + ":" + mqtt.optInt("queue_depth", 0)
                     + ":" + mqtt.optInt("syncing_remaining", 0);
         }
@@ -243,7 +289,20 @@ public final class LotoTGatewayService extends Service
                     Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
                     || ContextCompat.checkSelfPermission(this,
                     Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
-            if (locationGranted) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+            boolean locationEnabled = false;
+            boolean mqttEnabled = false;
+            try
+            {
+                JSONObject state = builtins == null ? null : builtins.getState();
+                JSONObject gps = state == null ? null : state.optJSONObject("gps");
+                JSONObject mqtt = state == null ? null : state.optJSONObject("mqtt");
+                locationEnabled = gps != null && gps.optBoolean("enabled");
+                mqttEnabled = mqtt != null && mqtt.optBoolean("enabled");
+            }
+            catch (Exception ignored) { }
+            if (locationGranted && locationEnabled)
+                type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+            if (mqttEnabled) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
             if (type == 0) type = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
             try
             {

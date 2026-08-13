@@ -30,13 +30,14 @@ const EMPTY_BUILTINS = {
   sensors: { enabled: true, available: true, status: 'waiting', last_update: 0, error: null },
   mqtt: {
     enabled: false, status: 'disabled', broker: null, last_publish: 0, last_attempt: 0, published_messages: 0, queue_depth: 0, queue_capacity: 10000, syncing_total: 0, syncing_remaining: 0, next_retry: 0, retry_count: 0, error: null,
-    config: { protocol: 'tcp://', host: '', port: 1883, username: '', password_set: false, device_uid: '', client_id: '', prefix: '', qos: 1, retain: false, interval_seconds: 5, selected_signals: [] },
+    config: { protocol: 'tcp://', host: '', port: 1883, username: '', password_set: false, device_uid: '', client_id: '', prefix: '', qos: 1, retain: false, include_gps: false, include_sensors: false, interval_seconds: 5, selected_signals: [] },
   },
 };
 
 const PRIMARY_NAV = [
   { id: 'overview', labelKey: 'nav.overview', icon: 'home' },
   { id: 'live', labelKey: 'nav.live', icon: 'activity' },
+  { id: 'ai', labelKey: 'nav.ai', icon: 'bot', center: true },
   { id: 'health', labelKey: 'nav.health', icon: 'shield' },
   { id: 'more', labelKey: 'nav.more', icon: 'grid' },
 ];
@@ -55,6 +56,27 @@ const fontFamilyOption = (id) => FONT_FAMILIES.find((item) => item.id === id) ||
 function readNativeAppearanceSettings() {
   try {
     const raw = window.LotoTNative?.getAppearanceSettings?.();
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function readNativeOnboardingState() {
+  try {
+    const raw = window.LotoTNative?.getOnboardingState?.();
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (_) {
+    // Browser previews fall back to local state.
+  }
+  return { complete: localStorage.getItem('lototi-onboarding-complete') === '1', current_version: 1 };
+}
+
+function readNativeAiStatus() {
+  try {
+    const raw = window.LotoTNative?.getAiStatus?.();
     const parsed = raw ? JSON.parse(raw) : {};
     return parsed && typeof parsed === 'object' ? parsed : {};
   } catch (_) {
@@ -90,6 +112,10 @@ const bluetoothBridge = window.lototBluetoothBridge = window.lototBluetoothBridg
 
 const builtinBridge = window.lototBuiltinBridge = window.lototBuiltinBridge || {
   lastState: EMPTY_BUILTINS,
+};
+
+const aiBridge = window.lototAiBridge = window.lototAiBridge || {
+  lastState: { status: 'idle', configured: false, providers: [] },
 };
 
 window.lototReceiveTelemetry = (payload) => {
@@ -166,6 +192,19 @@ window.lototSetBuiltinState = (payload) => {
 };
 
 
+window.lototSetAiState = (payload) => {
+  try {
+    const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
+    if (!parsed || typeof parsed !== 'object') return;
+    aiBridge.lastState = { ...(aiBridge.lastState || {}), ...parsed };
+    const snapshot = { ...aiBridge.lastState };
+    if (typeof window.lototAiStateListener === 'function') window.lototAiStateListener(snapshot);
+    window.dispatchEvent(new CustomEvent('lotot:ai-state', { detail: snapshot }));
+  } catch (error) {
+    console.error('Invalid native AI payload', error);
+  }
+};
+
 window.lototSetLanguage = (language) => {
   const normalized = setLanguage(language);
   window.dispatchEvent(new CustomEvent('lotot:language', { detail: { language: normalized } }));
@@ -180,6 +219,71 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, isNumericReading(
 const mediumLabel = (medium) => medium === 'ble' ? t('connection.bluetooth_le') : t('connection.bluetooth_classic');
 const signalKey = (signal) => signal?.key || signal?.mnemonic || signal?.label || 'unknown';
 const cleanText = (value) => String(value || '').trim();
+
+
+function renderInlineMarkdown(text, keyPrefix = 'inline') {
+  const source = String(text || '');
+  const tokenPattern = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*\n]+\*)/g;
+  const parts = source.split(tokenPattern).filter((part) => part !== '');
+  return parts.map((part, index) => {
+    const key = `${keyPrefix}-${index}`;
+    if (part.startsWith('**') && part.endsWith('**')) return <strong key={key}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith('`') && part.endsWith('`')) return <code key={key}>{part.slice(1, -1)}</code>;
+    if (part.startsWith('*') && part.endsWith('*')) return <em key={key}>{part.slice(1, -1)}</em>;
+    return <React.Fragment key={key}>{part}</React.Fragment>;
+  });
+}
+
+function MarkdownMessage({ text }) {
+  const lines = String(text || '').replace(/\r/g, '').split('\n');
+  const blocks = [];
+  let paragraph = [];
+  let list = [];
+  let listType = null;
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    const value = paragraph.join(' ').trim();
+    if (value) blocks.push(<p key={`p-${blocks.length}`}>{renderInlineMarkdown(value, `p-${blocks.length}`)}</p>);
+    paragraph = [];
+  };
+  const flushList = () => {
+    if (!list.length) return;
+    const Tag = listType === 'ol' ? 'ol' : 'ul';
+    blocks.push(<Tag key={`list-${blocks.length}`}>{list.map((item, index) => <li key={index}>{renderInlineMarkdown(item, `li-${blocks.length}-${index}`)}</li>)}</Tag>);
+    list = [];
+    listType = null;
+  };
+
+  lines.forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line) { flushParagraph(); flushList(); return; }
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushParagraph(); flushList();
+      const level = Math.min(3, heading[1].length);
+      const Tag = `h${level + 2}`;
+      blocks.push(<Tag key={`h-${blocks.length}`}>{renderInlineMarkdown(heading[2], `h-${blocks.length}`)}</Tag>);
+      return;
+    }
+    const unordered = line.match(/^[-•]\s+(.+)$/);
+    if (unordered) {
+      flushParagraph();
+      if (listType && listType !== 'ul') flushList();
+      listType = 'ul'; list.push(unordered[1]); return;
+    }
+    const ordered = line.match(/^\d+[.)]\s+(.+)$/);
+    if (ordered) {
+      flushParagraph();
+      if (listType && listType !== 'ol') flushList();
+      listType = 'ol'; list.push(ordered[1]); return;
+    }
+    flushList();
+    paragraph.push(line);
+  });
+  flushParagraph(); flushList();
+  return <div className="ai-markdown">{blocks}</div>;
+}
 
 function formatValue(value, decimals = null) {
   if (!isNumericReading(value)) return value === null || value === undefined || value === '' ? '—' : String(value);
@@ -319,6 +423,7 @@ function Icon({ name }) {
     signal: <><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 20V4"/></>,
     chevron: <path d="m9 18 6-6-6-6" />,
     activity: <><path d="M3 12h4l2-7 4 14 2-7h6"/></>,
+    bot: <><rect x="5" y="7" width="14" height="11" rx="4"/><path d="M12 3v4M9 3h6"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M9 15h6M3 11v3M21 11v3"/></>,
     star: <path d="m12 2.7 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.3l6.2-.9L12 2.7Z" />,
     search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
     thermometer: <><path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0Z"/><path d="M12 9v7"/></>,
@@ -332,6 +437,8 @@ function Icon({ name }) {
     location: <><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,
     cloud: <><path d="M17.5 19H7a5 5 0 0 1-.6-10A7 7 0 0 1 20 11.5 3.8 3.8 0 0 1 17.5 19Z"/><path d="M9 14h6M12 11v6"/></>,
     phone: <><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 18h4"/></>,
+    usb: <><path d="M12 2v14"/><path d="m9 5 3-3 3 3"/><path d="M12 10H7v5"/><circle cx="7" cy="17" r="2"/><path d="M12 13h5v3"/><rect x="15" y="16" width="4" height="4" rx=".5"/></>,
+    wifi: <><path d="M5 12.6a11 11 0 0 1 14 0"/><path d="M8.5 16a6 6 0 0 1 7 0"/><path d="M12 20h.01"/></>,
     type: <><path d="M5 5V3h14v2"/><path d="M12 3v18"/><path d="M8 21h8"/></>,
     sliders: <><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="18" r="2"/></>,
   };
@@ -476,7 +583,7 @@ function BottomNavigation({ active, onChange }) {
           <button
             type="button"
             key={item.id}
-            className={active === item.id ? 'is-active' : ''}
+            className={`${active === item.id ? 'is-active' : ''} ${item.center ? 'is-center-ai' : ''}`.trim()}
             aria-current={active === item.id ? 'page' : undefined}
             onClick={() => onChange(item.id)}
           >
@@ -699,6 +806,8 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
       client_id: mqtt.client_id,
       qos: Number(mqtt.qos) || 0,
       retain: Boolean(mqtt.retain),
+      include_gps: Boolean(mqtt.include_gps),
+      include_sensors: Boolean(mqtt.include_sensors),
       interval_seconds: Math.max(1, Number(mqtt.interval_seconds) || 5),
       selected_signals: selected,
     };
@@ -753,6 +862,8 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
             <label><span>{t('service.password')}</span><input type="password" value={mqtt.password} onChange={(event) => updateMqtt('password', event.target.value)} placeholder={mqtt.password_set ? t('service.saved_leave_blank') : t('service.optional')}/></label>
             <label><span>QoS</span><select value={mqtt.qos} onChange={(event) => updateMqtt('qos', event.target.value)}><option value="0">0 · {t('service.qos_fast')}</option><option value="1">1 · {t('service.qos_confirmed')}</option><option value="2">2 · {t('service.qos_exactly_once')}</option></select></label>
             <SwitchRow checked={Boolean(mqtt.retain)} onChange={(value) => updateMqtt('retain', value)} title={t('service.retained')} description={t('service.retained_detail')}/>
+            <SwitchRow checked={Boolean(mqtt.include_gps)} onChange={(value) => updateMqtt('include_gps', value)} title={t('service.mqtt_share_gps')} description={t('service.mqtt_share_gps_detail')} disabled={!services.gps?.enabled}/>
+            <SwitchRow checked={Boolean(mqtt.include_sensors)} onChange={(value) => updateMqtt('include_sensors', value)} title={t('service.mqtt_share_sensors')} description={t('service.mqtt_share_sensors_detail')} disabled={!services.sensors?.enabled}/>
           </div>
 
           <div className="signal-publish-head"><div><strong>{t('service.published_signals')}</strong><small>{selected.length ? t('service.selected', { count: selected.length }) : t('service.all_live')}</small></div><button type="button" onClick={() => updateMqtt('selected_signals', [])}>{t('service.publish_all')}</button></div>
@@ -840,9 +951,185 @@ function AppearanceSheet({ open, onClose, theme, onThemeChange, fontFamily, onFo
   );
 }
 
+function OnboardingFlow({ services, bluetooth, status, signals, initialPermissionState, canClose, onClose, onComplete }) {
+  const [step, setStep] = useState('welcome');
+  const [gpsEnabled, setGpsEnabled] = useState(Boolean(services.gps?.enabled));
+  const [sensorsEnabled, setSensorsEnabled] = useState(Boolean(services.sensors?.enabled));
+  const [mqttEnabled, setMqttEnabled] = useState(Boolean(services.mqtt?.enabled));
+  const [mqttShareGps, setMqttShareGps] = useState(Boolean(services.mqtt?.config?.include_gps));
+  const [mqttShareSensors, setMqttShareSensors] = useState(Boolean(services.mqtt?.config?.include_sensors));
+  const [notificationsEnabled, setNotificationsEnabled] = useState(initialPermissionState?.notification_granted !== false);
+  const [method, setMethod] = useState(null);
+  const [networkHost, setNetworkHost] = useState('');
+  const [networkPort, setNetworkPort] = useState('23');
+  const [attemptedMethod, setAttemptedMethod] = useState(null);
+  const devices = [...(bluetooth.devices || [])].sort((a, b) => {
+    if (a.paired !== b.paired) return a.paired ? -1 : 1;
+    return (b.rssi ?? -999) - (a.rssi ?? -999);
+  });
+  const connected = status === 'live';
+  const demo = status === 'demo';
+  const hasLiveData = signals.length > 0;
+  const verified = demo || (connected && hasLiveData);
+  const stepIndex = step === 'welcome' ? 0 : step === 'features' ? 1 : step === 'connect' ? 2 : 3;
+
+  useEffect(() => {
+    if (!verified || step !== 'verify') return undefined;
+    const timer = window.setTimeout(onComplete, 1250);
+    return () => window.clearTimeout(timer);
+  }, [verified, step, onComplete]);
+
+  const applyCapabilities = () => {
+    window.LotoTNative?.configureBuiltins?.(JSON.stringify({
+      gps_enabled: gpsEnabled,
+      sensors_enabled: sensorsEnabled,
+      mqtt: {
+        enabled: mqttEnabled,
+        include_gps: mqttEnabled && gpsEnabled && mqttShareGps,
+        include_sensors: mqttEnabled && sensorsEnabled && mqttShareSensors,
+      },
+    }));
+    if (notificationsEnabled) window.LotoTNative?.requestNotificationPermission?.();
+    setStep('connect');
+  };
+
+  const chooseMethod = (next) => {
+    setMethod(next);
+    if (next === 'classic' || next === 'ble') window.LotoTNative?.scanBluetooth?.(next);
+  };
+
+  const connectBluetooth = (device) => {
+    setAttemptedMethod(method);
+    setStep('verify');
+    window.LotoTNative?.connectBluetooth?.(device.address, device.medium || method);
+  };
+
+  const startSelectedMethod = () => {
+    setAttemptedMethod(method);
+    setStep('verify');
+    if (method === 'demo') window.LotoTNative?.startDemo?.();
+    else if (method === 'usb') window.LotoTNative?.startUsbConnection?.();
+    else if (method === 'network') window.LotoTNative?.connectNetwork?.(networkHost.trim(), Number(networkPort) || 23);
+  };
+
+  const backToConnections = () => {
+    setStep('connect');
+    setAttemptedMethod(null);
+    if (method === 'classic' || method === 'ble') window.LotoTNative?.scanBluetooth?.(method);
+  };
+
+  return (
+    <main className="onboarding-shell">
+      <div className="onboarding-orb onboarding-orb-one"/><div className="onboarding-orb onboarding-orb-two"/>
+      <header className="onboarding-topbar">
+        <div className="onboarding-brand"><img src="./app-icon.png" alt=""/><span>LoToTi</span></div>
+        <div className="onboarding-progress" aria-label={t('onboarding.progress')}>
+          {[0,1,2,3].map((index) => <i key={index} className={index <= stepIndex ? 'is-active' : ''}/>) }
+        </div>
+        {canClose ? <button type="button" className="onboarding-close" onClick={onClose} aria-label={t('generic.close')}><Icon name="close"/></button> : <span className="onboarding-top-spacer"/>}
+      </header>
+
+      {step === 'welcome' && (
+        <section className="onboarding-stage onboarding-welcome">
+          <div className="onboarding-hero-icon"><img src="./app-icon.png" alt=""/></div>
+          <span className="onboarding-kicker">{t('onboarding.welcome_kicker')}</span>
+          <h1>{t('onboarding.welcome_title')}</h1>
+          <p>{t('onboarding.welcome_body')}</p>
+          <div className="onboarding-promise-grid">
+            <article><span><Icon name="shield"/></span><strong>{t('onboarding.promise_control')}</strong><small>{t('onboarding.promise_control_detail')}</small></article>
+            <article><span><Icon name="car"/></span><strong>{t('onboarding.promise_vehicle')}</strong><small>{t('onboarding.promise_vehicle_detail')}</small></article>
+            <article><span><Icon name="activity"/></span><strong>{t('onboarding.promise_demo')}</strong><small>{t('onboarding.promise_demo_detail')}</small></article>
+          </div>
+          <button className="onboarding-primary" type="button" onClick={() => setStep('features')}>{t('onboarding.start')}<Icon name="chevron"/></button>
+          <small className="onboarding-legal">{t('onboarding.change_later')}</small>
+        </section>
+      )}
+
+      {step === 'features' && (
+        <section className="onboarding-stage">
+          <div className="onboarding-heading"><span>{t('onboarding.features_kicker')}</span><h1>{t('onboarding.features_title')}</h1><p>{t('onboarding.features_body')}</p></div>
+          <div className="capability-list">
+            <article className="capability-card is-core"><span className="capability-icon"><Icon name="car"/></span><div><strong>{t('onboarding.core_title')}</strong><small>{t('onboarding.core_detail')}</small></div><b>{t('onboarding.required')}</b></article>
+            <CapabilityChoice icon="location" checked={gpsEnabled} onChange={(v) => { setGpsEnabled(v); if (!v) setMqttShareGps(false); }} title={t('onboarding.gps_title')} detail={t('onboarding.gps_detail')}/>
+            <CapabilityChoice icon="phone" checked={sensorsEnabled} onChange={(v) => { setSensorsEnabled(v); if (!v) setMqttShareSensors(false); }} title={t('onboarding.sensors_title')} detail={t('onboarding.sensors_detail')}/>
+            <CapabilityChoice icon="cloud" checked={mqttEnabled} onChange={setMqttEnabled} title={t('onboarding.mqtt_title')} detail={t('onboarding.mqtt_detail')}/>
+            {mqttEnabled && <div className="mqtt-sharing-choices">
+              <span>{t('onboarding.mqtt_sharing')}</span>
+              <CapabilityChoice compact icon="location" checked={mqttShareGps} onChange={setMqttShareGps} disabled={!gpsEnabled} title={t('onboarding.share_gps')} detail={t('onboarding.share_gps_detail')}/>
+              <CapabilityChoice compact icon="phone" checked={mqttShareSensors} onChange={setMqttShareSensors} disabled={!sensorsEnabled} title={t('onboarding.share_sensors')} detail={t('onboarding.share_sensors_detail')}/>
+            </div>}
+            <CapabilityChoice icon="activity" checked={notificationsEnabled} onChange={setNotificationsEnabled} title={t('onboarding.notifications_title')} detail={t('onboarding.notifications_detail')}/>
+          </div>
+          <div className="onboarding-actions"><button type="button" className="onboarding-secondary" onClick={() => setStep('welcome')}>{t('onboarding.back')}</button><button type="button" className="onboarding-primary" onClick={applyCapabilities}>{t('onboarding.continue')}<Icon name="chevron"/></button></div>
+        </section>
+      )}
+
+      {step === 'connect' && (
+        <section className="onboarding-stage">
+          <div className="onboarding-heading"><span>{t('onboarding.connection_kicker')}</span><h1>{t('onboarding.connection_title')}</h1><p>{t('onboarding.connection_body')}</p></div>
+          <div className="connection-method-grid">
+            <ConnectionMethod icon="bluetooth" active={method === 'classic'} title={t('connection.bluetooth_classic')} detail={t('onboarding.classic_detail')} onClick={() => chooseMethod('classic')}/>
+            <ConnectionMethod icon="bluetooth" active={method === 'ble'} title={t('connection.bluetooth_le')} detail={t('onboarding.ble_detail')} onClick={() => chooseMethod('ble')}/>
+            <ConnectionMethod icon="usb" active={method === 'usb'} title="USB" detail={t('onboarding.usb_detail')} onClick={() => chooseMethod('usb')}/>
+            <ConnectionMethod icon="wifi" active={method === 'network'} title={t('onboarding.network_title')} detail={t('onboarding.network_detail')} onClick={() => chooseMethod('network')}/>
+            <ConnectionMethod icon="play" active={method === 'demo'} title={t('onboarding.demo_title')} detail={t('onboarding.demo_detail')} onClick={() => chooseMethod('demo')}/>
+          </div>
+
+          {(method === 'classic' || method === 'ble') && <div className="onboarding-device-panel">
+            <header><div><strong>{method === 'ble' ? t('connection.bluetooth_le') : t('connection.bluetooth_classic')}</strong><small>{t('connection.device_count', { count: devices.length })}</small></div><button type="button" onClick={() => window.LotoTNative?.scanBluetooth?.(method)} disabled={bluetooth.scanning}><Icon name="refresh"/>{bluetooth.scanning ? t('connection.searching') : t('connection.refresh')}</button></header>
+            {bluetooth.error && <div className="connection-error">{bluetooth.error}</div>}
+            <div className="onboarding-device-list">
+              {devices.map((device) => <DeviceRow key={`${device.medium}:${device.address}`} device={device} connected={bluetooth.connectedDevice} selected={bluetooth.selectedDevice} connecting={bluetooth.status === 'connecting'} onConnect={connectBluetooth}/>)}
+              {!devices.length && <div className="onboarding-empty"><span className={bluetooth.scanning ? 'scanner-orbit is-scanning' : 'scanner-orbit'}><Icon name="bluetooth"/></span><strong>{bluetooth.scanning ? t('connection.searching_adapters') : t('connection.none')}</strong><small>{t('connection.none_help')}</small></div>}
+            </div>
+          </div>}
+
+          {method === 'network' && <div className="network-onboarding-form"><label><span>{t('onboarding.network_host')}</span><input value={networkHost} onChange={(e) => setNetworkHost(e.target.value)} placeholder="192.168.0.10" inputMode="decimal" autoCapitalize="none"/></label><label><span>{t('service.port')}</span><input value={networkPort} onChange={(e) => setNetworkPort(e.target.value)} type="number" min="1" max="65535" inputMode="numeric"/></label></div>}
+          {method && !['classic','ble'].includes(method) && <button className="onboarding-connect-button" type="button" disabled={method === 'network' && !networkHost.trim()} onClick={startSelectedMethod}><Icon name={method === 'usb' ? 'usb' : method === 'network' ? 'wifi' : 'play'}/><span>{method === 'demo' ? t('onboarding.start_demo') : t('onboarding.connect_now')}</span></button>}
+
+          <div className="onboarding-actions"><button type="button" className="onboarding-secondary" onClick={() => setStep('features')}>{t('onboarding.back')}</button></div>
+        </section>
+      )}
+
+      {step === 'verify' && (
+        <section className="onboarding-stage onboarding-verify">
+          <div className={`verification-emblem ${verified ? 'is-ready' : ''}`}><Icon name={verified ? 'shield' : 'activity'}/><i/></div>
+          <span className="onboarding-kicker">{t('onboarding.verify_kicker')}</span>
+          <h1>{verified ? t('onboarding.ready_title') : t('onboarding.verify_title')}</h1>
+          <p>{verified ? t('onboarding.ready_body') : t('onboarding.verify_body')}</p>
+          <div className="verification-list">
+            <VerificationRow done={status === 'connecting' || connected || demo} active={status === 'connecting'} title={t('onboarding.verify_transport')} detail={t(`onboarding.method_${attemptedMethod || method || 'demo'}`)}/>
+            <VerificationRow done={connected || demo} active={status === 'connecting'} title={t('onboarding.verify_adapter')} detail={demo ? t('onboarding.demo_engine') : t('onboarding.elm_handshake')}/>
+            <VerificationRow done={demo || hasLiveData} active={connected && !hasLiveData} title={t('onboarding.verify_ecu')} detail={t('onboarding.verify_ecu_detail')}/>
+            <VerificationRow done={verified} active={(connected || demo) && !verified} title={t('onboarding.verify_data')} detail={hasLiveData ? t('onboarding.signals_received', { count: signals.length }) : t('onboarding.waiting_signals')}/>
+          </div>
+          {bluetooth.error && <div className="connection-error verification-error">{bluetooth.error}</div>}
+          {verified ? <button className="onboarding-primary onboarding-enter" type="button" onClick={onComplete}>{t('onboarding.enter_dashboard')}<Icon name="chevron"/></button> : <div className="verification-actions"><button type="button" className="onboarding-secondary" onClick={backToConnections}>{t('onboarding.change_method')}</button><button type="button" className="onboarding-ghost" onClick={() => { setAttemptedMethod('demo'); window.LotoTNative?.startDemo?.(); }}>{t('onboarding.try_demo')}</button></div>}
+        </section>
+      )}
+    </main>
+  );
+}
+
+function CapabilityChoice({ icon, checked, onChange, title, detail, disabled = false, compact = false }) {
+  return <label className={`capability-card is-choice ${checked ? 'is-selected' : ''} ${disabled ? 'is-disabled' : ''} ${compact ? 'is-compact' : ''}`}><span className="capability-icon"><Icon name={icon}/></span><div><strong>{title}</strong><small>{detail}</small></div><input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)}/><i className="capability-switch"/></label>;
+}
+
+function ConnectionMethod({ icon, active, title, detail, onClick }) {
+  return <button type="button" className={`connection-method ${active ? 'is-active' : ''}`} onClick={onClick}><span><Icon name={icon}/></span><div><strong>{title}</strong><small>{detail}</small></div><i>{active ? '✓' : '›'}</i></button>;
+}
+
+function VerificationRow({ done, active, title, detail }) {
+  return <article className={`verification-row ${done ? 'is-done' : ''} ${active ? 'is-active' : ''}`}><span>{done ? '✓' : active ? '…' : ''}</span><div><strong>{title}</strong><small>{detail}</small></div></article>;
+}
+
 function App() {
   const retainedPayload = telemetryBridge.lastPayload || {};
   const [initialAppearance] = useState(readNativeAppearanceSettings);
+  const [initialOnboarding] = useState(readNativeOnboardingState);
+  const [onboardingComplete, setOnboardingComplete] = useState(Boolean(initialOnboarding.complete));
+  const [onboardingOpen, setOnboardingOpen] = useState(!initialOnboarding.complete);
+  const [onboardingRequired, setOnboardingRequired] = useState(!initialOnboarding.complete);
   const [language, setLanguageState] = useState(getLanguage());
   setLanguage(language);
   const [readings, setReadings] = useState({ ...EMPTY_READINGS, ...(retainedPayload.readings || {}) });
@@ -862,6 +1149,15 @@ function App() {
   const [fontScale, setFontScale] = useState(() => clampFontScale(initialAppearance.font_scale || localStorage.getItem('lotot-font-scale') || DEFAULT_FONT_SCALE));
   const [medium, setMediumState] = useState(bluetooth.medium || 'classic');
   const [query, setQuery] = useState('');
+  const [aiQuestion, setAiQuestion] = useState('');
+  const [aiState, setAiState] = useState(() => ({ ...aiBridge.lastState, ...readNativeAiStatus() }));
+  const [aiStreamingText, setAiStreamingText] = useState('');
+  const [aiMessages, setAiMessages] = useState(() => [{
+    role: 'assistant',
+    text: t('ai.welcome'),
+    meta: 'LoToTi AI',
+  }]);
+  const aiThreadRef = React.useRef(null);
   const [category, setCategory] = useState('all');
   const [lastCapturedAt, setLastCapturedAt] = useState(Number(retainedPayload.captured_at) || 0);
   const [packetCount, setPacketCount] = useState(0);
@@ -915,6 +1211,19 @@ function App() {
   }, [language]);
 
   useEffect(() => {
+    setAiMessages((current) => {
+      if (current.length !== 1 || current[0]?.role !== 'assistant') return current;
+      return [{ ...current[0], text: t('ai.welcome') }];
+    });
+  }, [language]);
+
+  useEffect(() => {
+    if (activeTab !== 'ai') return;
+    const node = aiThreadRef.current;
+    if (node) window.requestAnimationFrame(() => node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' }));
+  }, [aiMessages, aiState.status, activeTab]);
+
+  useEffect(() => {
     localStorage.setItem('lotot-active-tab', activeTab);
     window.scrollTo({ top: 0, behavior: 'auto' });
   }, [activeTab]);
@@ -958,12 +1267,38 @@ function App() {
     };
     const onBuiltins = (event) => setServices(event.detail || EMPTY_BUILTINS);
     const onLanguage = (event) => setLanguageState(setLanguage(event.detail?.language || 'en'));
+    const onAi = (eventOrState) => {
+      const next = eventOrState?.detail || eventOrState || {};
+      setAiState((current) => ({ ...current, ...next }));
+      if (next.status === 'trying') {
+        setAiStreamingText('');
+      } else if (next.status === 'streaming' && next.delta) {
+        setAiStreamingText((current) => current + String(next.delta));
+      } else if (next.status === 'ready' && next.text) {
+        setAiStreamingText('');
+        setAiMessages((current) => {
+          const last = current[current.length - 1];
+          if (last?.role === 'assistant' && last.text === next.text) return current;
+          return [...current, { role: 'assistant', text: next.text, meta: [next.provider, next.model].filter(Boolean).join(' · ') }];
+        });
+      } else if (next.status === 'error' && next.error) {
+        setAiStreamingText('');
+        setAiMessages((current) => {
+          const last = current[current.length - 1];
+          if (last?.role === 'error' && last.text === next.error) return current;
+          return [...current, { role: 'error', text: next.error, meta: t('generic.error') }];
+        });
+      }
+    };
     window.addEventListener('lotot:telemetry', onTelemetry);
     window.addEventListener('lotot:fast-telemetry', onFastTelemetry);
     window.addEventListener('lotot:telemetry-status', onStatus);
     window.addEventListener('lotot:bluetooth-state', onBluetooth);
     window.addEventListener('lotot:builtin-state', onBuiltins);
     window.addEventListener('lotot:language', onLanguage);
+    window.addEventListener('lotot:ai-state', onAi);
+    window.lototAiStateListener = onAi;
+    if (aiBridge.lastState && aiBridge.lastState.status && aiBridge.lastState.status !== 'idle') onAi({ ...aiBridge.lastState });
     setNativeAvailable(Boolean(window.LotoTNative));
     const nativeLanguage = window.LotoTNative?.getAppLanguage?.();
     if (nativeLanguage) setLanguageState(setLanguage(nativeLanguage));
@@ -975,6 +1310,8 @@ function App() {
       window.removeEventListener('lotot:bluetooth-state', onBluetooth);
       window.removeEventListener('lotot:builtin-state', onBuiltins);
       window.removeEventListener('lotot:language', onLanguage);
+      window.removeEventListener('lotot:ai-state', onAi);
+      if (window.lototAiStateListener === onAi) window.lototAiStateListener = null;
     };
   }, []);
 
@@ -1068,6 +1405,49 @@ function App() {
           ? { title: t('diagnostic.lost'), body: t('diagnostic.lost_detail', { name: lastDevice?.name || t('connection.adapter') }) }
           : { title: t('diagnostic.ready'), body: t('diagnostic.ready_detail') };
 
+  const askLoToTiAi = (presetQuestion = null) => {
+    const question = String(presetQuestion || aiQuestion || '').trim();
+    if (!question || ['thinking', 'trying', 'streaming'].includes(aiState.status)) return;
+
+    const sourceFor = (signal) => signal?.source || (['live', 'demo'].includes(status) ? 'obd' : 'unknown');
+    const obdSignals = signals.filter((signal) => sourceFor(signal) === 'obd');
+    const motionSignals = signals.filter((signal) => sourceFor(signal) === 'motion');
+    const gpsSignals = signals.filter((signal) => sourceFor(signal) === 'gps');
+    const ecuDataAvailable = ['live', 'demo'].includes(status) && obdSignals.length > 0;
+    const interestingSignals = signals
+      .filter((signal) => isNumericReading(signal.value) || categoryFor(signal) === 'diagnostic')
+      .slice(0, 40)
+      .map((signal) => {
+        const source = sourceFor(signal);
+        const label = signalLabel(signal);
+        const age = signal.updated_at ? Math.max(0, Math.round((Date.now() - Number(signal.updated_at)) / 1000)) : null;
+        return `[${source}] ${signal.mnemonic || signal.label} | ${label} = ${signal.value}${signal.unit ? ` ${signal.unit}` : ''}${age !== null ? ` | age=${age}s` : ''}`;
+      });
+    const recentConversation = aiMessages
+      .filter((message) => ['user', 'assistant'].includes(message.role))
+      .slice(-6)
+      .map((message) => `${message.role.toUpperCase()}: ${message.text}`)
+      .join('\n');
+    const context = [
+      `App language: ${language}`,
+      `Session state: ${status}`,
+      `OBD/ECU data available: ${ecuDataAvailable ? 'yes' : 'no'}`,
+      `Data source counts: OBD=${obdSignals.length}, phone_motion=${motionSignals.length}, GPS=${gpsSignals.length}`,
+      !ecuDataAvailable ? 'Evidence boundary: There is no live ECU/OBD evidence in this request. Do not infer engine, transmission, emissions, suspension, or DTC health from auxiliary phone sensors.' : null,
+      connected ? `Adapter: ${connected.name || connected.address || 'connected'}` : 'Adapter: none',
+      'DTC evidence: no explicit DTC scan result is included unless listed below or grounded from a code named by the user. Missing DTC records do NOT mean zero DTCs.',
+      liveAlerts.length ? `UI-derived alerts (not scan-confirmed): ${liveAlerts.map((alert) => alert.message).slice(0, 10).join(' | ')}` : 'UI-derived alerts: none',
+      interestingSignals.length ? `Current signals:\n- ${interestingSignals.join('\n- ')}` : 'Current signals: unavailable',
+      recentConversation ? `Recent conversation:\n${recentConversation}` : null,
+    ].filter(Boolean).join('\n');
+
+    setAiMessages((current) => [...current, { role: 'user', text: question, meta: status === 'demo' ? t('status.demo') : t('ai.you') }]);
+    setAiQuestion('');
+    setAiStreamingText('');
+    setAiState((current) => ({ ...current, status: 'thinking', provider: null, error: null, text: null }));
+    window.LotoTNative?.askAi?.(JSON.stringify({ question, context, language }));
+  };
+
   const openConnection = () => {
     setConnectionOpen(true);
     window.LotoTNative?.scanBluetooth?.(medium);
@@ -1077,7 +1457,18 @@ function App() {
     window.LotoTNative?.scanBluetooth?.(nextMedium);
   };
   const connectDevice = (device) => window.LotoTNative?.connectBluetooth?.(device.address, device.medium || medium);
-  const reconnectLastDevice = () => lastDevice ? connectDevice(lastDevice) : openConnection();
+  const reconnectLastDevice = () => {
+    if (!lastDevice) return openConnection();
+    if (lastDevice.medium === 'usb') return window.LotoTNative?.startUsbConnection?.();
+    if (lastDevice.medium === 'network') {
+      const endpoint = String(lastDevice.address || '');
+      const split = endpoint.lastIndexOf(':');
+      const host = split > 0 ? endpoint.slice(0, split) : endpoint;
+      const port = split > 0 ? Number(endpoint.slice(split + 1)) || 23 : 23;
+      return window.LotoTNative?.connectNetwork?.(host, port);
+    }
+    return connectDevice(lastDevice);
+  };
   const connectionAction = status === 'lost' && lastDevice ? reconnectLastDevice : openConnection;
   const gatewayDetail = services.mqtt?.status === 'syncing'
     ? t('service.remaining', { count: services.mqtt.syncing_remaining || 0 })
@@ -1087,10 +1478,31 @@ function App() {
         ? t('service.updated', { age: ageLabel(services.mqtt.last_publish, now) })
         : services.mqtt?.broker || t('service.no_broker');
 
+  const finishOnboarding = React.useCallback(() => {
+    window.LotoTNative?.setOnboardingComplete?.(true);
+    localStorage.setItem('lototi-onboarding-complete', '1');
+    setOnboardingComplete(true);
+    setOnboardingRequired(false);
+    setOnboardingOpen(false);
+  }, []);
+  const reopenOnboarding = () => {
+    setOnboardingRequired(false);
+    setOnboardingOpen(true);
+  };
+
+  const aiBusy = ['thinking', 'trying', 'streaming'].includes(aiState.status);
+  const aiProviderLabel = aiState.provider || (aiBusy ? aiState.primary_label : aiState.provider) || aiState.primary_label || t('ai.ready');
+  const aiProviderIsFallback = Boolean(aiState.provider && aiState.primary_label && aiState.provider !== aiState.primary_label);
+  const aiModelLabel = aiState.model || aiState.primary_model || t('ai.model_auto');
+
+  if (onboardingOpen || !onboardingComplete) {
+    return <OnboardingFlow services={services} bluetooth={bluetooth} status={status} signals={signals} initialPermissionState={initialOnboarding} canClose={!onboardingRequired && onboardingComplete} onClose={() => setOnboardingOpen(false)} onComplete={finishOnboarding}/>;
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="brand" aria-label="LotoT">
+        <div className="brand" aria-label="LoToTi">
           <img className="brand-logo brand-logo-dark" src="./logo-dark.png" alt="" />
           <img className="brand-logo brand-logo-light" src="./logo-light.png" alt="" />
         </div>
@@ -1170,6 +1582,63 @@ function App() {
           </section>
         )}
 
+        {activeTab === 'ai' && (
+          <section className="app-page app-page-ai">
+            <section className="ai-page-shell">
+              <header className="ai-page-header">
+                <div className="ai-page-identity">
+                  <span className="ai-page-orb"><Icon name="bot"/></span>
+                  <div><small>{t('ai.kicker')}</small><h1>LoToTi AI</h1><p>{t('ai.subtitle')}</p></div>
+                </div>
+                <div className="ai-provider-pill">
+                  <i className={aiState.configured ? 'is-online' : ''}/>
+                  <span>{aiBusy && !aiState.provider ? t('ai.thinking') : aiProviderLabel}{aiProviderIsFallback ? ` · ${t('ai.fallback')}` : ''}</span>
+                </div>
+              </header>
+
+              <section className="ai-context-strip" aria-label={t('ai.context')}>
+                <span><Icon name={status === 'demo' ? 'play' : 'car'}/>{status === 'demo' ? t('status.demo') : connected ? t('status.live') : t('status.offline')}</span>
+                <span><Icon name="shield"/>{aiState.dtc_rows ? `${Number(aiState.dtc_rows).toLocaleString()} DTC` : 'DTC DB'}</span>
+                <span><Icon name="activity"/>{signals.length} {t('ai.signals')}</span>
+              </section>
+
+              <div className="ai-chat-thread" ref={aiThreadRef}>
+                {aiMessages.map((message, index) => (
+                  <article key={`${message.role}-${index}`} className={`ai-message is-${message.role}`}>
+                    {message.role !== 'user' && <span className="ai-message-avatar"><Icon name={message.role === 'error' ? 'shield' : 'bot'}/></span>}
+                    <div className="ai-message-bubble">
+                      <small>{message.meta || (message.role === 'user' ? t('ai.you') : 'LoToTi AI')}</small>
+                      <MarkdownMessage text={message.text}/>
+                    </div>
+                  </article>
+                ))}
+                {aiBusy && (
+                  <article className="ai-message is-assistant is-thinking">
+                    <span className="ai-message-avatar"><Icon name="bot"/></span>
+                    <div className="ai-message-bubble">
+                      <small>{aiState.provider ? [aiState.provider, aiState.model].filter(Boolean).join(' · ') : 'LoToTi AI'}</small>
+                      {aiStreamingText ? <MarkdownMessage text={aiStreamingText}/> : <div className="ai-thinking-dots"><i/><i/><i/></div>}
+                    </div>
+                  </article>
+                )}
+              </div>
+
+              <section className="ai-quick-prompts">
+                <button type="button" onClick={() => askLoToTiAi(t('ai.prompt.analyze_live'))}>{t('ai.analyze_live')}</button>
+                <button type="button" onClick={() => askLoToTiAi(t('ai.prompt.p0301'))}>P0301</button>
+                <button type="button" onClick={() => askLoToTiAi(t('ai.prompt.p0420'))}>P0420</button>
+                <button type="button" onClick={() => askLoToTiAi(t('ai.prompt.health_summary'))}>{t('ai.health_summary')}</button>
+              </section>
+
+              <form className="ai-composer" onSubmit={(event) => { event.preventDefault(); askLoToTiAi(); }}>
+                <textarea value={aiQuestion} onChange={(event) => setAiQuestion(event.target.value)} placeholder={t('ai.placeholder')} rows="1" onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); askLoToTiAi(); } }}/>
+                <button type="submit" aria-label={t('ai.ask')} disabled={!nativeAvailable || !aiState.configured || !aiQuestion.trim() || aiBusy}><Icon name="chevron"/></button>
+              </form>
+              <footer className="ai-page-footer"><span>{aiModelLabel}</span><span>·</span><span>{t('ai.context_auto')}</span></footer>
+            </section>
+          </section>
+        )}
+
         {activeTab === 'health' && (
           <section className="app-page app-page-health">
             <PageHeader kicker={t('page.health.kicker')} title={t('page.health.title')} detail={t('page.health.detail', { count: liveAlerts.length })}/>
@@ -1233,6 +1702,7 @@ function App() {
             <section className="actions">
               <button className="primary" type="button" onClick={connectionAction} disabled={!nativeAvailable}><Icon name={status === 'lost' ? 'refresh' : 'bluetooth'}/><span>{connected ? t('action.connection') : status === 'lost' && lastDevice ? t('action.reconnect') : t('action.connect')}</span></button>
               <button className="secondary" type="button" onClick={() => window.LotoTNative?.startDemo?.()} disabled={!nativeAvailable}><Icon name="play"/><span>{t('action.demo')}</span></button>
+              <button className="tools-button" type="button" onClick={reopenOnboarding}><Icon name="shield"/><span>{t('action.setup_privacy')}</span><Icon name="chevron"/></button>
               <button className="tools-button" type="button" onClick={() => window.LotoTNative?.openNativeTools?.()} disabled={!nativeAvailable}><Icon name="tool"/><span>{t('action.advanced_settings')}</span><Icon name="chevron"/></button>
             </section>
 

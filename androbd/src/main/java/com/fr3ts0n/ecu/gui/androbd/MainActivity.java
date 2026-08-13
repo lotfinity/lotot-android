@@ -73,6 +73,7 @@ import android.webkit.WebViewClient;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.FileProvider;
 
+import com.dtcdatabase.DTCDatabase;
 import com.fr3ts0n.androbd.plugin.Plugin;
 import com.fr3ts0n.androbd.plugin.mgr.PluginManager;
 import com.fr3ts0n.ecu.EcuCodeItem;
@@ -108,6 +109,8 @@ import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -200,6 +203,8 @@ public class MainActivity extends PluginManager
     private static final String PREF_LOTOT_THEME = "lotot_theme";
     private static final String PREF_LOTOT_FONT_FAMILY = "lotot_font_family";
     private static final String PREF_LOTOT_FONT_SCALE = "lotot_font_scale";
+    private static final String PREF_LOTOT_ONBOARDING_VERSION = "lotot_onboarding_version";
+    private static final int LOTOT_ONBOARDING_VERSION = 1;
     private static final String PREF_LOTOT_DEV_UI_URL = "lotot_dev_ui_url";
     private static final String EXTRA_LOTOT_UI_URL = "lotot_ui_url";
     private static final String LOG_MASTER = "log_master";
@@ -308,6 +313,10 @@ public class MainActivity extends PluginManager
     /** Bundled React dashboard and its native bridge. */
     private View mLototView;
     private WebView mLototWebView;
+    private LoToTiAiClient mLoToTiAiClient;
+    private DTCDatabase mLoToTiDtcDatabase;
+    private JSONObject mLoToTiLastAiState;
+    private static final Pattern LOTOTI_DTC_PATTERN = Pattern.compile("(?i)\\b[PBCU][0-9A-F]{4}\\b");
     private boolean mLototReady = false;
     private String mLototStatus = "offline";
     private String mLototLanguage = "en";
@@ -477,7 +486,7 @@ public class MainActivity extends PluginManager
                         if (!mLototManualDisconnect)
                         {
                             mLototLossLatched = true;
-                            mLototBluetoothError = getString(R.string.lotot_bt_lost);
+                            mLototBluetoothError = getLotoTConnectionLostMessage();
                             setLotoTStatus("lost");
                         }
                         break;
@@ -494,7 +503,7 @@ public class MainActivity extends PluginManager
                             if (!mLototManualDisconnect)
                             {
                                 mLototLossLatched = true;
-                                mLototBluetoothError = getString(R.string.lotot_bt_lost);
+                                mLototBluetoothError = getLotoTConnectionLostMessage();
                                 setLotoTStatus("lost");
                             }
                         }
@@ -561,7 +570,6 @@ public class MainActivity extends PluginManager
                         }
                         // if last selection shall be restored ...
                         if (state == ElmProt.STAT.ECU_DETECTED
-                                && mLototConnectedAddress != null
                                 && obdService == ObdProt.OBD_SVC_NONE)
                         {
                             setObdService(ObdProt.OBD_SVC_DATA, getString(R.string.obd_data));
@@ -725,7 +733,8 @@ public class MainActivity extends PluginManager
         mLototBluetoothManager = new LotoTBluetoothManager(this, this);
         mLototLanguage = SettingsActivity.getResolvedLanguage(this);
         initializeLotoTDashboard();
-        LotoTGatewayService.start(this);
+        // Bind first; foreground execution begins only after a user-enabled
+        // background capability or an explicit vehicle session requires it.
         bindService(new Intent(this, LotoTGatewayService.class),
                 mLototGatewayConnection, Context.BIND_AUTO_CREATE);
         applyLotoTSystemBars(prefs.getString(PREF_LOTOT_THEME, "dark"));
@@ -777,13 +786,6 @@ public class MainActivity extends PluginManager
         if ("android.hardware.usb.action.USB_DEVICE_ATTACHED".equals(getIntent().getAction()))
         {
             CommService.medium = CommService.MEDIUM.USB;
-        }
-
-        // Request POST_NOTIFICATIONS permission on API 33+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
-            }
         }
 
         // Normal LotoT launches stay passive until the user chooses Demo or Connect.
@@ -1054,6 +1056,16 @@ public class MainActivity extends PluginManager
         }
         mLototGatewayBound = false;
         mLototGateway = null;
+        if (mLoToTiAiClient != null)
+        {
+            mLoToTiAiClient.shutdown();
+            mLoToTiAiClient = null;
+        }
+        if (mLoToTiDtcDatabase != null)
+        {
+            try { mLoToTiDtcDatabase.close(); } catch (Exception ignored) { }
+            mLoToTiDtcDatabase = null;
+        }
 
         if (mLototWebView != null)
         {
@@ -1220,6 +1232,7 @@ public class MainActivity extends PluginManager
         publishLotoTTelemetry();
         publishLotoTBluetoothState();
         publishLotoTBuiltinState();
+        if (mLoToTiLastAiState != null) publishLoToTiAiState(mLoToTiLastAiState);
     }
 
     @Override
@@ -1276,6 +1289,7 @@ public class MainActivity extends PluginManager
         mConnectedDeviceName = null;
         mLototSelectedDeviceName = null;
         mLototBluetoothError = null;
+        setLotoTVehicleSessionActive(false);
         setMode(MODE.OFFLINE);
         setLotoTStatus("offline");
         publishLotoTBluetoothState();
@@ -1349,12 +1363,129 @@ public class MainActivity extends PluginManager
     }
 
     @Override
+    public String getLotoTOnboardingState()
+    {
+        if (prefs == null) prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        JSONObject state = new JSONObject();
+        try
+        {
+            int completedVersion = prefs.getInt(PREF_LOTOT_ONBOARDING_VERSION, 0);
+            state.put("version", completedVersion);
+            state.put("current_version", LOTOT_ONBOARDING_VERSION);
+            state.put("complete", completedVersion >= LOTOT_ONBOARDING_VERSION);
+            boolean notificationsGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                    || ActivityCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    == PackageManager.PERMISSION_GRANTED;
+            boolean locationGranted = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED
+                    || ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED;
+            state.put("notification_granted", notificationsGranted);
+            state.put("location_granted", locationGranted);
+        }
+        catch (Exception ex)
+        {
+            log.log(Level.FINER, "Unable to encode LoToTi onboarding state", ex);
+        }
+        return state.toString();
+    }
+
+    @Override
+    public void setLotoTOnboardingComplete(boolean complete)
+    {
+        if (prefs == null) prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        prefs.edit().putInt(PREF_LOTOT_ONBOARDING_VERSION,
+                complete ? LOTOT_ONBOARDING_VERSION : 0).apply();
+    }
+
+    @Override
+    public void requestLotoTNotificationPermission()
+    {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && ActivityCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED)
+        {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
+        }
+    }
+
+    private void setLotoTVehicleSessionActive(boolean active)
+    {
+        if (mLototGateway == null) return;
+        mLototGateway.setVehicleSessionActive(active);
+        if (mLototGateway.requiresForeground()) LotoTGatewayService.start(this);
+    }
+
+    private void prepareLotoTNonBluetoothConnection(String address, String medium, String name)
+    {
+        if (mLototBluetoothManager != null) mLototBluetoothManager.stopScan();
+        stopDemoService();
+        mLototManualDisconnect = false;
+        mLototLossLatched = false;
+        mLototWatchdogTriggered = false;
+        if (mCommService != null)
+        {
+            mCommService.suppressConnectionLossNotification();
+            mCommService.stop();
+            mCommService = null;
+        }
+        resetLotoTSignalTimestamps();
+        ObdProt.setRealtimePidPriorityEnabled(true);
+        mLototConnectedAddress = address;
+        mLototConnectedMedium = medium;
+        mLototSelectedDeviceName = name;
+        mConnectedDeviceName = name;
+        mLototBluetoothError = null;
+        setLotoTVehicleSessionActive(true);
+        setLotoTStatus("connecting");
+        publishLotoTBluetoothState();
+    }
+
+    @Override
+    public void startLotoTUsbConnection()
+    {
+        prepareLotoTNonBluetoothConnection("usb", "usb", getString(R.string.lotot_usb_adapter));
+        CommService.medium = CommService.MEDIUM.USB;
+        prefs.edit().putString(SettingsActivity.KEY_COMM_MEDIUM,
+                String.valueOf(CommService.MEDIUM.USB.ordinal())).apply();
+        Intent intent = new Intent(this, UsbDeviceListActivity.class);
+        startActivityForResult(intent, REQUEST_CONNECT_DEVICE_USB);
+    }
+
+    @Override
+    public void connectLotoTNetwork(String address, int port)
+    {
+        String host = address == null ? "" : address.trim();
+        int safePort = port > 0 && port <= 65535 ? port : 23;
+        if (host.isEmpty())
+        {
+            mLototBluetoothError = getString(R.string.lotot_network_host_required);
+            setLotoTStatus("offline");
+            publishLotoTBluetoothState();
+            return;
+        }
+        String endpoint = host + ":" + safePort;
+        prepareLotoTNonBluetoothConnection(endpoint, "network",
+                getString(R.string.lotot_network_adapter, endpoint));
+        CommService.medium = CommService.MEDIUM.NETWORK;
+        prefs.edit()
+                .putString(SettingsActivity.KEY_COMM_MEDIUM,
+                        String.valueOf(CommService.MEDIUM.NETWORK.ordinal()))
+                .putString(DEVICE_ADDRESS, host)
+                .putString(DEVICE_PORT, String.valueOf(safePort))
+                .apply();
+        connectNetworkDevice(host, safePort);
+    }
+
+    @Override
     public void updateLotoTBuiltinConfig(String json)
     {
         if (mLototGateway == null) return;
         try
         {
             boolean needsPermission = mLototGateway.applyConfig(json);
+            if (mLototGateway.requiresForeground()) LotoTGatewayService.start(this);
             publishLotoTBuiltinState();
             publishLotoTTelemetry();
             if (needsPermission) requestLotoTLocationPermission();
@@ -1413,6 +1544,201 @@ public class MainActivity extends PluginManager
     {
         Intent settingsIntent = new Intent(this, SettingsActivity.class);
         startActivityForResult(settingsIntent, REQUEST_SETTINGS);
+    }
+
+    private LoToTiAiClient getLoToTiAiClient()
+    {
+        if (mLoToTiAiClient == null) mLoToTiAiClient = new LoToTiAiClient();
+        return mLoToTiAiClient;
+    }
+
+    private DTCDatabase getLoToTiDtcDatabase()
+    {
+        if (mLoToTiDtcDatabase == null) mLoToTiDtcDatabase = DTCDatabase.getInstance(this);
+        return mLoToTiDtcDatabase;
+    }
+
+    @Override
+    public String getLoToTiAiStatus()
+    {
+        JSONObject state = getLoToTiAiClient().getState();
+        try
+        {
+            java.util.Map<String, Integer> stats = getLoToTiDtcDatabase().getStatistics();
+            state.put("dtc_database", true);
+            state.put("dtc_rows", stats.get("total_codes") == null ? 0 : stats.get("total_codes"));
+        }
+        catch (Exception ex)
+        {
+            try { state.put("dtc_database", false); } catch (Exception ignored) { }
+        }
+        return state.toString();
+    }
+
+    @Override
+    public String lookupLoToTiDtc(String code, String manufacturer)
+    {
+        JSONObject result = new JSONObject();
+        try
+        {
+            String normalized = code == null ? "" : code.trim().toUpperCase(java.util.Locale.US);
+            DTCDatabase.DTC dtc = getLoToTiDtcDatabase().getDTC(normalized,
+                    manufacturer == null || manufacturer.trim().isEmpty() ? null : manufacturer.trim());
+            result.put("code", normalized);
+            result.put("found", dtc != null);
+            if (dtc != null)
+            {
+                result.put("description", dtc.description);
+                result.put("type", dtc.type);
+                result.put("type_name", dtc.getTypeName());
+                result.put("manufacturer", dtc.manufacturer == null ? "GENERIC" : dtc.manufacturer);
+            }
+        }
+        catch (Exception ex)
+        {
+            try { result.put("found", false); result.put("error", "DTC lookup failed"); } catch (Exception ignored) { }
+        }
+        return result.toString();
+    }
+
+    private String buildLoToTiDtcGrounding(String question, String manufacturer)
+    {
+        StringBuilder grounding = new StringBuilder();
+        Matcher matcher = LOTOTI_DTC_PATTERN.matcher(question == null ? "" : question);
+        Set<String> seen = new HashSet<>();
+        while (matcher.find() && seen.size() < 8)
+        {
+            String code = matcher.group().toUpperCase(java.util.Locale.US);
+            if (!seen.add(code)) continue;
+            try
+            {
+                DTCDatabase.DTC dtc = getLoToTiDtcDatabase().getDTC(code,
+                        manufacturer == null || manufacturer.trim().isEmpty() ? null : manufacturer.trim());
+                if (dtc != null)
+                {
+                    grounding.append("\nLOCAL DTC DATABASE: ").append(dtc.code)
+                            .append(" | ").append(dtc.getTypeName())
+                            .append(" | ").append(dtc.manufacturer == null ? "GENERIC" : dtc.manufacturer)
+                            .append(" | ").append(dtc.description);
+                }
+                else grounding.append("\nLOCAL DTC DATABASE: ").append(code).append(" | not found");
+            }
+            catch (Exception ex)
+            {
+                grounding.append("\nLOCAL DTC DATABASE: ").append(code).append(" | lookup unavailable");
+            }
+        }
+        return grounding.toString();
+    }
+
+    @Override
+    public void askLoToTiAi(String json)
+    {
+        try
+        {
+            JSONObject request = new JSONObject(json == null ? "{}" : json);
+            String question = request.optString("question", "").trim();
+            String context = request.optString("context", "");
+            String manufacturer = request.optString("manufacturer", "");
+            String responseLanguage = request.optString("language", mLototLanguage == null ? "en" : mLototLanguage);
+            if (question.isEmpty())
+            {
+                publishLoToTiAiResult(false, null, null, null, "Ask LoToTi AI a question first.");
+                return;
+            }
+            String groundedContext = context + buildLoToTiDtcGrounding(question, manufacturer);
+            publishLoToTiAiPending();
+            getLoToTiAiClient().ask(question, groundedContext, responseLanguage, new LoToTiAiClient.Callback()
+            {
+                @Override public void onAttempt(String provider, String model)
+                {
+                    runOnUiThread(() -> publishLoToTiAiAttempt(provider, model));
+                }
+
+                @Override public void onDelta(String provider, String model, String delta)
+                {
+                    runOnUiThread(() -> publishLoToTiAiDelta(provider, model, delta));
+                }
+
+                @Override public void onSuccess(String provider, String model, String text)
+                {
+                    runOnUiThread(() -> publishLoToTiAiResult(true, provider, model, text, null));
+                }
+
+                @Override public void onError(String message)
+                {
+                    runOnUiThread(() -> publishLoToTiAiResult(false, null, null, null, message));
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            publishLoToTiAiResult(false, null, null, null, "Invalid AI request.");
+        }
+    }
+
+
+    private void publishLoToTiAiAttempt(String provider, String model)
+    {
+        JSONObject state = new JSONObject();
+        try
+        {
+            state.put("status", "trying");
+            state.put("provider", provider == null ? JSONObject.NULL : provider);
+            state.put("model", model == null ? JSONObject.NULL : model);
+        }
+        catch (Exception ignored) { }
+        publishLoToTiAiState(state);
+    }
+
+    private void publishLoToTiAiDelta(String provider, String model, String delta)
+    {
+        if (delta == null || delta.isEmpty()) return;
+        JSONObject state = new JSONObject();
+        try
+        {
+            state.put("status", "streaming");
+            state.put("provider", provider == null ? JSONObject.NULL : provider);
+            state.put("model", model == null ? JSONObject.NULL : model);
+            state.put("delta", delta);
+        }
+        catch (Exception ignored) { }
+        publishLoToTiAiState(state);
+    }
+
+    private void publishLoToTiAiPending()
+    {
+        JSONObject state = new JSONObject();
+        try { state.put("status", "thinking"); }
+        catch (Exception ignored) { }
+        publishLoToTiAiState(state);
+    }
+
+    private void publishLoToTiAiResult(boolean success, String provider, String model,
+                                        String text, String error)
+    {
+        JSONObject state = new JSONObject();
+        try
+        {
+            state.put("status", success ? "ready" : "error");
+            state.put("provider", provider == null ? JSONObject.NULL : provider);
+            state.put("model", model == null ? JSONObject.NULL : model);
+            state.put("text", text == null ? JSONObject.NULL : text);
+            state.put("error", error == null ? JSONObject.NULL : error);
+        }
+        catch (Exception ignored) { }
+        publishLoToTiAiState(state);
+    }
+
+    private void publishLoToTiAiState(JSONObject state)
+    {
+        if (state == null) return;
+        try { mLoToTiLastAiState = new JSONObject(state.toString()); }
+        catch (Exception ignored) { mLoToTiLastAiState = state; }
+        if (!mLototReady || mLototWebView == null) return;
+        String encoded = JSONObject.quote(state.toString());
+        mLototWebView.evaluateJavascript(
+                "window.lototSetAiState && window.lototSetAiState(" + encoded + ");", null);
     }
 
     @Override
@@ -1516,6 +1842,7 @@ public class MainActivity extends PluginManager
         mLototSelectedDeviceName = mLototBluetoothManager.getName(address);
         mConnectedDeviceName = null;
         mLototBluetoothError = null;
+        setLotoTVehicleSessionActive(true);
         setLotoTStatus("connecting");
         publishLotoTBluetoothState();
 
@@ -2179,11 +2506,16 @@ public class MainActivity extends PluginManager
                 // DeviceListActivity returns with a device to connect
                 if (resultCode == Activity.RESULT_OK)
                 {
+                    setLotoTStatus("connecting");
                     mCommService = new UsbCommService(this, mHandler);
                     mCommService.connect(UsbDeviceListActivity.selectedPort, true);
                 } else
                 {
+                    mLototConnectedAddress = null;
+                    mLototConnectedMedium = null;
+                    mLototSelectedDeviceName = null;
                     setMode(MODE.OFFLINE);
+                    setLotoTStatus("offline");
                 }
                 break;
 
@@ -3576,6 +3908,13 @@ public class MainActivity extends PluginManager
         return positionsValid;
     }
 
+    private String getLotoTConnectionLostMessage()
+    {
+        boolean bluetooth = LotoTBluetoothManager.MEDIUM_CLASSIC.equals(mLototConnectedMedium)
+                || LotoTBluetoothManager.MEDIUM_BLE.equals(mLototConnectedMedium);
+        return getString(bluetooth ? R.string.lotot_bt_lost : R.string.lotot_connection_lost);
+    }
+
     private void rememberLotoTDevice()
     {
         String address = mLototConnectedAddress;
@@ -3632,6 +3971,7 @@ public class MainActivity extends PluginManager
         // send RESET to Elm adapter
         CommService.elm.reset();
         mLototBluetoothError = null;
+        setLotoTVehicleSessionActive(true);
         setLotoTStatus("live");
         publishLotoTBluetoothState();
     }
@@ -3649,9 +3989,10 @@ public class MainActivity extends PluginManager
         mLototConnectedMedium = null;
         mLototSelectedDeviceName = null;
         mCommService = null;
+        setLotoTVehicleSessionActive(false);
         if (mLototLossLatched && !mLototManualDisconnect)
         {
-            mLototBluetoothError = getString(R.string.lotot_bt_lost);
+            mLototBluetoothError = getLotoTConnectionLostMessage();
             setLotoTStatus("lost");
         }
         else

@@ -1,3 +1,16 @@
+import java.util.Properties
+
+def lototiAiProperties = new Properties()
+def lototiAiPropertiesPath = System.getenv("LOTOTI_AI_PROPERTIES") ?: "/home/lofa/.config/lototi/ai.properties"
+def lototiAiPropertiesFile = file(lototiAiPropertiesPath)
+if (lototiAiPropertiesFile.exists()) {
+    lototiAiPropertiesFile.withInputStream { lototiAiProperties.load(it) }
+}
+def lototiBuildConfigString = { String key ->
+    def value = lototiAiProperties.getProperty(key, "")
+    return '\"' + value.replace('\\', '\\\\').replace('\"', '\\"') + '\"'
+}
+
 apply plugin: 'com.android.application'
 
 android {
@@ -26,6 +39,19 @@ android {
         manifestPlaceholders = [usesCleartextTraffic: "false"]
 
         resValue "string", "app_version", versionName
+
+        // Prototype-only managed AI credentials. Values are loaded from a private
+        // file outside Git. They are embedded in the APK by design for this phase.
+        buildConfigField "String", "LOTOTI_AI_PRIMARY", lototiBuildConfigString("lototi.ai.primary")
+        buildConfigField "String", "LOTOTI_OPENCODE_API_KEY", lototiBuildConfigString("opencode.apiKey")
+        buildConfigField "String", "LOTOTI_OPENCODE_BASE_URL", lototiBuildConfigString("opencode.baseUrl")
+        buildConfigField "String", "LOTOTI_OPENCODE_MODEL", lototiBuildConfigString("opencode.model")
+        buildConfigField "String", "LOTOTI_NVIDIA_API_KEY", lototiBuildConfigString("nvidia.apiKey")
+        buildConfigField "String", "LOTOTI_NVIDIA_BASE_URL", lototiBuildConfigString("nvidia.baseUrl")
+        buildConfigField "String", "LOTOTI_NVIDIA_MODEL", lototiBuildConfigString("nvidia.model")
+        buildConfigField "String", "LOTOTI_LITELLM_API_KEY", lototiBuildConfigString("litellm.apiKey")
+        buildConfigField "String", "LOTOTI_LITELLM_BASE_URL", lototiBuildConfigString("litellm.baseUrl")
+        buildConfigField "String", "LOTOTI_LITELLM_MODEL", lototiBuildConfigString("litellm.model")
 
         compileOptions {
             sourceCompatibility JavaVersion.VERSION_17

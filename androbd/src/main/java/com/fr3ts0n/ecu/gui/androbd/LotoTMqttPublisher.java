@@ -42,6 +42,8 @@ final class LotoTMqttPublisher
         String prefix = "";
         int qos = 1;
         boolean retain;
+        boolean includeGps;
+        boolean includeSensors;
         int intervalSeconds = 5;
         Set<String> selectedSignals = new LinkedHashSet<>();
 
@@ -59,6 +61,8 @@ final class LotoTMqttPublisher
             copy.prefix = prefix;
             copy.qos = qos;
             copy.retain = retain;
+            copy.includeGps = includeGps;
+            copy.includeSensors = includeSensors;
             copy.intervalSeconds = intervalSeconds;
             copy.selectedSignals = new LinkedHashSet<>(selectedSignals);
             return copy;
@@ -230,9 +234,12 @@ final class LotoTMqttPublisher
             JSONObject readings = new JSONObject();
             for (Map.Entry<String, String> entry : values.entrySet())
             {
+                String key = entry.getKey();
+                if (key.startsWith("GPS_") && !current.includeGps) continue;
+                if (key.startsWith("ACC_") && !current.includeSensors) continue;
                 if (!current.selectedSignals.isEmpty()
-                        && !current.selectedSignals.contains(entry.getKey())) continue;
-                readings.put(entry.getKey(), parseValue(entry.getValue()));
+                        && !current.selectedSignals.contains(key)) continue;
+                readings.put(key, parseValue(entry.getValue()));
             }
             if (readings.length() == 0) return;
             snapshot.put("readings", readings);
@@ -402,6 +409,8 @@ final class LotoTMqttPublisher
         cfg.put("prefix", config.prefix);
         cfg.put("qos", config.qos);
         cfg.put("retain", config.retain);
+        cfg.put("include_gps", config.includeGps);
+        cfg.put("include_sensors", config.includeSensors);
         cfg.put("interval_seconds", config.intervalSeconds);
         org.json.JSONArray selected = new org.json.JSONArray();
         for (String signal : config.selectedSignals) selected.put(signal);

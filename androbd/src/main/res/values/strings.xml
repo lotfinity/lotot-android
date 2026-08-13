@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--  AndrOBD -->
-    <string name="app_name" translatable="false">LotoT</string>
+    <string name="app_name" translatable="false">LoToTi</string>
     <string name="copyright_fr3ts0n" translatable="false">© 2015-2026 fr3ts0n</string>
     <string name="translation_credits">Translation by fr3ts0n</string>
-    <string name="app_description">LotoT vehicle health powered by the AndrOBD diagnostic engine</string>
+    <string name="app_description">LoToTi vehicle health powered by the AndrOBD diagnostic engine</string>
     <string name="copied_to_clipboard">Copied to clipboard</string>
-    <string name="lotot_dashboard_description">LotoT live vehicle health dashboard</string>
+    <string name="lotot_dashboard_description">LoToTi live vehicle health dashboard</string>
     <string name="title_connecting">Connecting…</string>
     <string name="title_connected_to">Connected %s</string>
     <string name="logo">Logo</string>
@@ -357,10 +357,11 @@ period of time while the ECU recalibrates itself.
 
     <string name="advanced_settings_title">Advanced OBD settings</string>
     <string name="advanced_settings_subtitle">Vehicle, adapter, export and developer controls</string>
-    <string name="settings_root_subtitle">LotoT configuration</string>
+    <string name="settings_root_subtitle">LoToTi configuration</string>
     <string name="back">Back</string>
 
     <string name="lotot_bt_lost">Bluetooth connection lost. Check the adapter and reconnect.</string>
+    <string name="lotot_connection_lost">Vehicle connection lost. Check the adapter and reconnect.</string>
     <string name="lotot_bt_unable">Unable to connect. Make sure the adapter is powered and available.</string>
     <string name="lotot_bt_permission_denied">Bluetooth permission denied</string>
     <string name="lotot_bt_disabled">Bluetooth is disabled</string>
@@ -369,6 +370,9 @@ period of time while the ECU recalibrates itself.
     <string name="lotot_bt_device">Bluetooth device</string>
     <string name="lotot_obd_adapter">OBD adapter</string>
     <string name="lotot_mqtt_host_required">Enter the MQTT broker address</string>
+    <string name="lotot_usb_adapter">USB OBD adapter</string>
+    <string name="lotot_network_host_required">Enter the network adapter address</string>
+    <string name="lotot_network_adapter">Network OBD · %1$s</string>
     <string name="lotot_gps_latitude">GPS latitude</string>
     <string name="lotot_gps_longitude">GPS longitude</string>
     <string name="lotot_gps_altitude">GPS altitude</string>
@@ -378,8 +382,8 @@ period of time while the ECU recalibrates itself.
     <string name="lotot_acc_longitudinal">Longitudinal acceleration</string>
     <string name="lotot_acc_vertical">Vertical acceleration</string>
     <string name="lotot_acc_unavailable">Accelerometer unavailable</string>
-    <string name="lotot_gateway_channel">LotoT vehicle gateway</string>
-    <string name="lotot_gateway_active">LotoT · gateway active</string>
+    <string name="lotot_gateway_channel">LoToTi vehicle gateway</string>
+    <string name="lotot_gateway_active">LoToTi · gateway active</string>
     <string name="lotot_gateway_ready">Ready to collect and synchronize vehicle data</string>
     <string name="lotot_gateway_syncing">Syncing · %1$d remaining</string>
     <string name="lotot_gateway_offline">Offline · %1$d reading(s) stored</string>

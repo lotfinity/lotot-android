@@ -34,6 +34,8 @@ final class LotoTBuiltinServices implements
     private static final String MQTT_CLIENT_ID = "lotot_builtin_mqtt_client_id";
     private static final String MQTT_QOS = "lotot_builtin_mqtt_qos";
     private static final String MQTT_RETAIN = "lotot_builtin_mqtt_retain";
+    private static final String MQTT_INCLUDE_GPS = "lotot_builtin_mqtt_include_gps";
+    private static final String MQTT_INCLUDE_SENSORS = "lotot_builtin_mqtt_include_sensors";
     private static final String MQTT_INTERVAL = "lotot_builtin_mqtt_interval";
     private static final String MQTT_SELECTED = "lotot_builtin_mqtt_selected";
 
@@ -60,7 +62,7 @@ final class LotoTBuiltinServices implements
     void start()
     {
         gps.setEnabled(preferences.getBoolean(GPS_ENABLED, false));
-        sensors.setEnabled(preferences.getBoolean(SENSOR_ENABLED, true));
+        sensors.setEnabled(preferences.getBoolean(SENSOR_ENABLED, false));
         mqtt.setConfig(readMqttConfig());
         notifyState();
     }
@@ -104,6 +106,10 @@ final class LotoTBuiltinServices implements
                     mqttPayload.optInt("qos", 1));
             if (mqttPayload.has("retain")) edit.putBoolean(MQTT_RETAIN,
                     mqttPayload.optBoolean("retain", false));
+            if (mqttPayload.has("include_gps")) edit.putBoolean(MQTT_INCLUDE_GPS,
+                    mqttPayload.optBoolean("include_gps", false));
+            if (mqttPayload.has("include_sensors")) edit.putBoolean(MQTT_INCLUDE_SENSORS,
+                    mqttPayload.optBoolean("include_sensors", false));
             if (mqttPayload.has("interval_seconds")) edit.putInt(MQTT_INTERVAL,
                     mqttPayload.optInt("interval_seconds", 5));
             if (mqttPayload.has("selected_signals"))
@@ -121,7 +127,7 @@ final class LotoTBuiltinServices implements
         }
         edit.apply();
         gps.setEnabled(preferences.getBoolean(GPS_ENABLED, false));
-        sensors.setEnabled(preferences.getBoolean(SENSOR_ENABLED, true));
+        sensors.setEnabled(preferences.getBoolean(SENSOR_ENABLED, false));
         mqtt.setConfig(readMqttConfig());
         notifyState();
         return gps.needsPermission();
@@ -179,6 +185,8 @@ final class LotoTBuiltinServices implements
         config.clientId = preferences.getString(MQTT_CLIENT_ID, "");
         config.qos = preferences.getInt(MQTT_QOS, 1);
         config.retain = preferences.getBoolean(MQTT_RETAIN, false);
+        config.includeGps = preferences.getBoolean(MQTT_INCLUDE_GPS, false);
+        config.includeSensors = preferences.getBoolean(MQTT_INCLUDE_SENSORS, false);
         config.intervalSeconds = preferences.getInt(MQTT_INTERVAL, 5);
         config.selectedSignals = new LinkedHashSet<>(preferences.getStringSet(
                 MQTT_SELECTED, new LinkedHashSet<>()));
