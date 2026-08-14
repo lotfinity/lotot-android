@@ -71,23 +71,27 @@ final class LoToTiAiClient
                 BuildConfig.LOTOTI_NVIDIA_API_KEY,
                 BuildConfig.LOTOTI_NVIDIA_BASE_URL,
                 BuildConfig.LOTOTI_NVIDIA_MODEL);
-        Provider liteLlm = new Provider("litellm", "LoToTi LiteLLM",
+        Provider liteLlm = new Provider("litellm", "LoToTi LiteLLM · Codex",
                 BuildConfig.LOTOTI_LITELLM_API_KEY,
                 BuildConfig.LOTOTI_LITELLM_BASE_URL,
                 BuildConfig.LOTOTI_LITELLM_MODEL);
+        Provider liteLlmFallback = new Provider("litellm_fallback", "LoToTi LiteLLM · StepFun fallback",
+                BuildConfig.LOTOTI_LITELLM_API_KEY,
+                BuildConfig.LOTOTI_LITELLM_BASE_URL,
+                BuildConfig.LOTOTI_LITELLM_FALLBACK_MODEL);
 
         String primary = safe(BuildConfig.LOTOTI_AI_PRIMARY).toLowerCase(Locale.US);
         if ("nvidia".equals(primary))
         {
-            add(nvidia); add(openCode); add(liteLlm);
+            add(nvidia); add(openCode); add(liteLlm); add(liteLlmFallback);
         }
         else if ("litellm".equals(primary))
         {
-            add(liteLlm); add(openCode); add(nvidia);
+            add(liteLlm); add(liteLlmFallback); add(openCode); add(nvidia);
         }
         else
         {
-            add(openCode); add(nvidia); add(liteLlm);
+            add(openCode); add(nvidia); add(liteLlm); add(liteLlmFallback);
         }
     }
 
