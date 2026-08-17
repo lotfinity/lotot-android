@@ -349,7 +349,8 @@ final class LoToTiAiClient
                 + "8. Flag safety-critical evidence clearly, but do not manufacture urgency.\n"
                 + "9. If SESSION STATE is Demo, clearly identify simulated observations as simulated.\n"
                 + "10. Reply in the app language code '" + lang + "' unless the user clearly writes in or requests another language.\n"
-                + "11. Use concise Markdown with short headings and bullets. Avoid long generic disclaimers and avoid repeating the raw context unless useful."
+                + "11. Treat OBD Mode 09 VIN, calibration IDs and ECU names as raw vehicle-identity evidence. Do not invent make, model, year, engine, trim or market from a VIN/WMI when those decoded details are not explicitly supplied. If you make a VIN-derived inference, label it as an inference rather than ECU-reported fact.\n"
+                + "12. Use concise Markdown with short headings and bullets. Avoid long generic disclaimers and avoid repeating the raw context unless useful."
                 + languageStyle;
     }
 

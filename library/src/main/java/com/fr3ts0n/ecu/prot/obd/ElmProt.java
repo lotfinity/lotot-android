@@ -1042,6 +1042,7 @@ public class ElmProt
 	
 	// switch to exit the demo thread
 	public static boolean runDemo;
+	private volatile DemoVehicleModel activeDemoModel;
 	private static volatile String demoScenario = DemoVehicleModel.Scenario.HEALTHY.id;
 	private static volatile boolean demoHeadersEnabled = false;
 
@@ -1070,6 +1071,7 @@ public class ElmProt
 		demoHeadersEnabled = false;
 		DemoVehicleModel demo = new DemoVehicleModel(
 			DemoVehicleModel.Scenario.fromId(demoScenario), System.currentTimeMillis());
+		activeDemoModel = demo;
 
 		log.info("ELM DEMO thread started (scenario=" + demo.getScenario().id + ")");
 		while (runDemo)
@@ -1213,6 +1215,7 @@ public class ElmProt
 				log.severe(ex.getLocalizedMessage() == null ? ex.toString() : ex.getLocalizedMessage());
 			}
 		}
+		activeDemoModel = null;
 		log.info("ELM DEMO thread finished");
 	}
 
@@ -1239,6 +1242,68 @@ public class ElmProt
 			handleTelegram(reply.toCharArray());
 			if ((mask & 1L) == 0L) break;
 		}
+	}
+
+	/**
+	 * Queue a single DTC service request without changing the continuously
+	 * selected OBD service. LoToTi uses this to keep Mode 01 telemetry alive
+	 * while it distinguishes confirmed (03), pending (07), and permanent (0A)
+	 * codes. Demo mode feeds the same decoder directly.
+	 */
+	public synchronized void requestFaultCodesOnce(int obdService)
+	{
+		if (obdService != OBD_SVC_READ_CODES
+			&& obdService != OBD_SVC_PENDINGCODES
+			&& obdService != OBD_SVC_PERMACODES)
+		{
+			throw new IllegalArgumentException("Unsupported DTC service: " + obdService);
+		}
+
+		tCodes.clear();
+		if (runDemo)
+		{
+			DemoVehicleModel demo = activeDemoModel;
+			if (demo == null) return;
+			long now = System.currentTimeMillis();
+			if (obdService == OBD_SVC_READ_CODES) sendDemoCodes(obdService, demo.storedCodes(now));
+			else if (obdService == OBD_SVC_PENDINGCODES) sendDemoCodes(obdService, demo.pendingCodes(now));
+			else sendDemoCodes(obdService, demo.permanentCodes(now));
+			return;
+		}
+
+		// cmdQueue is consumed before the next normal PID request, then ElmProt
+		// automatically resumes the currently selected service (normally Mode 01).
+		cmdQueue.add(String.valueOf(createTelegram(emptyBuffer, obdService, 0)));
+	}
+
+	/**
+	 * Request the standard Mode 09 identity fields LoToTi can safely ground on:
+	 * VIN (02), calibration ID (04), and ECU name (0A). These requests are
+	 * inserted into the command queue without changing the selected live-data
+	 * service, so telemetry resumes immediately after the three replies.
+	 */
+	public synchronized void requestVehicleIdentity()
+	{
+		if (runDemo)
+		{
+			try
+			{
+				sendDemoVehicleInfo(0x02);
+				sendDemoVehicleInfo(0x04);
+				sendDemoVehicleInfo(0x0A);
+			}
+			catch (InterruptedException ex)
+			{
+				Thread.currentThread().interrupt();
+			}
+			return;
+		}
+
+		// Commands are popped from the end of the Vector, so append in reverse
+		// order to request VIN first, then calibration ID, then ECU name.
+		cmdQueue.add(String.valueOf(createTelegram(emptyBuffer, OBD_SVC_VEH_INFO, 0x0A)));
+		cmdQueue.add(String.valueOf(createTelegram(emptyBuffer, OBD_SVC_VEH_INFO, 0x04)));
+		cmdQueue.add(String.valueOf(createTelegram(emptyBuffer, OBD_SVC_VEH_INFO, 0x02)));
 	}
 
 	private void sendDemoCodes(int obdService, List<String> codes)

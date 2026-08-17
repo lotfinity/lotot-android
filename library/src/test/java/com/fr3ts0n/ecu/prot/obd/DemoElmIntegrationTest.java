@@ -1,5 +1,6 @@
 package com.fr3ts0n.ecu.prot.obd;
 
+import com.fr3ts0n.ecu.EcuCodeItem;
 import com.fr3ts0n.ecu.EcuDataItem;
 import com.fr3ts0n.ecu.EcuDataItems;
 import com.fr3ts0n.ecu.EcuDataPv;
@@ -74,6 +75,62 @@ class DemoElmIntegrationTest
         {
             ElmProt.runDemo = false;
             thread.join(1500L);
+        }
+    }
+
+    @Test
+    void oneShotFaultScanAndMode09IdentityDecodeDuringLiveDemo() throws Exception
+    {
+        ElmProt prot = new ElmProt();
+        ElmProt.setDemoScenario("misfire");
+        prot.setService(ObdProt.OBD_SVC_DATA);
+
+        EcuDataItem rpmItem = EcuDataItems.byMnemonic.get("engine_speed");
+        EcuDataItem vinItem = EcuDataItems.byMnemonic.get("vehicle_identification_number");
+        assertNotNull(rpmItem);
+        assertNotNull(vinItem);
+        rpmItem.updatedAt = 0L;
+        vinItem.updatedAt = 0L;
+
+        Thread thread = new Thread(prot, "demo-context-integration-test");
+        thread.start();
+        try
+        {
+            long deadline = System.currentTimeMillis() + 2500L;
+            while (rpmItem.updatedAt <= 0L && System.currentTimeMillis() < deadline)
+                Thread.sleep(25L);
+            assertTrue(rpmItem.updatedAt > 0L, "Demo Mode 01 should be active before context probes");
+
+            prot.requestVehicleIdentity();
+            deadline = System.currentTimeMillis() + 1500L;
+            while (vinItem.updatedAt <= 0L && System.currentTimeMillis() < deadline)
+                Thread.sleep(25L);
+            assertTrue(vinItem.updatedAt > 0L, "Mode 09 VIN should decode into the normal data registry");
+            String vin = String.valueOf(vinItem.pv.get(EcuDataPv.FID_VALUE))
+                    .replace(String.valueOf((char) 0), "").trim();
+            assertEquals("WVWZZZAUZHL0T0T01", vin);
+
+            prot.requestFaultCodesOnce(ObdProt.OBD_SVC_READ_CODES);
+            boolean foundMisfire = false;
+            for (Object value : ObdProt.tCodes.values())
+            {
+                if (!(value instanceof EcuCodeItem)) continue;
+                Object code = ((EcuCodeItem) value).get(EcuCodeItem.FID_CODE);
+                if ("P0301".equals(String.valueOf(code)))
+                {
+                    foundMisfire = true;
+                    break;
+                }
+            }
+            assertTrue(foundMisfire, "one-shot confirmed-code request should return P0301 in misfire Demo");
+            assertEquals(ObdProt.OBD_SVC_DATA, prot.getService(),
+                    "one-shot diagnostics must not replace the live Mode 01 service");
+        }
+        finally
+        {
+            ElmProt.runDemo = false;
+            thread.join(1500L);
+            ElmProt.setDemoScenario("healthy");
         }
     }
 

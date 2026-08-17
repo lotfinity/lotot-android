@@ -1173,6 +1173,7 @@ function App() {
   const [readings, setReadings] = useState({ ...EMPTY_READINGS, ...(retainedPayload.readings || {}) });
   const [signals, setSignals] = useState(Array.isArray(retainedPayload.signals) ? retainedPayload.signals : []);
   const [diagnostics, setDiagnostics] = useState(retainedPayload.diagnostics || { scan_status: 'idle', scanned_at: 0, dtcs: [], mil: null, reported_dtc_count: null });
+  const [vehicle, setVehicle] = useState(retainedPayload.vehicle && typeof retainedPayload.vehicle === 'object' ? retainedPayload.vehicle : {});
   const [history, setHistory] = useState({});
   const [status, setStatus] = useState(telemetryBridge.status || 'offline');
   const [bluetooth, setBluetooth] = useState({ ...EMPTY_BLUETOOTH, ...(bluetoothBridge.lastState || {}) });
@@ -1304,6 +1305,7 @@ function App() {
       const payload = event.detail || {};
       if (payload.readings) setReadings((current) => ({ ...current, ...payload.readings }));
       if (payload.diagnostics) setDiagnostics(payload.diagnostics);
+      if (payload.vehicle && typeof payload.vehicle === 'object') setVehicle(payload.vehicle);
       if (Array.isArray(payload.signals)) {
         const validSignals = payload.signals.filter((signal) => signal && signal.value !== null && signal.value !== undefined);
         setSignals(validSignals);
@@ -1470,8 +1472,19 @@ function App() {
 
   const diagnosticDtcs = Array.isArray(diagnostics?.dtcs) ? diagnostics.dtcs : [];
   const diagnosticMil = diagnostics?.mil === null || diagnostics?.mil === undefined ? null : Number(diagnostics.mil) > 0;
-  const diagnosticReportedCount = diagnostics?.reported_dtc_count === null || diagnostics?.reported_dtc_count === undefined
+  const rawReportedDtcCount = diagnostics?.reported_dtc_count === null || diagnostics?.reported_dtc_count === undefined
     ? null : Number(diagnostics.reported_dtc_count);
+  const diagnosticReportedCount = rawReportedDtcCount !== null && Number.isFinite(rawReportedDtcCount)
+    ? Math.max(0, Math.round(rawReportedDtcCount)) : null;
+  const diagnosticUniqueCodes = [...new Set(diagnosticDtcs
+    .map((dtc) => String(dtc?.code || '').trim().toUpperCase())
+    .filter(Boolean))];
+  const diagnosticScannedCount = diagnostics?.scan_status === 'ready' ? diagnosticUniqueCodes.length : null;
+  const aiFaultContextLabel = diagnosticScannedCount !== null
+    ? t('ai.dtc_current', { count: diagnosticScannedCount })
+    : diagnosticReportedCount !== null
+      ? t('ai.dtc_reported', { count: diagnosticReportedCount })
+      : t('ai.dtc_unscanned');
   const faultScanBusy = diagnostics?.scan_status === 'scanning';
 
   const diagnosticCopy = signals.length
@@ -1503,6 +1516,14 @@ function App() {
         return `[${source}] ${signal.mnemonic || signal.label} | ${label} = ${signal.value}${signal.unit ? ` ${signal.unit}` : ''}${age !== null ? ` | age=${age}s` : ''}`;
       });
     const scannedDtcLines = diagnosticDtcs.map((dtc) => `[${dtc.status || 'scanned'}] ${dtc.code}${dtc.description ? ` — ${dtc.description}` : ''}`);
+    const vehicleIdentityLines = [
+      vehicle?.vin ? `VIN: ${vehicle.vin}` : null,
+      vehicle?.wmi ? `WMI: ${vehicle.wmi}` : null,
+      vehicle?.calibration_id ? `Calibration ID: ${vehicle.calibration_id}` : null,
+      vehicle?.calibration_id_2 ? `Calibration ID 2: ${vehicle.calibration_id_2}` : null,
+      vehicle?.ecu_name ? `ECU name: ${vehicle.ecu_name}` : null,
+      vehicle?.source ? `Evidence source: ${vehicle.source}` : null,
+    ].filter(Boolean);
     const recentConversation = aiMessages
       .filter((message) => ['user', 'assistant'].includes(message.role))
       .slice(-6)
@@ -1515,8 +1536,11 @@ function App() {
       `Data source counts: OBD=${obdSignals.length}, phone_motion=${motionSignals.length}, GPS=${gpsSignals.length}`,
       !ecuDataAvailable ? 'Evidence boundary: There is no live ECU/OBD evidence in this request. Do not infer engine, transmission, emissions, suspension, or DTC health from auxiliary phone sensors.' : null,
       connected ? `Adapter: ${connected.name || connected.address || 'connected'}` : 'Adapter: none',
+      vehicleIdentityLines.length ? `OBD MODE 09 VEHICLE IDENTITY:
+- ${vehicleIdentityLines.join('\n- ')}` : 'OBD Mode 09 vehicle identity: unavailable in this session.',
       `ECU MIL status: ${diagnosticMil === null ? 'unknown' : diagnosticMil ? 'ON' : 'OFF'}`,
       `ECU-reported DTC count: ${diagnosticReportedCount === null ? 'unknown' : diagnosticReportedCount}`,
+      `Scan-confirmed unique DTC count: ${diagnosticScannedCount === null ? 'not scanned' : diagnosticScannedCount}`,
       `DTC scan state: ${diagnostics?.scan_status || 'idle'}${diagnostics?.scanned_at ? ` at ${new Date(Number(diagnostics.scanned_at)).toISOString()}` : ''}`,
       scannedDtcLines.length ? `SCAN-CONFIRMED DTC EVIDENCE:\n- ${scannedDtcLines.join('\n- ')}` : 'DTC evidence: no explicit code list has been scanned in this session. Missing scan results do NOT mean zero DTCs.',
       liveAlerts.length ? `UI-derived alerts (not scan-confirmed): ${liveAlerts.map((alert) => alert.message).slice(0, 10).join(' | ')}` : 'UI-derived alerts: none',
@@ -1692,8 +1716,8 @@ function App() {
               </header>
 
               <section className="ai-context-strip" aria-label={t('ai.context')}>
-                <span><Icon name={status === 'demo' ? 'play' : 'vehicle'}/>{status === 'demo' ? `${t('status.demo')} · ${t(demoScenarioOption(demoScenario).labelKey)}` : connected ? t('status.live') : t('status.offline')}</span>
-                <span><Icon name="health_stable"/>{aiState.dtc_rows ? `${Number(aiState.dtc_rows).toLocaleString()} DTC` : 'DTC DB'}</span>
+                <span><Icon name={status === 'demo' ? 'play' : 'vehicle'}/>{status === 'demo' ? `${t('status.demo')} · ${t(demoScenarioOption(demoScenario).labelKey)}` : connected ? (vehicle?.vin ? t('ai.vin_short', { vin: String(vehicle.vin).slice(-6) }) : t('status.live')) : t('status.offline')}</span>
+                <span><Icon name={(diagnosticScannedCount || diagnosticReportedCount || 0) > 0 ? 'dtc_fault' : 'health_stable'}/>{aiFaultContextLabel}</span>
                 <span><Icon name="activity"/>{signals.length} {t('ai.signals')}</span>
               </section>
 
