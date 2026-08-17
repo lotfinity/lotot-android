@@ -323,6 +323,9 @@ public class MainActivity extends PluginManager
     private long mLototFaultScanAt = 0L;
     private JSONArray mLototScannedDtcs = new JSONArray();
     private boolean mLototVehicleIdentityRequested = false;
+    private int mLototVehicleIdentityAttempts = 0;
+    private static final int LOTOT_VEHICLE_IDENTITY_MAX_ATTEMPTS = 3;
+    private static final long LOTOT_VEHICLE_IDENTITY_RETRY_MS = 1500L;
     private static final Pattern LOTOTI_DTC_PATTERN = Pattern.compile("(?i)\\b[PBCU][0-9A-F]{4}\\b");
     private static final Pattern LOTOTI_VIN_PATTERN = Pattern.compile("^[A-HJ-NPR-Z0-9]{17}$");
     private boolean mLototReady = false;
@@ -591,12 +594,10 @@ public class MainActivity extends PluginManager
                                         null);
                             }
                         }
-                        if (state == ElmProt.STAT.ECU_DETECTED)
-                        {
-                            // Capture standard Mode 09 identity once per vehicle
-                            // session without replacing the live-data service.
-                            requestLotoTVehicleIdentity();
-                        }
+                        // Vehicle identity is requested after the first decoded
+                        // live Mode-01 telemetry frame. Requesting it here is too
+                        // early on some ELM transports because service selection is
+                        // still transitioning when ECU_DETECTED fires.
                         break;
 
                     // handle change in number of fault codes
@@ -1826,33 +1827,55 @@ public class MainActivity extends PluginManager
     private String buildLoToTiVehicleGrounding()
     {
         JSONObject vehicle = getLotoTVehicleIdentity();
-        if (vehicle.length() == 0) return "";
+        if (vehicle.length() == 0)
+            return "\nVEHICLE / DATA PROVENANCE: unknown. An active OBD transport does not prove a physical vehicle ECU.";
 
-        StringBuilder grounding = new StringBuilder("\nOBD MODE 09 VEHICLE IDENTITY (session evidence):");
+        StringBuilder grounding = new StringBuilder("\nVEHICLE / DATA PROVENANCE (session evidence):");
+        String sourceType = vehicle.optString("source_type", "unknown").trim();
+        String sourceProfile = vehicle.optString("source_profile", "").trim();
         String vin = vehicle.optString("vin", "").trim();
         String wmi = vehicle.optString("wmi", "").trim();
         String calibration = vehicle.optString("calibration_id", "").trim();
         String calibration2 = vehicle.optString("calibration_id_2", "").trim();
         String ecuName = vehicle.optString("ecu_name", "").trim();
-        if (!vin.isEmpty()) grounding.append("\n- VIN: ").append(vin);
+        grounding.append("\n- Source type: ").append(sourceType);
+        if (!sourceProfile.isEmpty()) grounding.append("\n- Source profile: ").append(sourceProfile);
+        if (!vehicle.optString("manufacturer", "").isEmpty()) grounding.append("\n- Manufacturer: ").append(vehicle.optString("manufacturer"));
+        if (!vehicle.optString("model", "").isEmpty()) grounding.append("\n- Model: ").append(vehicle.optString("model"));
+        if (vehicle.has("model_year")) grounding.append("\n- Model year: ").append(vehicle.optInt("model_year"));
+        if (!vehicle.optString("engine", "").isEmpty()) grounding.append("\n- Engine: ").append(vehicle.optString("engine"));
+        if (!vin.isEmpty()) grounding.append("\n- VIN: ").append(vin)
+                .append(vehicle.optBoolean("vin_synthetic", false) ? " (synthetic emulator marker)" : "");
         if (!wmi.isEmpty()) grounding.append("\n- WMI: ").append(wmi);
         if (!calibration.isEmpty()) grounding.append("\n- Calibration ID: ").append(calibration);
         if (!calibration2.isEmpty()) grounding.append("\n- Calibration ID 2: ").append(calibration2);
         if (!ecuName.isEmpty()) grounding.append("\n- ECU name: ").append(ecuName);
         grounding.append("\n- Evidence source: ").append(vehicle.optString("source", "obd_mode09"));
-        grounding.append("\nDo not infer unsupported make/model/year/engine details from this identity block.");
+        grounding.append("\nNever call this a physical/real vehicle ECU unless Source type explicitly says physical_ecu. Live means the transport/session is live, not that the source is physical.");
         return grounding.toString();
     }
 
     private String buildLoToTiDtcGrounding(String question, String manufacturer)
     {
         StringBuilder grounding = new StringBuilder();
+        Set<String> seen = new java.util.LinkedHashSet<>();
         Matcher matcher = LOTOTI_DTC_PATTERN.matcher(question == null ? "" : question);
-        Set<String> seen = new HashSet<>();
-        while (matcher.find() && seen.size() < 8)
+        while (matcher.find() && seen.size() < 12)
+            seen.add(matcher.group().toUpperCase(Locale.US));
+
+        synchronized (mLototDiagnosticLock)
         {
-            String code = matcher.group().toUpperCase(java.util.Locale.US);
-            if (!seen.add(code)) continue;
+            for (int i = 0; i < mLototScannedDtcs.length() && seen.size() < 12; i++)
+            {
+                JSONObject item = mLototScannedDtcs.optJSONObject(i);
+                if (item == null) continue;
+                String code = item.optString("code", "").trim().toUpperCase(Locale.US);
+                if (LOTOTI_DTC_PATTERN.matcher(code).matches()) seen.add(code);
+            }
+        }
+
+        for (String code : seen)
+        {
             try
             {
                 DTCDatabase.DTC dtc = getLoToTiDtcDatabase().getDTC(code,
@@ -1882,7 +1905,8 @@ public class MainActivity extends PluginManager
             JSONObject request = new JSONObject(json == null ? "{}" : json);
             String question = request.optString("question", "").trim();
             String context = request.optString("context", "");
-            String manufacturer = request.optString("manufacturer", "");
+            String manufacturer = request.optString("manufacturer", "").trim();
+            if (manufacturer.isEmpty()) manufacturer = getLotoTVehicleIdentity().optString("manufacturer", "").trim();
             String responseLanguage = request.optString("language", mLototLanguage == null ? "en" : mLototLanguage);
             if (question.isEmpty())
             {
@@ -2285,6 +2309,7 @@ public class MainActivity extends PluginManager
         // Vehicle identity belongs to a single connection/session. Invalidating
         // all timestamps above prevents a VIN from a previous car being reused.
         mLototVehicleIdentityRequested = false;
+        mLototVehicleIdentityAttempts = 0;
     }
 
     private Object getLotoTRawValue(String mnemonic)
@@ -2345,8 +2370,53 @@ public class MainActivity extends PluginManager
             putLotoTIdentityText(vehicle, "calibration_id", "calibration_identifier");
             putLotoTIdentityText(vehicle, "calibration_id_2", "calibration_identifier2");
             putLotoTIdentityText(vehicle, "ecu_name", "ecu_name");
-            if (vehicle.length() > 0)
-                vehicle.put("source", "demo".equals(mLototStatus) ? "demo_mode09" : "obd_mode09");
+
+            String vin = vehicle.optString("vin", "").trim().toUpperCase(Locale.US);
+            String calibration = vehicle.optString("calibration_id", "").trim().toUpperCase(Locale.US);
+            String ecuName = vehicle.optString("ecu_name", "").trim().toUpperCase(Locale.US);
+            boolean lototExternalEmulator = vin.startsWith("L0T0T")
+                    || calibration.startsWith("LOTOT-EMU-")
+                    || ecuName.startsWith("LOTOT-");
+
+            if ("demo".equals(mLototStatus))
+            {
+                vehicle.put("source", "demo_mode09");
+                vehicle.put("source_type", "demo");
+                vehicle.put("source_profile", "LoToTi internal Demo ECU");
+            }
+            else if (lototExternalEmulator)
+            {
+                vehicle.put("source", "obd_mode09_emulator_marker");
+                vehicle.put("source_type", "emulator");
+                if (vin.startsWith("L0T0T")) vehicle.put("vin_synthetic", true);
+
+                if (calibration.contains("PEXPRT") || ecuName.contains("PEUGEOT-EXPERT"))
+                {
+                    vehicle.put("profile_id", "peugeot_expert_2014");
+                    vehicle.put("source_profile", "Peugeot Expert 2014 2.0 HDi — DieselOBD replay");
+                    vehicle.put("manufacturer", "Peugeot");
+                    vehicle.put("model", "Expert");
+                    vehicle.put("model_year", 2014);
+                    vehicle.put("engine", "2.0 HDi");
+                }
+                else if (calibration.contains("FORZA") || ecuName.contains("FORZA"))
+                {
+                    vehicle.put("profile_id", "forza_live");
+                    vehicle.put("source_profile", "Forza Motorsport live telemetry bridge");
+                }
+                else
+                {
+                    vehicle.put("source_profile", "LoToT external ELM emulator");
+                }
+            }
+            else if (vehicle.length() > 0)
+            {
+                // Mode 09 proves an OBD identity response was received; it does
+                // not by itself prove the transport is a physical vehicle rather
+                // than an unmarked simulator. Keep provenance deliberately neutral.
+                vehicle.put("source", "obd_mode09");
+                vehicle.put("source_type", "obd_session");
+            }
         }
         catch (Exception ex)
         {
@@ -2359,20 +2429,42 @@ public class MainActivity extends PluginManager
     {
         if (mLototVehicleIdentityRequested || CommService.elm == null) return;
         if (!("live".equals(mLototStatus) || "demo".equals(mLototStatus))) return;
+        if (mLototVehicleIdentityAttempts >= LOTOT_VEHICLE_IDENTITY_MAX_ATTEMPTS) return;
         mLototVehicleIdentityRequested = true;
+        mLototVehicleIdentityAttempts++;
+        final int attempt = mLototVehicleIdentityAttempts;
         executor.execute(() ->
         {
             try
             {
-                // Never log the returned identity values. They are surfaced only
-                // into the current in-app vehicle context and AI request context.
+                // Never log returned VIN/identity values. The request attempt is
+                // safe to log and makes transport timing failures diagnosable.
+                if (BuildConfig.DEBUG) Log.d("LotoTIdentity", "Mode09 request attempt=" + attempt);
                 CommService.elm.requestVehicleIdentity();
-                Thread.sleep(getMode() == MODE.DEMO ? 100L : 750L);
-                runOnUiThread(this::publishLotoTTelemetry);
+                Thread.sleep(getMode() == MODE.DEMO ? 150L : 1000L);
+                runOnUiThread(() ->
+                {
+                    JSONObject identity = getLotoTVehicleIdentity();
+                    boolean retry = identity.length() == 0
+                            && mLototVehicleIdentityAttempts < LOTOT_VEHICLE_IDENTITY_MAX_ATTEMPTS
+                            && ("live".equals(mLototStatus) || "demo".equals(mLototStatus));
+                    // Keep the in-flight latch set while publishing, otherwise the
+                    // telemetry publisher would immediately start a duplicate retry.
+                    publishLotoTTelemetry();
+                    mLototVehicleIdentityRequested = false;
+                    if (retry)
+                    {
+                        mLototGatewayHandler.postDelayed(this::requestLotoTVehicleIdentity,
+                                LOTOT_VEHICLE_IDENTITY_RETRY_MS);
+                    }
+                });
             }
             catch (Exception error)
             {
                 mLototVehicleIdentityRequested = false;
+                if (mLototVehicleIdentityAttempts < LOTOT_VEHICLE_IDENTITY_MAX_ATTEMPTS)
+                    mLototGatewayHandler.postDelayed(this::requestLotoTVehicleIdentity,
+                            LOTOT_VEHICLE_IDENTITY_RETRY_MS);
                 log.log(Level.FINER, "LoToTi Mode 09 identity request failed", error);
             }
         });
@@ -2522,6 +2614,14 @@ public class MainActivity extends PluginManager
             payload.put("diagnostics", getLotoTDiagnosticState());
             payload.put("vehicle", getLotoTVehicleIdentity());
             JSONArray signals = getLotoTSignals();
+            if (signals.length() > 0 && getLotoTVehicleIdentity().length() == 0
+                    && !mLototVehicleIdentityRequested
+                    && mLototVehicleIdentityAttempts < LOTOT_VEHICLE_IDENTITY_MAX_ATTEMPTS)
+            {
+                // At least one decoded Mode-01 value proves the live service loop
+                // is running, so queued Mode-09 one-shot requests can be consumed.
+                requestLotoTVehicleIdentity();
+            }
             if (mLototGateway != null) mLototGateway.updateTelemetry(signals);
             payload.put("signals", signals);
             payload.put("signal_count", signals.length());

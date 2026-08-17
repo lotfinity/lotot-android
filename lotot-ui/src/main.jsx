@@ -1521,7 +1521,15 @@ function App() {
       vehicle?.wmi ? `WMI: ${vehicle.wmi}` : null,
       vehicle?.calibration_id ? `Calibration ID: ${vehicle.calibration_id}` : null,
       vehicle?.calibration_id_2 ? `Calibration ID 2: ${vehicle.calibration_id_2}` : null,
+      vehicle?.source_type ? `Source type: ${vehicle.source_type}` : 'Source type: unknown',
+      vehicle?.source_profile ? `Source profile: ${vehicle.source_profile}` : null,
+      vehicle?.profile_id ? `Profile ID: ${vehicle.profile_id}` : null,
+      vehicle?.manufacturer ? `Manufacturer: ${vehicle.manufacturer}` : null,
+      vehicle?.model ? `Model: ${vehicle.model}` : null,
+      vehicle?.model_year ? `Model year: ${vehicle.model_year}` : null,
+      vehicle?.engine ? `Engine: ${vehicle.engine}` : null,
       vehicle?.ecu_name ? `ECU name: ${vehicle.ecu_name}` : null,
+      vehicle?.vin_synthetic ? 'VIN provenance: synthetic emulator marker' : null,
       vehicle?.source ? `Evidence source: ${vehicle.source}` : null,
     ].filter(Boolean);
     const recentConversation = aiMessages
@@ -1552,7 +1560,9 @@ function App() {
     setAiQuestion('');
     setAiStreamingText('');
     setAiState((current) => ({ ...current, status: 'thinking', provider: null, error: null, text: null }));
-    window.LotoTNative?.askAi?.(JSON.stringify({ question, context, language }));
+    window.LotoTNative?.askAi?.(JSON.stringify({
+      question, context, language, manufacturer: vehicle?.manufacturer || ''
+    }));
   };
 
   const selectDemoScenario = (scenarioId) => {
