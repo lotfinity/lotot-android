@@ -19,10 +19,15 @@ final class LotoTWebBridge
     {
         void onLotoTReady();
         void startLotoTDemo();
+        String getLotoTDemoScenario();
+        void setLotoTDemoScenario(String scenario);
+        void requestLotoTFaultScan();
+        String getLotoTDiagnosticStateJson();
         void requestLotoTBluetoothDevices(String medium);
         void connectLotoTBluetoothDevice(String address, String medium);
         void disconnectLotoTBluetooth();
         void setLotoTTheme(String theme);
+        String setLotoTAppLanguage(String language);
         String getLotoTAppearanceSettings();
         void setLotoTAppearanceSettings(String json);
         String getLotoTOnboardingState();
@@ -55,6 +60,18 @@ final class LotoTWebBridge
     }
 
     @JavascriptInterface
+    public String getAppLanguagePreference()
+    {
+        return SettingsActivity.getLanguagePreference(activity);
+    }
+
+    @JavascriptInterface
+    public String setAppLanguage(String language)
+    {
+        return host.setLotoTAppLanguage(language);
+    }
+
+    @JavascriptInterface
     public void ready()
     {
         activity.runOnUiThread(host::onLotoTReady);
@@ -64,6 +81,30 @@ final class LotoTWebBridge
     public void startDemo()
     {
         activity.runOnUiThread(host::startLotoTDemo);
+    }
+
+    @JavascriptInterface
+    public String getDemoScenario()
+    {
+        return host.getLotoTDemoScenario();
+    }
+
+    @JavascriptInterface
+    public void setDemoScenario(String scenario)
+    {
+        activity.runOnUiThread(() -> host.setLotoTDemoScenario(scenario));
+    }
+
+    @JavascriptInterface
+    public void scanFaults()
+    {
+        host.requestLotoTFaultScan();
+    }
+
+    @JavascriptInterface
+    public String getDiagnosticState()
+    {
+        return host.getLotoTDiagnosticStateJson();
     }
 
     @JavascriptInterface

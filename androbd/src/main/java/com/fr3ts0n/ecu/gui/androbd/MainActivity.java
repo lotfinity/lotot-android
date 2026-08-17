@@ -97,6 +97,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.Timer;
@@ -203,6 +204,7 @@ public class MainActivity extends PluginManager
     private static final String PREF_LOTOT_THEME = "lotot_theme";
     private static final String PREF_LOTOT_FONT_FAMILY = "lotot_font_family";
     private static final String PREF_LOTOT_FONT_SCALE = "lotot_font_scale";
+    private static final String PREF_LOTOT_ICON_FAMILY = "lotot_icon_family";
     private static final String PREF_LOTOT_ONBOARDING_VERSION = "lotot_onboarding_version";
     private static final int LOTOT_ONBOARDING_VERSION = 1;
     private static final String PREF_LOTOT_DEV_UI_URL = "lotot_dev_ui_url";
@@ -316,6 +318,10 @@ public class MainActivity extends PluginManager
     private LoToTiAiClient mLoToTiAiClient;
     private DTCDatabase mLoToTiDtcDatabase;
     private JSONObject mLoToTiLastAiState;
+    private final Object mLototDiagnosticLock = new Object();
+    private String mLototFaultScanStatus = "idle";
+    private long mLototFaultScanAt = 0L;
+    private JSONArray mLototScannedDtcs = new JSONArray();
     private static final Pattern LOTOTI_DTC_PATTERN = Pattern.compile("(?i)\\b[PBCU][0-9A-F]{4}\\b");
     private boolean mLototReady = false;
     private String mLototStatus = "offline";
@@ -680,6 +686,12 @@ public class MainActivity extends PluginManager
         Arrays.sort(pids);
         // set protocol fixed PIDs
         ObdProt.setFixedPid(pids);
+    }
+
+    @Override
+    protected void attachBaseContext(Context newBase)
+    {
+        super.attachBaseContext(SettingsActivity.wrapLocale(newBase));
     }
 
     @Override
@@ -1236,12 +1248,27 @@ public class MainActivity extends PluginManager
     }
 
     @Override
+    public String getLotoTDemoScenario()
+    {
+        return ElmProt.getDemoScenario();
+    }
+
+    @Override
+    public void setLotoTDemoScenario(String scenario)
+    {
+        ElmProt.setDemoScenario(scenario);
+        resetLotoTDiagnosticScan();
+        if ("demo".equals(mLototStatus)) publishLotoTTelemetry();
+    }
+
+    @Override
     public void startLotoTDemo()
     {
         mLototManualDisconnect = false;
         mLototLossLatched = false;
         mLototWatchdogTriggered = false;
         mLototBluetoothError = null;
+        resetLotoTDiagnosticScan();
         resetLotoTSignalTimestamps();
         ObdProt.setRealtimePidPriorityEnabled(true);
         CommService.medium = CommService.MEDIUM.DEMO;
@@ -1249,6 +1276,168 @@ public class MainActivity extends PluginManager
         setLotoTStatus("demo");
         setObdService(ObdProt.OBD_SVC_DATA, getString(R.string.obd_data));
         showLotoTDashboard();
+    }
+
+    @Override
+    public void requestLotoTFaultScan()
+    {
+        if (!("live".equals(mLototStatus) || "demo".equals(mLototStatus)))
+        {
+            synchronized (mLototDiagnosticLock)
+            {
+                mLototFaultScanStatus = "error";
+                mLototFaultScanAt = System.currentTimeMillis();
+                mLototScannedDtcs = new JSONArray();
+            }
+            runOnUiThread(this::publishLotoTTelemetry);
+            return;
+        }
+
+        synchronized (mLototDiagnosticLock)
+        {
+            if ("scanning".equals(mLototFaultScanStatus)) return;
+            mLototFaultScanStatus = "scanning";
+            mLototFaultScanAt = 0L;
+            mLototScannedDtcs = new JSONArray();
+        }
+        runOnUiThread(this::publishLotoTTelemetry);
+
+        executor.execute(() ->
+        {
+            JSONArray combined = new JSONArray();
+            try
+            {
+                int[] services = {
+                        ObdProt.OBD_SVC_READ_CODES,
+                        ObdProt.OBD_SVC_PENDINGCODES,
+                        ObdProt.OBD_SVC_PERMACODES
+                };
+                String[] labels = {"confirmed", "pending", "permanent"};
+                long waitMs = getMode() == MODE.DEMO ? 550L : 1000L;
+                for (int i = 0; i < services.length; i++)
+                {
+                    CommService.elm.setService(services[i], true);
+                    Thread.sleep(waitMs);
+                    appendLotoTFaultCodes(combined, labels[i]);
+                }
+
+                synchronized (mLototDiagnosticLock)
+                {
+                    mLototScannedDtcs = combined;
+                    mLototFaultScanStatus = "ready";
+                    mLototFaultScanAt = System.currentTimeMillis();
+                }
+            }
+            catch (Exception error)
+            {
+                synchronized (mLototDiagnosticLock)
+                {
+                    mLototFaultScanStatus = "error";
+                    mLototFaultScanAt = System.currentTimeMillis();
+                }
+                log.log(Level.WARNING, "LoToTi fault scan failed", error);
+            }
+            finally
+            {
+                try
+                {
+                    CommService.elm.setService(ObdProt.OBD_SVC_DATA, true);
+                }
+                catch (Exception ignored) { }
+                runOnUiThread(this::publishLotoTTelemetry);
+            }
+        });
+    }
+
+    private void resetLotoTDiagnosticScan()
+    {
+        synchronized (mLototDiagnosticLock)
+        {
+            mLototFaultScanStatus = "idle";
+            mLototFaultScanAt = 0L;
+            mLototScannedDtcs = new JSONArray();
+        }
+    }
+
+    private void appendLotoTFaultCodes(JSONArray target, String status)
+    {
+        try
+        {
+            for (Object raw : ObdProt.tCodes.values())
+            {
+                if (!(raw instanceof EcuCodeItem)) continue;
+                EcuCodeItem item = (EcuCodeItem) raw;
+                Object codeValue = item.get(EcuCodeItem.FID_CODE);
+                if (codeValue == null) continue;
+                String code = String.valueOf(codeValue).trim().toUpperCase(Locale.US);
+                if (code.isEmpty() || "P0000".equals(code)) continue;
+
+                boolean duplicate = false;
+                for (int j = 0; j < target.length(); j++)
+                {
+                    JSONObject previous = target.optJSONObject(j);
+                    if (previous != null && code.equals(previous.optString("code"))
+                            && status.equals(previous.optString("status")))
+                    {
+                        duplicate = true;
+                        break;
+                    }
+                }
+                if (duplicate) continue;
+
+                JSONObject dtc = new JSONObject();
+                dtc.put("code", code);
+                dtc.put("status", status);
+                DTCDatabase.DTC dbItem = null;
+                try { dbItem = getLoToTiDtcDatabase().getDTC(code); } catch (Exception ignored) { }
+                String description = dbItem == null ? null : dbItem.description;
+                if (description == null || description.trim().isEmpty())
+                {
+                    Object fallback = item.get(EcuCodeItem.FID_DESCRIPT);
+                    description = fallback == null ? "" : String.valueOf(fallback);
+                }
+                dtc.put("description", description == null ? "" : description);
+                if (dbItem != null)
+                {
+                    dtc.put("type", dbItem.getTypeName());
+                    dtc.put("manufacturer", dbItem.manufacturer == null ? "" : dbItem.manufacturer);
+                }
+                target.put(dtc);
+            }
+        }
+        catch (Exception error)
+        {
+            log.log(Level.FINER, "Unable to collect LoToTi fault codes", error);
+        }
+    }
+
+    @Override
+    public String getLotoTDiagnosticStateJson()
+    {
+        return getLotoTDiagnosticState().toString();
+    }
+
+    private JSONObject getLotoTDiagnosticState()
+    {
+        JSONObject state = new JSONObject();
+        try
+        {
+            Object mil = getLotoTValue("status_mil");
+            Object reportedCount = getLotoTValue("number_fault_codes");
+            state.put("mil", mil == null ? JSONObject.NULL : mil);
+            state.put("reported_dtc_count", reportedCount == null ? JSONObject.NULL : reportedCount);
+            synchronized (mLototDiagnosticLock)
+            {
+                state.put("scan_status", mLototFaultScanStatus);
+                state.put("scanned_at", mLototFaultScanAt);
+                state.put("dtcs", new JSONArray(mLototScannedDtcs.toString()));
+            }
+        }
+        catch (Exception error)
+        {
+            log.log(Level.FINER, "Unable to build LoToTi diagnostic state", error);
+        }
+        return state;
     }
 
     @Override
@@ -1304,6 +1493,19 @@ public class MainActivity extends PluginManager
         applyLotoTSystemBars(normalized);
     }
 
+    @Override
+    public String setLotoTAppLanguage(String language)
+    {
+        String preference = SettingsActivity.setLanguagePreference(this, language);
+        String resolved = SettingsActivity.getResolvedLanguage(this);
+        mLototLanguage = resolved;
+        runOnUiThread(() -> {
+            SettingsActivity.applyLocale(MainActivity.this);
+            publishLotoTLanguage();
+        });
+        return resolved;
+    }
+
     private String normalizeLotoTFontFamily(String family)
     {
         if ("clean".equals(family) || "compact".equals(family)
@@ -1315,6 +1517,12 @@ public class MainActivity extends PluginManager
     {
         int bounded = Math.max(90, Math.min(140, scale));
         return Math.round(bounded / 5f) * 5;
+    }
+
+    private String normalizeLotoTIconFamily(String family)
+    {
+        if ("tech-line".equals(family) || "neo-ecu".equals(family)) return family;
+        return "industrial-soft";
     }
 
     @Override
@@ -1329,6 +1537,8 @@ public class MainActivity extends PluginManager
                     prefs.getString(PREF_LOTOT_FONT_FAMILY, "system")));
             state.put("font_scale", normalizeLotoTFontScale(
                     prefs.getInt(PREF_LOTOT_FONT_SCALE, 115)));
+            state.put("icon_family", normalizeLotoTIconFamily(
+                    prefs.getString(PREF_LOTOT_ICON_FAMILY, "industrial-soft")));
         }
         catch (Exception ex)
         {
@@ -1349,10 +1559,13 @@ public class MainActivity extends PluginManager
             String family = normalizeLotoTFontFamily(
                     state.optString("font_family", "system"));
             int scale = normalizeLotoTFontScale(state.optInt("font_scale", 115));
+            String iconFamily = normalizeLotoTIconFamily(
+                    state.optString("icon_family", "industrial-soft"));
             prefs.edit()
                     .putString(PREF_LOTOT_THEME, theme)
                     .putString(PREF_LOTOT_FONT_FAMILY, family)
                     .putInt(PREF_LOTOT_FONT_SCALE, scale)
+                    .putString(PREF_LOTOT_ICON_FAMILY, iconFamily)
                     .apply();
             applyLotoTSystemBars(theme);
         }
@@ -2132,6 +2345,7 @@ public class MainActivity extends PluginManager
             long capturedAt = System.currentTimeMillis();
             payload.put("captured_at", capturedAt);
             payload.put("mode", mLototStatus);
+            if ("demo".equals(mLototStatus)) payload.put("demo_scenario", ElmProt.getDemoScenario());
             payload.put("readings", readings);
 
             if (BuildConfig.DEBUG)
@@ -2177,7 +2391,9 @@ public class MainActivity extends PluginManager
             long capturedAt = System.currentTimeMillis();
             payload.put("captured_at", capturedAt);
             payload.put("mode", mLototStatus);
+            if ("demo".equals(mLototStatus)) payload.put("demo_scenario", ElmProt.getDemoScenario());
             payload.put("readings", readings);
+            payload.put("diagnostics", getLotoTDiagnosticState());
             JSONArray signals = getLotoTSignals();
             if (mLototGateway != null) mLototGateway.updateTelemetry(signals);
             payload.put("signals", signals);
@@ -3573,6 +3789,12 @@ public class MainActivity extends PluginManager
             setMenuItemVisible(R.id.disconnect, !allowConnect);
 
             setMenuItemEnable(R.id.obd_services, true);
+
+            // Seed Mode 01 before the Demo thread starts. Starting the thread first
+            // allowed a race where setObdService() cleared the freshly decoded PID
+            // registry after the simulator had already populated it.
+            CommService.elm.setService(ObdProt.OBD_SVC_DATA, true);
+
             /* The Thread object for processing the demo mode loop */
             Thread demoThread = new Thread(CommService.elm);
             demoThread.start();

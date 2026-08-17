@@ -90,6 +90,12 @@ public final class UsbDeviceListActivity extends AppCompatActivity
 	private ArrayAdapter<UsbSerialPort> mAdapter;
 
 	@Override
+	protected void attachBaseContext(Context newBase)
+	{
+		super.attachBaseContext(SettingsActivity.wrapLocale(newBase));
+	}
+
+	@Override
 	public void onCreate(Bundle savedInstanceState)
 	{
 		setTheme(MainActivity.nightMode ? R.style.AppTheme_Dark : R.style.AppTheme);

@@ -333,26 +333,21 @@ period of time while the ECU recalibrates itself.
     <string name="language_german">Deutsch</string>
     <string name="language_french">Français</string>
     <string name="language_spanish">Español</string>
+    <string name="language_algerian_darija" translatable="false">الدارجة الجزائرية</string>
     <string name="restart_required">Restart required to apply language change</string>
 
     <string-array name="language_options" translatable="false">
         <item>@string/language_system_default</item>
         <item>@string/language_english</item>
-        <item>@string/language_russian</item>
-        <item>@string/language_italian</item>
-        <item>@string/language_german</item>
         <item>@string/language_french</item>
-        <item>@string/language_spanish</item>
+        <item>@string/language_algerian_darija</item>
     </string-array>
 
     <string-array name="language_values" translatable="false">
         <item>system</item>
         <item>en</item>
-        <item>ru</item>
-        <item>it</item>
-        <item>de</item>
         <item>fr</item>
-        <item>es</item>
+        <item>ar-DZ</item>
     </string-array>
 
     <string name="advanced_settings_title">Advanced OBD settings</string>

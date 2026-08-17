@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- LoToTi / AndrOBD Algerian Darija localization. Arabic-script Darija + natural French automotive vocabulary. -->
+    <string name="translation_credits">ترجمة للدارجة الجزائرية من طرف LoToTi/AndrOBD</string>
+    <string name="app_description">LoToTi لمراقبة صحة الطوموبيل، خدام بمحرك diagnostic AndrOBD</string>
+    <string name="copied_to_clipboard">تنسخ للـ presse-papier</string>
+    <string name="lotot_dashboard_description">Tableau de bord live تاع LoToTi لصحة الطوموبيل</string>
+    <string name="title_connecting">راه يدير connexion…</string>
+    <string name="title_connected_to">Connecté بـ %s</string>
+    <string name="logo">Logo</string>
+    <string name="back_again_to_exit">عاود اضغط رجوع باش تسكر التطبيق</string>
+    <string name="action_connect">دير connexion</string>
+    <string name="obd_none">ما كاش service</string>
+    <string name="obd_services">Services OBD</string>
+    <string name="obd_veh_info">Infos OBD تاع الطوموبيل</string>
+    <string name="obd_data">Données OBD</string>
+    <string name="service_freezeframes">Freeze Frames OBD</string>
+    <string name="service_testcontrol">Contrôle test OBD</string>
+    <string name="obd_codes">Codes défaut OBD</string>
+    <string name="obd_permanentcodes">Codes défaut OBD (دائمين)</string>
+    <string name="obd_pendingcodes">Codes défaut OBD (معلّقين)</string>
+    <string name="obd_clearcodes">امسح codes défaut</string>
+    <string name="obd_clear_info">
+هذا راح يدير reset لـ MIL ويمسح كامل معلومات diagnostic المتعلقة بالانبعاثات، كيما:\n
+ - Codes défaut diagnostic\n
+ - Données Freeze Frame\n
+ - Données test capteur oxygène\n
+ - حالة tests de monitoring تاع système\n
+ - نتائج tests de monitoring embarqués\n
+ - Distance اللي دارتها الطوموبيل و MIL شاعل\n
+ - عدد warm-ups من نهار تمسحو DTCs\n
+ - Distance من نهار تمسحو DTCs\n
+ - وقت خدمة moteur و MIL شاعل\n
+ - الوقت من نهار تمسحو DTCs\n\n
+ممكن تصرا حتى عمليات مسح/reset خاصة بالماركة المصنّعة.\n
+ضياع البيانات يقدر يخلي الطوموبيل تخدم ماشي مليح شوية وقت \n
+حتى يعاود ECU يضبط روحو.
+    </string>
+    <string name="obd_test_progress">Contrôle test OBD راه خدام.\n
+        شوف واش صرا للطوموبيل.</string>
+    <string name="obd_test_confirm">طلبت contrôle test OBD.\n\n
+        هذا test OBD يقدر يسبب:\n
+        - حركة الطوموبيل\n
+        - دخان من échappement\n
+        - حرارة عالية في échappement\n
+        - صوت moteur عالي\n
+        - بخار carburant\n
+        - إلخ.\n\n
+        أكد بلي راك حاب تدير هذا contrôle test على مسؤوليتك، وفقط في بلاصة test آمنة!
+    </string>
+    <string name="select_device">اختار adapter</string>
+    <string name="select_ble_device">اختار adapter BLE</string>
+    <string name="none_paired">ما كاش حتى appareil appairé</string>
+    <string name="none_found">ما لقا حتى appareil</string>
+    <string name="title_paired_devices">Appareils appairés</string>
+    <string name="send_to">ابعث لـ</string>
+    <string name="share">شارك</string>
+    <string name="time">الوقت [s]</string>
+    <string name="chart">Graphique</string>
+    <string name="demo_stopped">Mode DEMO تحبس</string>
+    <string name="demo_started">Mode DEMO بدا</string>
+    <string name="snapshot">لقطة شاشة</string>
+    <string name="save">سجّل القياسات</string>
+    <string name="load">حمّل القياسات</string>
+    <string name="saved_data">الداتا المسجّلة</string>
+    <string name="no_obd_files_found">ما كاش fichiers OBD</string>
+    <string name="loaded">تحمّلت</string>
+    <string name="saved">تسجّلت</string>
+    <string name="connected_to">&quot;متّصل بـ &quot;</string>
+    <string name="demo">Démo…</string>
+    <string name="saving_data">الداتا راهي تتسجّل …</string>
+    <string name="loading_data">الداتا راهي تتحمّل …</string>
+    <string name="dashboard">Tableau de bord</string>
+    <string name="hud">Affichage tête haute</string>
+    <string name="filter">الفلتر مختار</string>
+    <string name="settings">Paramètres</string>
+    <string name="common_settings">Paramètres عامة</string>
+    <string name="measure_system_description">نظام وحدات القياس (métrique / impérial)</string>
+    <string name="measure_system">وحدات القياس</string>
+    <string name="metric">métrique</string>
+    <string name="imperial">impérial</string>
+    <string name="items_for_display">الداتا لي تبان</string>
+    <string name="items_for_display_descr">اختار كامل الداتا لي تحب تبان…</string>
+    <string name="debugging">Debug</string>
+    <string name="open_log_dir">حل dossier تاع logs</string>
+    <string name="open_log_dir_description">حل dossier تاع logs في file manager</string>
+    <string name="log_dir_not_found">Dossier تاع logs ما تلقاش — فعّل logging وعاود شغّل التطبيق قبل</string>
+    <string name="log_dir_no_app">ما كاش file manager — chemin تنسخ في clipboard</string>
+    <string name="logging_level">Niveau تاع logging</string>
+    <string name="logging_level_description">Niveau تاع التفاصيل لي يتسجلو في fichier debug log</string>
+    <string name="last_elm">عاود اتصل بآخر ELM-adapter</string>
+    <string name="last_ecu">عاود اتصل بآخر ECU</string>
+    <string name="last_service">آخر service OBD</string>
+    <string name="last_data_items">آخر داتا مختارة</string>
+    <string name="last_view_mode">آخر mode تاع عرض الداتا</string>
+    <string name="keep_screen_on">خلّي écran الرئيسي شاعل</string>
+    <string name="keep_screen_on_description">ما تطفيش écran كي تكون الشاشة الرئيسية/الداتا معروضة</string>
+    <string name="development_options">Options تاع التطوير</string>
+    <string name="dev_opt_description">Options للـ debug والتخصيص</string>
+    <string name="extension_files">Fichiers تاع تخصيص protocole (CSV)</string>
+    <string name="conversions">Conversions تاع الداتا</string>
+    <string name="data_items">عناصر الداتا</string>
+    <string name="select_extension">اختار fichier .csv …</string>
+    <string name="extension_loading">Chargement تاع التخصيص</string>
+    <string name="check_cust_settings">شوف paramètres تاع التخصيص تاعك\n</string>
+    <string name="obd_options">Options OBD</string>
+    <string name="obd_opt_description">Options تاع protocole OBD / communication مع السيارة</string>
+    <string name="select_protocol">Protocole OBD المفضّل</string>
+    <string name="plugin_manager">Gestionnaire تاع extensions</string>
+    <string name="configure">Configurer</string>
+    <string name="select_fault_code">اختار code d\'erreur …</string>
+    <string name="select_medium">Type تاع adaptateur …</string>
+    <string name="devices_found">تلقاو %d appareil(s) USB</string>
+    <string name="min_elm_timeout">Timeout min. تاع ELM [ms]</string>
+    <string name="unabletoconnect">ما قدرناش نوصلو l\'appareil</string>
+    <string name="connectionlost">Connexion مع l\'appareil تقطعت</string>
+    <string name="elm_timeout_descr">أقل timeout بـ [ms] باش نستناو réponses تاع ELM</string>
+    <string name="day_night_mode">Mode affichage نهار/ليل</string>
+    <string name="night_mode_description">دير affichage بخلفية غامقة</string>
+    <string name="night_mode">Mode nuit</string>
+    <string name="disable_elm_cmds">Commandes ELM معطّلين</string>
+    <string name="disable_elm_cmds_descr">فعّل/عطّل commandes ELM</string>
+    <string name="elm_adaptive_timing">Timing adaptatif ELM</string>
+    <string name="elm_adaptive_timing_descr">نخليو gestion adaptative تاع timing في drivers ELM؟</string>
+    <string name="elm_reset_on_nrc">Reset على NRC</string>
+    <string name="elm_reset_on_nrc_descr">نديرو reset للـ adaptateur ELM كي تصرا erreur NRC؟</string>
+    <string name="select_ecu_addr">اختار adresse ECU …</string>
+    <string name="disconnect">قطع connexion</string>
+    <string name="reset_preselections">Reset لآخر pré-sélections</string>
+    <string name="use_last_settings_description">استعمل آخر paramètres كي يبدا التطبيق (adresse BT, adresse ECU, éléments affichés …)</string>
+    <string name="use_last_settings">استعمل آخر paramètres</string>
+    <string name="common_settings_description">Réglages عامّين للتحكم في l\'appli</string>
+    <string name="secure_connect">Connexion مؤمّنة</string>
+    <string name="secure_connect_description">استعمل connexion Bluetooth cryptée</string>
+    <string name="elm_options">Options ELM</string>
+    <string name="elm_custom_init">Init perso تاع ELM</string>
+    <string name="elm_custom_init_descr">Commandes init perso تاع ELM</string>
+    <string name="UNDEFINED">ماهوش محدّد</string>
+    <string name="INITIALIZING">راهي initialisation…</string>
+    <string name="INITIALIZED">Initialisation كملت</string>
+    <string name="ECU_DETECT">Détection ECU…</string>
+    <string name="ECU_DETECTED">ECU تلقات</string>
+    <string name="CONNECTING">راه يتّصل…</string>
+    <string name="CONNECTED">متّصل</string>
+    <string name="NODATA">ما كاين حتى données</string>
+    <string name="STOPPED">محبوس</string>
+    <string name="DISCONNECTED">مقطوع الاتصال</string>
+    <string name="BUSERROR">Erreur BUS</string>
+    <string name="DATAERROR">Erreur données</string>
+    <string name="RXERROR">Erreur RX</string>
+    <string name="ERROR">Erreur</string>
+    <string name="obd_error">Erreur protocole OBD</string>
+    <string name="device_address_description">Adresse IP réseau تاع جهاز ELM</string>
+    <string name="device_address">Adresse IP تاع ELM</string>
+    <string name="device_port_description">Port IP réseau تاع جهاز ELM</string>
+    <string name="device_port">Port IP تاع ELM</string>
+    <string name="data_disable_max">Limite تاع تعطيل donnée</string>
+    <string name="data_disable_max_description">عدد réponses invalides ورا بعضاهم قبل ما تتعطّل donnée</string>
+    <string name="autohide_toolbar">خبّي barre d\'outils</string>
+    <string name="autohide_toolbar_description">خبّي barre d\'outils automatiquement بعد مدة بلا نشاط</string>
+    <string name="autohide_delay">مدة تخبية barre d\'outils [s]</string>
+    <string name="autohide_delay_description">المدة بالثواني بلا نشاط قبل ما تتخبّى barre d\'outils</string>
+    <string name="csv_export_options">Options export CSV</string>
+    <string name="csv_export_description">Options باش تنسّق fichiers CSV كي تدير export</string>
+    <string name="csv_field_delimiter">Séparateur تاع champs CSV</string>
+    <string name="csv_field_delimiter_description">الحرف/الحروف اللي يفرّقو بين champs تاع données CSV</string>
+    <string name="csv_rec_delimiter">Séparateur تاع enregistrements CSV</string>
+    <string name="csv_rec_delimiter_description">الحرف/الحروف اللي يفرّقو بين enregistrements تاع données CSV</string>
+    <string name="csv_text_quoted">نص CSV بين guillemets</string>
+    <string name="csv_text_quoted_description">Champs النص تاع CSV يتحطّو بين guillemets</string>
+    <string name="tab">TAB</string>
+    <string name="comma">Virgule</string>
+    <string name="semicolon">Point-virgule</string>
+    <string name="send_after_export">ابعث من بعد export</string>
+    <string name="send_after_export_descr">تطلب تبعث fichier CSV مباشرة من بعد export؟</string>
+    <string name="toolbar_overlay">بيّنها فوق الشاشة</string>
+    <string name="toolbar_overlay_sum">بيّن barre d\'outils فوق الشاشة الرئيسية</string>
+    <string name="license">Licences…</string>
+    <string name="donation">دعم المشروع…</string>
+    <string name="libraries">Bibliothèques…</string>
+    <string name="libraries_sum">Bibliothèques المستعملين في المشروع…</string>
+    <string name="release_history">Historique تاع النسخ…</string>
+    <string name="graphic_design">Design graphique</string>
+    <string name="long_press_dfc_hint">طوّل الضغطة على DFC باش دير بحث online…</string>
+    <string name="comm_baudrate">Débit baud تاع ELM</string>
+    <string name="comm_baudrate_description">سرعة communication série عبر USB</string>
+    <string name="full_screen_display">Affichage plein écran</string>
+    <string name="full_screen_display_description">استعمل plein écran لعرض التطبيق</string>
+    <string name="display_color">لون العرض</string>
+    <string name="customize_display">خصّص عرض données</string>
+    <string name="display_range">Intervalle تاع العرض</string>
+    <string name="reset_default">Par défaut</string>
+    <string name="update_period_s">مدة التحديث [s]</string>
+    <string name="language_selection_description">اختار langue تاع التطبيق</string>
+    <string name="language_system_default">لغة التليفون</string>
+    <string name="language_english">الإنجليزية</string>
+    <string name="language_russian">الروسية</string>
+    <string name="language_italian">الإيطالية</string>
+    <string name="language_german">الألمانية</string>
+    <string name="language_french">الفرنسية</string>
+    <string name="language_spanish">الإسبانية</string>
+    <string name="restart_required">لازم تعاود تفتح التطبيق باش تتبدل اللغة</string>
+    <string name="advanced_settings_title">Réglages OBD المتقدمة</string>
+    <string name="advanced_settings_subtitle">السيارة، adaptateur، export و réglages développeur</string>
+    <string name="settings_root_subtitle">Configuration تاع LoToTi</string>
+    <string name="back">رجوع</string>
+    <string name="lotot_bt_lost">Connexion Bluetooth تقطعت. شوف l’adaptateur وعاود connecte.</string>
+    <string name="lotot_connection_lost">Connexion تاع السيارة تقطعت. شوف l’adaptateur وعاود connecte.</string>
+    <string name="lotot_bt_unable">ما قدرناش نديرو connexion. تأكد بلي l’adaptateur شاعل ومتوفر.</string>
+    <string name="lotot_bt_permission_denied">Permission Bluetooth مرفوضة</string>
+    <string name="lotot_bt_disabled">Bluetooth راهو مطفي</string>
+    <string name="lotot_bt_invalid_address">Adresse Bluetooth ماشي صحيحة</string>
+    <string name="lotot_bt_unavailable">Bluetooth ما هوش متوفر فهاد appareil</string>
+    <string name="lotot_bt_device">Appareil Bluetooth</string>
+    <string name="lotot_obd_adapter">Adaptateur OBD</string>
+    <string name="lotot_mqtt_host_required">دخل adresse تاع broker MQTT</string>
+    <string name="lotot_usb_adapter">Adaptateur OBD USB</string>
+    <string name="lotot_network_host_required">دخل adresse تاع l’adaptateur réseau</string>
+    <string name="lotot_network_adapter">Adaptateur OBD réseau · %1$s</string>
+    <string name="lotot_gps_latitude">Latitude GPS</string>
+    <string name="lotot_gps_longitude">Longitude GPS</string>
+    <string name="lotot_gps_altitude">Altitude GPS</string>
+    <string name="lotot_gps_bearing">Direction GPS</string>
+    <string name="lotot_gps_speed">Vitesse GPS</string>
+    <string name="lotot_acc_lateral">Accélération latérale</string>
+    <string name="lotot_acc_longitudinal">Accélération longitudinale</string>
+    <string name="lotot_acc_vertical">Accélération verticale</string>
+    <string name="lotot_acc_unavailable">Accéléromètre ما هوش متوفر</string>
+    <string name="lotot_gateway_channel">Gateway تاع données السيارة LoToTi</string>
+    <string name="lotot_gateway_active">LoToTi · gateway خدام</string>
+    <string name="lotot_gateway_ready">واجد باش يجمع ويسينكرونيزي données تاع السيارة</string>
+    <string name="lotot_gateway_syncing">Synchronisation · باقي %1$d</string>
+    <string name="lotot_gateway_offline">Offline · %1$d relevé(s) مخزنين</string>
+    <string name="lotot_gateway_current">Données تاع السيارة à jour</string>
+</resources>

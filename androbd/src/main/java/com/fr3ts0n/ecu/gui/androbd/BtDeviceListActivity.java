@@ -65,6 +65,12 @@ public class BtDeviceListActivity extends AppCompatActivity
 	protected BluetoothAdapter mBtAdapter;
 	protected ArrayAdapter<BluetoothDevice> mBtDevices;
 
+    @Override
+    protected void attachBaseContext(Context newBase)
+    {
+        super.attachBaseContext(SettingsActivity.wrapLocale(newBase));
+    }
+
 	@Override
 	protected void onCreate(Bundle savedInstanceState)
 	{

@@ -18,6 +18,7 @@
 
 package com.fr3ts0n.ecu.gui.androbd;
 
+import android.content.Context;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.pm.PackageManager;
@@ -143,6 +144,12 @@ public class ChartActivity extends AppCompatActivity
 	{
 		getMenuInflater().inflate(R.menu.chart, menu);
 		return true;
+	}
+
+	@Override
+	protected void attachBaseContext(Context newBase)
+	{
+		super.attachBaseContext(SettingsActivity.wrapLocale(newBase));
 	}
 
 	@Override

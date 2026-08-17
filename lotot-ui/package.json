@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "vite build && node scripts/postbuild.mjs",
-    "dev": "vite --host 0.0.0.0 --port 5173"
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "i18n:check": "node scripts/check-i18n.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

@@ -1042,25 +1042,44 @@ public class ElmProt
 	
 	// switch to exit the demo thread
 	public static boolean runDemo;
-	
+	private static volatile String demoScenario = DemoVehicleModel.Scenario.HEALTHY.id;
+	private static volatile boolean demoHeadersEnabled = false;
+
+	/** Select LoToTi's stateful Demo scenario. Safe to change while Demo is running. */
+	public static void setDemoScenario(String scenarioId)
+	{
+		demoScenario = DemoVehicleModel.Scenario.fromId(scenarioId).id;
+	}
+
+	public static String getDemoScenario()
+	{
+		return demoScenario;
+	}
+
+	public static String getDemoScenarioIds()
+	{
+		return DemoVehicleModel.scenarioIdsCsv();
+	}
+
 	/**
 	 * run threaded loop to simulate incoming telegrams
 	 */
 	public void run()
 	{
-		int value = 0;
-		Integer pid;
 		runDemo = true;
-		
-		log.info("ELM DEMO thread started");
+		demoHeadersEnabled = false;
+		DemoVehicleModel demo = new DemoVehicleModel(
+			DemoVehicleModel.Scenario.fromId(demoScenario), System.currentTimeMillis());
+
+		log.info("ELM DEMO thread started (scenario=" + demo.getScenario().id + ")");
 		while (runDemo)
 		{
 			try
 			{
 				handleTelegram(RSP_ID.MODEL.toString().toCharArray());
-				// test case for issue AndrOBD/#61
+				// Keep AndrOBD's compatibility probes so Demo exercises the same parser paths.
 				handleTelegram("+CONNECTING<<94:65:2D:9E:DF:B5".toCharArray());
-				
+
 				setStatus(STAT.ECU_DETECT);
 				handleTelegram("SEARCHING...".toCharArray());
 				handleTelegram("7EA074100000000".toCharArray());
@@ -1069,127 +1088,250 @@ public class ElmProt
 				handleTelegram("7E8064100000000".toCharArray());
 				handleTelegram("7E9074100000000".toCharArray());
 				handleTelegram("7EA074100000000".toCharArray());
-				// test case for issue AndrOBD/#60
 				handleTelegram("18DAF110064100BE3EB811".toCharArray());
-				// test case for issue AndrOBD-Plugin/#10 (NRC22 on detect)
 				handleTelegram("7E8037F0122".toCharArray());
 				setStatus(STAT.ECU_DETECTED);
-				
+
+				int lastDemoService = -1;
 				while (runDemo)
 				{
+					DemoVehicleModel.Scenario desired = DemoVehicleModel.Scenario.fromId(demoScenario);
+					if (demo.getScenario() != desired)
+					{
+						long now = System.currentTimeMillis();
+						demo.reset(desired, now);
+						if (service == OBD_SVC_DATA || service == OBD_SVC_FREEZEFRAME)
+						{
+							sendDemoSupportedPids(service);
+							sendDemoSnapshot(demo, service, now);
+						}
+						log.info("ELM DEMO scenario changed to " + desired.id);
+					}
+
+					// ELM header toggles are useful for ECU-discovery / Mode 09 test paths.
+					// AndrOBD ECU detection leaves a temporary support list behind.
+					// Reset it to the selected Demo service whenever the service changes.
+					boolean demoPidRegistryMissing = (service == OBD_SVC_DATA || service == OBD_SVC_FREEZEFRAME)
+							&& PidPvs.isEmpty();
+					if (service != lastDemoService || demoPidRegistryMissing)
+					{
+						lastDemoService = service;
+						if (service == OBD_SVC_DATA || service == OBD_SVC_FREEZEFRAME)
+						{
+							long now = System.currentTimeMillis();
+							sendDemoSupportedPids(service);
+							sendDemoSnapshot(demo, service, now);
+						}
+						else if (service == OBD_SVC_VEH_INFO)
+						{
+							sendDemoVehicleInfo(0);
+						}
+						Thread.sleep(20);
+						continue;
+					}
+
+					if (lastCommand != null)
+					{
+						String cmd = new String(lastCommand).trim().toUpperCase();
+						if ("ATH1".equals(cmd) || "ATH0".equals(cmd))
+						{
+							demoHeadersEnabled = "ATH1".equals(cmd);
+							handleTelegram("OK".toCharArray());
+							lastCommand = null;
+							Thread.sleep(50);
+							continue;
+						}
+					}
+
 					switch (service)
 					{
-						// read any kinds of trouble codes
 						case OBD_SVC_READ_CODES:
-						case OBD_SVC_PENDINGCODES:
-						case OBD_SVC_PERMACODES:
-							// simulate 12 TCs set as multy line response
-							// number of codes = 12 + MIL ON
-							handleTelegram("41018C000000".toCharArray());
-							// send codes as multy line response
-							handleTelegram("014".toCharArray());
-							handleTelegram("0:438920B920BD".toCharArray());
-							handleTelegram("1:C002242A246E02".toCharArray());
-							handleTelegram("2:36010101162453".toCharArray());
-
-							// simulate 12 TCs set as subsequent single line responses
-							// send codes as subsequent single line responses
-							handleTelegram("478420BA20BC".toCharArray());
-							handleTelegram("4784C004242B".toCharArray());
-
-							// test pattern from AndrOBD/#78
-							// 4 DFCs, 10 byte multiline response , padded
-							handleTelegram("00A".toCharArray());
-							handleTelegram("0:4A8401180122".toCharArray());
-							handleTelegram("1:02232610000000".toCharArray());
-
-							Thread.sleep(500);
+							sendDemoCodes(service, demo.storedCodes(System.currentTimeMillis()));
+							Thread.sleep(350);
 							break;
-						
-						// otherwise send data ...
+
+						case OBD_SVC_PENDINGCODES:
+							sendDemoCodes(service, demo.pendingCodes(System.currentTimeMillis()));
+							Thread.sleep(350);
+							break;
+
+						case OBD_SVC_PERMACODES:
+							sendDemoCodes(service, demo.permanentCodes(System.currentTimeMillis()));
+							Thread.sleep(350);
+							break;
+
+						case OBD_SVC_CLEAR_CODES:
+							demo.clearCodes(System.currentTimeMillis());
+							tCodes.clear();
+							handleTelegram("44".toCharArray());
+							Thread.sleep(350);
+							break;
+
 						case OBD_SVC_DATA:
 						case OBD_SVC_FREEZEFRAME:
-							pid = getNextSupportedPid();
+						{
+							Integer pid = getNextSupportedPid();
 							if (pid != 0)
 							{
-								value++;
-								value &= 0xFF;
-								// format new data message and handle it as new reception
-								handleTelegram(String.format(
-									service == OBD_SVC_DATA ? "4%X%02X%02X%02X%02X%02X"
-									                        : "4%X%02X00%02X%02X%02X%02X",
-									service, pid, value, value, value, value).toCharArray());
+								byte[] payload = demo.payloadForPid(pid,
+									service == OBD_SVC_FREEZEFRAME, System.currentTimeMillis());
+								if (payload != null)
+								{
+									String reply = String.format(service == OBD_SVC_DATA
+										? "41%02X%s" : "42%02X00%s", pid, bytesToHex(payload));
+									handleTelegram(reply.toCharArray());
+								}
 							}
 							else
 							{
-								// simulate "ALL PIDs supported"
-								int i;
-								for (i = 0; i < 0xE0; i += 0x20)
-								{
-									handleTelegram(String.format(
-										service == OBD_SVC_DATA ? "4%X%02XFFFFFFFF"
-										                        : "4%X%02X00FFFFFFFF", service, i)
-										               .toCharArray());
-								}
-								handleTelegram(String.format(
-									service == OBD_SVC_DATA ? "4%X%02XFFFFFFFE"
-									                        : "4%X%02X00FFFFFFFE", service, i)
-									               .toCharArray());
+								sendDemoSupportedPids(service);
 							}
 							break;
-						
+						}
+
 						case OBD_SVC_VEH_INFO:
-							pid = getNextSupportedPid();
-							if (pid == 0)
-							{
-								// simulate "ALL pids supported"
-								handleTelegram("490054000000".toCharArray());
-							}
-							
-							// send VIN "0123456789ABCDEFG"
-							handleTelegram("014".toCharArray());
-							handleTelegram("1:49020130313233".toCharArray());
-							handleTelegram("2:343536373839".toCharArray());
-							handleTelegram("3:41424344454647".toCharArray());
-							
-							// send 2 CAL-IDs "GSPA..." without length id
-							handleTelegram("0:490402475350".toCharArray());
-							handleTelegram("1:412D3132333435".toCharArray());
-							handleTelegram("2:363738393030".toCharArray());
-							handleTelegram("3:30313233".toCharArray());
-							handleTelegram("4:343536373839".toCharArray());
-							handleTelegram("5:414243444546".toCharArray());
-							
-							// CAL-ID 01234567
-							handleTelegram("490601234567".toCharArray());
+							sendDemoVehicleInfo(getNextSupportedPid());
 							break;
-						
+
 						case OBD_SVC_CTRL_MODE:
 							handleTelegram("4800C0000000".toCharArray());
 							break;
 
 						case OBD_SVC_NONE:
-							// just keep quiet until soneone requests something
 							break;
-						
+
 						default:
-							// respond "service not supported"
 							handleTelegram(String.format("7F%02X11", service).toCharArray());
-							Thread.sleep(500);
+							Thread.sleep(350);
 							break;
-						
 					}
 					Thread.sleep(50);
 				}
 			}
 			catch (Exception ex)
 			{
-				log.severe(ex.getLocalizedMessage());
+				log.severe(ex.getLocalizedMessage() == null ? ex.toString() : ex.getLocalizedMessage());
 			}
 		}
 		log.info("ELM DEMO thread finished");
 	}
-	
+
+	private void sendDemoSnapshot(DemoVehicleModel demo, int obdService, long nowMs)
+	{
+		boolean frozen = obdService == OBD_SVC_FREEZEFRAME;
+		for (int pid : DemoVehicleModel.SUPPORTED_PIDS)
+		{
+			byte[] payload = demo.payloadForPid(pid, frozen, nowMs);
+			if (payload == null) continue;
+			String reply = String.format(frozen ? "42%02X00%s" : "41%02X%s",
+				pid, bytesToHex(payload));
+			handleTelegram(reply.toCharArray());
+		}
+	}
+
+	private void sendDemoSupportedPids(int obdService)
+	{
+		for (int start = 0; start <= 0xE0; start += 0x20)
+		{
+			long mask = DemoVehicleModel.supportedMask(start);
+			String reply = String.format(obdService == OBD_SVC_DATA
+				? "41%02X%08X" : "42%02X00%08X", start, mask);
+			handleTelegram(reply.toCharArray());
+			if ((mask & 1L) == 0L) break;
+		}
+	}
+
+	private void sendDemoCodes(int obdService, List<String> codes)
+	{
+		StringBuilder reply = new StringBuilder(String.format("%02X%02X", obdService + 0x40,
+			Math.min(0xFF, codes == null ? 0 : codes.size())));
+		if (codes != null)
+		{
+			for (String code : codes) reply.append(bytesToHex(DemoVehicleModel.encodeDtc(code)));
+		}
+		handleTelegram(reply.toString().toCharArray());
+	}
+
+	private void sendDemoVehicleInfo(Integer pid) throws InterruptedException
+	{
+		if (pid == null) pid = 0;
+		switch (pid)
+		{
+			case 0:
+				// PIDs 02 (VIN), 04 (calibration ID), 06 (CVN), 0A (ECU name).
+				if (demoHeadersEnabled)
+				{
+					handleTelegram("7E806490054400000".toCharArray());
+					handleTelegram("7E906490054400000".toCharArray());
+				}
+				else handleTelegram("490054400000".toCharArray());
+				break;
+
+			case 0x02:
+				// Synthetic Volkswagen-format VIN. L0T0T identifies this as Demo data.
+				sendDemoVin("WVWZZZAUZHL0T0T01");
+				break;
+
+			case 0x04:
+				// 16-byte synthetic calibration ID.
+				handleTelegram(("490401" + asciiHex("LOTOTI-DEMO-1500")).toCharArray());
+				break;
+
+			case 0x06:
+				if (demoHeadersEnabled)
+				{
+					handleTelegram("7E80649060110A7D301".toCharArray());
+					handleTelegram("7E90649060120B8E402".toCharArray());
+				}
+				else handleTelegram("49060110A7D301".toCharArray());
+				break;
+
+			case 0x0A:
+				if (demoHeadersEnabled)
+				{
+					handleTelegram(("7E81016490A01" + asciiHex("ECM-LOTOTI-DEMO")).toCharArray());
+					Thread.sleep(5);
+					handleTelegram(("7E91016490A01" + asciiHex("TCM-LOTOTI-DEMO")).toCharArray());
+				}
+				else handleTelegram(("490A01" + asciiHex("ECM-LOTOTI-DEMO")).toCharArray());
+				break;
+
+			default:
+				break;
+		}
+	}
+
+	private void sendDemoVin(String vin)
+	{
+		String normalized = vin == null ? "WVWZZZAUZHL0T0T01" : vin;
+		while (normalized.length() < 17) normalized += "0";
+		if (normalized.length() > 17) normalized = normalized.substring(0, 17);
+		handleTelegram("014".toCharArray());
+		handleTelegram(("1:490201" + asciiHex(normalized.substring(0, 4))).toCharArray());
+		handleTelegram(("2:" + asciiHex(normalized.substring(4, 10))).toCharArray());
+		handleTelegram(("3:" + asciiHex(normalized.substring(10, 17))).toCharArray());
+	}
+
+	private static String bytesToHex(byte[] bytes)
+	{
+		StringBuilder result = new StringBuilder();
+		if (bytes != null)
+		{
+			for (byte value : bytes) result.append(String.format("%02X", value & 0xFF));
+		}
+		return result.toString();
+	}
+
+	private static String asciiHex(String value)
+	{
+		StringBuilder result = new StringBuilder();
+		if (value != null)
+		{
+			for (int i = 0; i < value.length(); i++) result.append(String.format("%02X", (int)value.charAt(i) & 0xFF));
+		}
+		return result.toString();
+	}
+
 	/**
 	 * set custom initialisation commands
 	 *

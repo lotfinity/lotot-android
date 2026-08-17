@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
-import { getLanguage, setLanguage, t } from './i18n.js';
+import { getLanguage, setLanguage, t, LANGUAGE_REGISTRY } from './i18n.js';
+import Icon from './icons/Icon.jsx';
+import IconShowcase from './icons/IconShowcase.jsx';
+import { renderBidiText } from './i18n/BidiText.jsx';
+import { DEFAULT_ICON_FAMILY, IconFamilyProvider, normalizeIconFamily } from './icons/IconFamilyContext.jsx';
 
 const EMPTY_READINGS = {
   vehicle_speed: null,
@@ -35,12 +39,23 @@ const EMPTY_BUILTINS = {
 };
 
 const PRIMARY_NAV = [
-  { id: 'overview', labelKey: 'nav.overview', icon: 'home' },
-  { id: 'live', labelKey: 'nav.live', icon: 'activity' },
-  { id: 'ai', labelKey: 'nav.ai', icon: 'bot', center: true },
-  { id: 'health', labelKey: 'nav.health', icon: 'shield' },
-  { id: 'more', labelKey: 'nav.more', icon: 'grid' },
+  { id: 'overview', labelKey: 'nav.overview', icon: 'nav_overview' },
+  { id: 'live', labelKey: 'nav.live', icon: 'nav_live' },
+  { id: 'ai', labelKey: 'nav.ai', icon: 'nav_ai', center: true },
+  { id: 'health', labelKey: 'nav.health', icon: 'nav_health' },
+  { id: 'more', labelKey: 'nav.more', icon: 'nav_more' },
 ];
+
+const DEMO_SCENARIOS = [
+  { id: 'healthy', labelKey: 'demo.healthy', detailKey: 'demo.healthy_detail', code: null, icon: 'scenario_healthy' },
+  { id: 'cold_start', labelKey: 'demo.cold_start', detailKey: 'demo.cold_start_detail', code: null, icon: 'scenario_cold_start' },
+  { id: 'misfire', labelKey: 'demo.misfire', detailKey: 'demo.misfire_detail', code: 'P0301', icon: 'scenario_misfire' },
+  { id: 'lean', labelKey: 'demo.lean', detailKey: 'demo.lean_detail', code: 'P0171', icon: 'scenario_lean' },
+  { id: 'catalyst', labelKey: 'demo.catalyst', detailKey: 'demo.catalyst_detail', code: 'P0420', icon: 'scenario_catalyst' },
+  { id: 'overheat', labelKey: 'demo.overheat', detailKey: 'demo.overheat_detail', code: 'P0217', icon: 'scenario_overheat' },
+  { id: 'weak_charging', labelKey: 'demo.weak_charging', detailKey: 'demo.weak_charging_detail', code: 'P0562', icon: 'scenario_weak_charging' },
+];
+const demoScenarioOption = (id) => DEMO_SCENARIOS.find((item) => item.id === id) || DEMO_SCENARIOS[0];
 
 const FONT_FAMILIES = [
   { id: 'system', labelKey: 'appearance.font_system', stack: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
@@ -48,10 +63,34 @@ const FONT_FAMILIES = [
   { id: 'compact', labelKey: 'appearance.font_compact', stack: '"sans-serif-condensed", sans-serif' },
   { id: 'technical', labelKey: 'appearance.font_technical', stack: 'ui-monospace, "Roboto Mono", monospace' },
 ];
+const ICON_FAMILIES = [
+  { id: 'tech-line', labelKey: 'appearance.icon_tech_line', detailKey: 'appearance.icon_tech_line_detail' },
+  { id: 'industrial-soft', labelKey: 'appearance.icon_industrial_soft', detailKey: 'appearance.icon_industrial_soft_detail', recommended: true },
+  { id: 'neo-ecu', labelKey: 'appearance.icon_neo_ecu', detailKey: 'appearance.icon_neo_ecu_detail' },
+];
+const iconFamilyOption = (id) => ICON_FAMILIES.find((item) => item.id === id) || ICON_FAMILIES[1];
+const LANGUAGE_OPTIONS = [
+  { id: 'system', labelKey: 'appearance.language_system', detailKey: 'appearance.language_system_detail', dir: 'auto' },
+  ...Object.values(LANGUAGE_REGISTRY).map((item) => ({ id: item.id, label: item.label, dir: item.dir })),
+];
+const normalizeLanguagePreference = (value) => {
+  const raw = String(value || '').trim();
+  return raw === 'system' || LANGUAGE_OPTIONS.some((item) => item.id === raw) ? raw : 'system';
+};
+const languageOption = (id) => LANGUAGE_OPTIONS.find((item) => item.id === id) || LANGUAGE_OPTIONS[0];
+
 const DEFAULT_FONT_FAMILY = 'system';
 const DEFAULT_FONT_SCALE = 115;
 const clampFontScale = (value) => Math.min(140, Math.max(90, Math.round(Number(value) / 5) * 5 || DEFAULT_FONT_SCALE));
 const fontFamilyOption = (id) => FONT_FAMILIES.find((item) => item.id === id) || FONT_FAMILIES[0];
+
+function readNativeLanguagePreference() {
+  try {
+    return normalizeLanguagePreference(window.LotoTNative?.getAppLanguagePreference?.() || localStorage.getItem('lotot-language-preference') || 'system');
+  } catch (_) {
+    return normalizeLanguagePreference(localStorage.getItem('lotot-language-preference') || 'system');
+  }
+}
 
 function readNativeAppearanceSettings() {
   try {
@@ -74,6 +113,15 @@ function readNativeOnboardingState() {
   return { complete: localStorage.getItem('lototi-onboarding-complete') === '1', current_version: 1 };
 }
 
+function readNativeDemoScenario() {
+  try {
+    const value = String(window.LotoTNative?.getDemoScenario?.() || '').trim();
+    return DEMO_SCENARIOS.some((item) => item.id === value) ? value : '';
+  } catch (_) {
+    return '';
+  }
+}
+
 function readNativeAiStatus() {
   try {
     const raw = window.LotoTNative?.getAiStatus?.();
@@ -87,18 +135,18 @@ function readNativeAiStatus() {
 const CATEGORIES = [
   { id: 'all', labelKey: 'category.all', icon: 'activity' },
   { id: 'favorites', labelKey: 'category.favorites', icon: 'star' },
-  { id: 'diagnostic', labelKey: 'category.diagnostic', icon: 'shield' },
-  { id: 'engine', labelKey: 'category.engine', icon: 'gauge' },
-  { id: 'driving', labelKey: 'category.driving', icon: 'car' },
-  { id: 'temperature', labelKey: 'category.temperature', icon: 'thermometer' },
-  { id: 'fuel', labelKey: 'category.fuel', icon: 'fuel' },
-  { id: 'air', labelKey: 'category.air', icon: 'wind' },
-  { id: 'pressure', labelKey: 'category.pressure', icon: 'droplet' },
-  { id: 'electrical', labelKey: 'category.electrical', icon: 'bolt' },
-  { id: 'emissions', labelKey: 'category.emissions', icon: 'leaf' },
+  { id: 'diagnostic', labelKey: 'category.diagnostic', icon: 'diagnostic_scan' },
+  { id: 'engine', labelKey: 'category.engine', icon: 'engine' },
+  { id: 'driving', labelKey: 'category.driving', icon: 'vehicle' },
+  { id: 'temperature', labelKey: 'category.temperature', icon: 'sensor_temperature' },
+  { id: 'fuel', labelKey: 'category.fuel', icon: 'sensor_fuel' },
+  { id: 'air', labelKey: 'category.air', icon: 'sensor_airflow' },
+  { id: 'pressure', labelKey: 'category.pressure', icon: 'sensor_pressure' },
+  { id: 'electrical', labelKey: 'category.electrical', icon: 'sensor_voltage' },
+  { id: 'emissions', labelKey: 'category.emissions', icon: 'scenario_catalyst' },
   { id: 'location', labelKey: 'category.location', icon: 'location' },
-  { id: 'motion', labelKey: 'category.motion', icon: 'phone' },
-  { id: 'other', labelKey: 'category.other', icon: 'grid' },
+  { id: 'motion', labelKey: 'category.motion', icon: 'sensor_motion' },
+  { id: 'other', labelKey: 'category.other', icon: 'nav_more' },
 ];
 
 const telemetryBridge = window.lototTelemetryBridge = window.lototTelemetryBridge || {
@@ -227,10 +275,10 @@ function renderInlineMarkdown(text, keyPrefix = 'inline') {
   const parts = source.split(tokenPattern).filter((part) => part !== '');
   return parts.map((part, index) => {
     const key = `${keyPrefix}-${index}`;
-    if (part.startsWith('**') && part.endsWith('**')) return <strong key={key}>{part.slice(2, -2)}</strong>;
-    if (part.startsWith('`') && part.endsWith('`')) return <code key={key}>{part.slice(1, -1)}</code>;
-    if (part.startsWith('*') && part.endsWith('*')) return <em key={key}>{part.slice(1, -1)}</em>;
-    return <React.Fragment key={key}>{part}</React.Fragment>;
+    if (part.startsWith('**') && part.endsWith('**')) return <strong key={key}>{renderBidiText(part.slice(2, -2), `${key}-strong`)}</strong>;
+    if (part.startsWith('`') && part.endsWith('`')) return <code key={key} dir="ltr">{part.slice(1, -1)}</code>;
+    if (part.startsWith('*') && part.endsWith('*')) return <em key={key}>{renderBidiText(part.slice(1, -1), `${key}-em`)}</em>;
+    return <React.Fragment key={key}>{renderBidiText(part, key)}</React.Fragment>;
   });
 }
 
@@ -405,46 +453,6 @@ function toneForFuel(value) {
   return 'normal';
 }
 
-function Icon({ name }) {
-  const paths = {
-    home: <><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></>,
-    car: <><path d="M4 13l1.5-4.5A2 2 0 0 1 7.4 7h9.2a2 2 0 0 1 1.9 1.5L20 13"/><path d="M5 13h14a2 2 0 0 1 2 2v3H3v-3a2 2 0 0 1 2-2Z"/><path d="M5 18v2M19 18v2M7 15h.01M17 15h.01"/></>,
-    bolt: <path d="m13 2-8 12h7l-1 8 8-12h-7l1-8Z" />,
-    gauge: <><path d="M4.9 19a9 9 0 1 1 14.2 0"/><path d="m12 13 3-3"/><path d="M12 19v.01"/></>,
-    wind: <><path d="M3 8h10a3 3 0 1 0-3-3"/><path d="M3 12h15a3 3 0 1 1-3 3"/><path d="M3 16h7"/></>,
-    tool: <><path d="M14.7 6.3a4 4 0 0 0-5-5l2.1 2.1-2.4 2.4-2.1-2.1a4 4 0 0 0 5 5L20 16.4 16.4 20l-7.7-7.7a4 4 0 0 0-5-5l2.1 2.1"/></>,
-    play: <path d="m8 5 11 7-11 7V5Z" />,
-    shield: <><path d="M12 3 4 6v5c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></>,
-    bluetooth: <path d="m7 7 10 10-5 5V2l5 5L7 17" />,
-    refresh: <><path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"/></>,
-    close: <><path d="M18 6 6 18"/><path d="m6 6 12 12"/></>,
-    link: <><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></>,
-    unlink: <><path d="m18.8 12.8.9-.9a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="m5.2 11.2-.9.9a5 5 0 0 0 7.1 7.1l1.1-1.1"/><path d="M2 2l20 20"/></>,
-    signal: <><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 20V4"/></>,
-    chevron: <path d="m9 18 6-6-6-6" />,
-    activity: <><path d="M3 12h4l2-7 4 14 2-7h6"/></>,
-    bot: <><rect x="5" y="7" width="14" height="11" rx="4"/><path d="M12 3v4M9 3h6"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M9 15h6M3 11v3M21 11v3"/></>,
-    star: <path d="m12 2.7 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.3l6.2-.9L12 2.7Z" />,
-    search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
-    thermometer: <><path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0Z"/><path d="M12 9v7"/></>,
-    fuel: <><path d="M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/><path d="M2 21h16M7 7h6M16 8h2l2 2v7a2 2 0 0 0 2 2"/></>,
-    droplet: <path d="M12 2s6 7 6 12a6 6 0 0 1-12 0c0-5 6-12 6-12Z" />,
-    leaf: <><path d="M11 20A7 7 0 0 1 9.8 6.1C14 3 20 4 21 4c0 1 .8 8-4.2 11.8A7 7 0 0 1 11 20Z"/><path d="M2 21c0-3 1.8-5.3 5-7"/></>,
-    grid: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
-    clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
-    sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></>,
-    moon: <path d="M21 12.8A8.5 8.5 0 1 1 11.2 3 6.8 6.8 0 0 0 21 12.8Z"/>,
-    location: <><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,
-    cloud: <><path d="M17.5 19H7a5 5 0 0 1-.6-10A7 7 0 0 1 20 11.5 3.8 3.8 0 0 1 17.5 19Z"/><path d="M9 14h6M12 11v6"/></>,
-    phone: <><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 18h4"/></>,
-    usb: <><path d="M12 2v14"/><path d="m9 5 3-3 3 3"/><path d="M12 10H7v5"/><circle cx="7" cy="17" r="2"/><path d="M12 13h5v3"/><rect x="15" y="16" width="4" height="4" rx=".5"/></>,
-    wifi: <><path d="M5 12.6a11 11 0 0 1 14 0"/><path d="M8.5 16a6 6 0 0 1 7 0"/><path d="M12 20h.01"/></>,
-    type: <><path d="M5 5V3h14v2"/><path d="M12 3v18"/><path d="M8 21h8"/></>,
-    sliders: <><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="18" r="2"/></>,
-  };
-  return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name] || paths.activity}</svg>;
-}
-
 function RingGauge({ label, value, unit, max, decimals = 0, icon }) {
   const available = isNumericReading(value);
   const progress = available ? clamp(value, 0, max) / max * 100 : 0;
@@ -452,7 +460,7 @@ function RingGauge({ label, value, unit, max, decimals = 0, icon }) {
     <article className={`metric-card ${available ? '' : 'is-unavailable'}`}>
       <div className="metric-head"><span>{label}</span><Icon name={icon}/></div>
       <div className="metric-ring" style={{ '--value': `${progress}%` }}>
-        <div><strong>{formatValue(value, decimals)}</strong><small>{unit}</small></div>
+        <div dir="ltr"><strong>{formatValue(value, decimals)}</strong><small>{unit}</small></div>
       </div>
     </article>
   );
@@ -462,7 +470,7 @@ function QuickMetric({ label, value, unit, icon }) {
   return (
     <article className={`quick-metric ${isNumericReading(value) ? '' : 'is-unavailable'}`}>
       <span><Icon name={icon}/></span>
-      <div><small>{label}</small><strong>{formatValue(value)} <em>{unit}</em></strong></div>
+      <div><small>{label}</small><strong dir="ltr">{formatValue(value)} <em>{unit}</em></strong></div>
     </article>
   );
 }
@@ -495,7 +503,7 @@ function TemperatureBand({ signal, historyValues }) {
       <div className="temperature-track" style={{ '--marker': `${position}%`, '--normal-start': `${normalStart}%`, '--normal-end': `${normalEnd}%`, '--warning-end': `${warningEnd}%` }}>
         <i className="normal-zone"/><b className="temperature-marker"/>
       </div>
-      <div className="temperature-labels"><span>{profile.min}°</span><span>{t('temperature.normal_mark', { value: profile.normalMax })}</span><span>{t('temperature.high_mark', { value: profile.warningMax })}</span><span>{profile.max}°</span></div>
+      <div className="temperature-labels" dir="ltr"><span>{profile.min}°</span><span>{t('temperature.normal_mark', { value: profile.normalMax })}</span><span>{t('temperature.high_mark', { value: profile.warningMax })}</span><span>{profile.max}°</span></div>
       <Sparkline values={historyValues} tone={tone === 'danger' ? 'danger' : tone === 'warning' ? 'warning' : 'temperature'}/>
     </div>
   );
@@ -506,7 +514,7 @@ function VoltageBand({ signal, historyValues }) {
   const min = 10; const max = 16;
   const position = value === null ? 0 : (clamp(value, min, max) - min) / (max - min) * 100;
   const tone = value === null ? 'unknown' : value < 11.8 || value > 15.2 ? 'danger' : value < 12.3 || value > 14.8 ? 'warning' : 'normal';
-  return <div className={`voltage-chart tone-${tone}`}><div className="voltage-track" style={{ '--marker': `${position}%` }}><b/></div><div className="voltage-labels"><span>10 V</span><span>12.3–14.8 V normal</span><span>16 V</span></div><Sparkline values={historyValues} tone={tone === 'danger' ? 'danger' : tone === 'warning' ? 'warning' : 'electrical'}/></div>;
+  return <div className={`voltage-chart tone-${tone}`}><div className="voltage-track" style={{ '--marker': `${position}%` }}><b/></div><div className="voltage-labels" dir="ltr"><span>10 V</span><span>12.3–14.8 V normal</span><span>16 V</span></div><Sparkline values={historyValues} tone={tone === 'danger' ? 'danger' : tone === 'warning' ? 'warning' : 'electrical'}/></div>;
 }
 
 function RangeChart({ signal, historyValues, category }) {
@@ -516,7 +524,7 @@ function RangeChart({ signal, historyValues, category }) {
   const min = percentLike ? (/trim/.test(signal.mnemonic || '') ? -100 : 0) : isNumericReading(signal.min) ? Number(signal.min) : Math.min(0, value || 0);
   const max = percentLike ? 100 : isNumericReading(signal.max) && Number(signal.max) > min ? Number(signal.max) : Math.max(1, value || 1);
   const progress = value === null ? 0 : (clamp(value, min, max) - min) / (max - min) * 100;
-  return <div className={`range-chart range-${category}`}><div className="range-track"><i style={{ width: `${progress}%` }}/><b style={{ left: `${progress}%` }}/></div><div className="range-labels"><span>{formatValue(min)}</span><span>{formatValue(max)} {unit}</span></div><Sparkline values={historyValues} tone={category}/></div>;
+  return <div className={`range-chart range-${category}`}><div className="range-track"><i style={{ width: `${progress}%` }}/><b style={{ left: `${progress}%` }}/></div><div className="range-labels" dir="ltr"><span>{formatValue(min)}</span><span>{formatValue(max)} {unit}</span></div><Sparkline values={historyValues} tone={category}/></div>;
 }
 
 function SignalVisualization({ signal, historyValues }) {
@@ -552,18 +560,18 @@ function SignalCard({ signal, favorite, onToggleFavorite, history, now }) {
         </button>
       </header>
       <div className="signal-value-row">
-        <div className="signal-value"><strong>{formatValue(signal.value)}</strong><span>{signal.unit || ''}</span></div>
+        <div className="signal-value" dir="ltr"><strong>{formatValue(signal.value)}</strong><span>{signal.unit || ''}</span></div>
         <span className={`trend trend-${trend}`}>{trend === 'up' ? '↑' : trend === 'down' ? '↓' : '—'}</span>
       </div>
       {assessment && <div className={`signal-assessment ${assessment.level}`}>{assessment.message}</div>}
       <SignalVisualization signal={signal} historyValues={historyValues}/>
-      <footer><code>{sourceLabel}</code><span><Icon name="clock"/>{ageLabel(signal.updated_at, now)}</span></footer>
+      <footer><code dir="ltr">{sourceLabel}</code><span><Icon name="clock"/><bdi dir="ltr">{ageLabel(signal.updated_at, now)}</bdi></span></footer>
     </article>
   );
 }
 
 function OverviewMetric({ label, value, unit, icon, tone = 'neutral', detail }) {
-  return <article className={`overview-metric tone-${tone}`}><span><Icon name={icon}/></span><div><small>{label}</small><strong>{formatValue(value)} <em>{unit}</em></strong>{detail && <p>{detail}</p>}</div></article>;
+  return <article className={`overview-metric tone-${tone}`}><span><Icon name={icon}/></span><div><small>{label}</small><strong dir="ltr">{formatValue(value)} <em>{unit}</em></strong>{detail && <p>{detail}</p>}</div></article>;
 }
 
 function PageHeader({ kicker, title, detail }) {
@@ -606,7 +614,7 @@ function DriveOverview({ readings, valueOf, historyOf }) {
   const rpmProgress = isNumericReading(rpm) ? clamp(rpm, 0, 7000) / 7000 * 100 : 0;
   return (
     <section className="drive-overview">
-      <header><div><span>{t('drive.title')}</span><strong>{t('drive.live')}</strong></div><Icon name="gauge"/></header>
+      <header><div><span>{t('drive.title')}</span><strong>{t('drive.live')}</strong></div><Icon name="speed"/></header>
       <div className="drive-main-values">
         <div className="speed-value"><strong>{formatValue(speed, 0)}</strong><span>km/h</span></div>
         <div className="rpm-value"><small>{t('drive.rpm')}</small><strong>{formatValue(rpm, 0)}</strong><span>rpm</span></div>
@@ -627,9 +635,10 @@ function HealthOverview({ alerts, signals, lastCapturedAt, now }) {
   const tone = dangerCount ? 'danger' : warningCount ? 'warning' : signals.length ? 'normal' : 'unknown';
   const primary = alerts.find((item) => item.level === 'danger') || alerts[0];
   const title = dangerCount ? t('health.action') : warningCount ? t('health.watch') : signals.length ? t('health.stable') : t('health.waiting');
+  const healthIcon = tone === 'danger' ? 'health_critical' : tone === 'warning' ? 'health_warning' : 'health_stable';
   return (
     <section className={`health-overview tone-${tone}`}>
-      <header><span><Icon name="shield"/></span><i/></header>
+      <header><span><Icon name={healthIcon}/></span><i/></header>
       <strong>{title}</strong>
       <p>{primary?.message || (signals.length ? t('health.signals', { count: signals.length }) : t('health.connect'))}</p>
       <div className="health-counts"><span><b>{dangerCount}</b><small>{t('health.critical')}</small></span><span><b>{warningCount}</b><small>{t('health.follow')}</small></span></div>
@@ -845,11 +854,11 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
         <section className="service-config-block mqtt-config-block">
           <div className="service-config-title"><span><Icon name="cloud"/></span><div><strong>{t('service.gateway_title')}</strong><small>{t('service.gateway_detail')}</small></div></div>
           <div className={`gateway-runtime ${services.mqtt?.status || 'disabled'}`}>
-            <span><Icon name="shield"/></span>
+            <span><Icon name="nav_health"/></span>
             <div><small>{t('service.background_gateway')}</small><strong>{services.foreground ? t('service.running') : t('service.starting')}</strong><em>{gatewayDetail}</em></div>
             <b>{services.mqtt?.status === 'syncing' ? `${Math.max(0, (services.mqtt.syncing_total || 0) - (services.mqtt.syncing_remaining || 0))}/${services.mqtt.syncing_total || 0}` : queued}</b>
           </div>
-          <p className="gateway-security"><Icon name="shield"/><span>{t('service.security', { count: services.mqtt?.queue_capacity || 10000 })}</span></p>
+          <p className="gateway-security"><Icon name="health_stable"/><span>{t('service.security', { count: services.mqtt?.queue_capacity || 10000 })}</span></p>
           <SwitchRow checked={Boolean(mqtt.enabled)} onChange={(value) => updateMqtt('enabled', value)} title={t('service.enable_mqtt')} description={t('service.enable_mqtt_detail')}/>
           <div className="mqtt-form">
             <label><span>{t('service.protocol')}</span><select value={mqtt.protocol} onChange={(event) => updateMqtt('protocol', event.target.value)}><option value="tcp://">TCP</option><option value="ssl://">SSL/TLS</option><option value="ws://">WebSocket</option><option value="wss://">Secure WebSocket</option></select></label>
@@ -871,7 +880,7 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
             {signals.map((signal) => {
               const mnemonic = signal.mnemonic || signalKey(signal);
               const active = !selected.length || selected.includes(mnemonic);
-              return <button type="button" key={signalKey(signal)} className={active ? 'is-selected' : ''} onClick={() => toggleSignal(mnemonic)}><i/><span>{signalLabel(signal)}</span><code>{mnemonic}</code></button>;
+              return <button type="button" key={signalKey(signal)} className={active ? 'is-selected' : ''} onClick={() => toggleSignal(mnemonic)}><i/><span>{signalLabel(signal)}</span><code dir="ltr">{mnemonic}</code></button>;
             })}
             {!signals.length && <p>{t('service.signals_later')}</p>}
           </div>
@@ -886,7 +895,7 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
 }
 
 
-function AppearanceSheet({ open, onClose, theme, onThemeChange, fontFamily, onFontFamilyChange, fontScale, onFontScaleChange }) {
+function AppearanceSheet({ open, onClose, theme, onThemeChange, languagePreference, onLanguageChange, fontFamily, onFontFamilyChange, fontScale, onFontScaleChange, iconFamily, onIconFamilyChange }) {
   useEffect(() => {
     if (!open) return undefined;
     document.body.classList.add('sheet-open');
@@ -911,7 +920,22 @@ function AppearanceSheet({ open, onClose, theme, onThemeChange, fontFamily, onFo
           <strong>{t('appearance.preview_title')}</strong>
           <p>{t('appearance.preview_body')}</p>
           <div><b>92</b><small>km/h</small><em>{fontScale}%</em></div>
+          <div className="appearance-icon-preview" aria-hidden="true">
+            <i><Icon name="nav_overview" family={iconFamily}/></i><i><Icon name="nav_live" family={iconFamily}/></i><i className="is-ai"><Icon name="nav_ai" family={iconFamily}/></i><i><Icon name="sensor_voltage" family={iconFamily}/></i><i><Icon name="health_stable" family={iconFamily}/></i>
+          </div>
         </div>
+
+        <section className="appearance-setting-block language-setting-block">
+          <div className="appearance-setting-title"><span><Icon name="type"/></span><div><strong>{t('appearance.language')}</strong><small>{t('appearance.language_detail')}</small></div></div>
+          <div className="appearance-choice-grid language-choice-grid">
+            {LANGUAGE_OPTIONS.map((item) => (
+              <button type="button" key={item.id} className={languagePreference === item.id ? 'is-selected' : ''} onClick={() => onLanguageChange(item.id)}>
+                <strong dir={item.dir || 'auto'}>{item.labelKey ? t(item.labelKey) : item.label}</strong>
+                <small dir="ltr">{item.id === 'system' ? t(item.detailKey) : item.id}</small>
+              </button>
+            ))}
+          </div>
+        </section>
 
         <section className="appearance-setting-block">
           <div className="appearance-setting-title"><span><Icon name={theme === 'dark' ? 'moon' : 'sun'}/></span><div><strong>{t('appearance.theme')}</strong><small>{t('appearance.theme_detail')}</small></div></div>
@@ -932,6 +956,19 @@ function AppearanceSheet({ open, onClose, theme, onThemeChange, fontFamily, onFo
           </div>
         </section>
 
+        <section className="appearance-setting-block icon-family-block">
+          <div className="appearance-setting-title"><span><Icon name="nav_more"/></span><div><strong>{t('appearance.icon_family')}</strong><small>{t('appearance.icon_family_detail')}</small></div></div>
+          <div className="appearance-choice-grid icon-family-choice-grid">
+            {ICON_FAMILIES.map((item) => (
+              <button type="button" key={item.id} className={`icon-family-choice ${iconFamily === item.id ? 'is-selected' : ''}`} onClick={() => onIconFamilyChange(item.id)}>
+                <span className="icon-family-samples" aria-hidden="true"><i><Icon name="nav_overview" family={item.id}/></i><i><Icon name="nav_ai" family={item.id}/></i><i><Icon name="sensor_pressure" family={item.id}/></i><i><Icon name="health_stable" family={item.id}/></i></span>
+                <span className="icon-family-copy"><strong>{t(item.labelKey)}</strong><small>{t(item.detailKey)}</small></span>
+                {item.recommended && <em>{t('appearance.icon_recommended')}</em>}
+              </button>
+            ))}
+          </div>
+        </section>
+
         <section className="appearance-setting-block text-scale-block">
           <div className="appearance-setting-title"><span><Icon name="sliders"/></span><div><strong>{t('appearance.text_size')}</strong><small>{t('appearance.text_size_detail')}</small></div><output>{fontScale}%</output></div>
           <div className="font-scale-control">
@@ -943,7 +980,7 @@ function AppearanceSheet({ open, onClose, theme, onThemeChange, fontFamily, onFo
         </section>
 
         <div className="appearance-actions">
-          <button type="button" className="secondary" onClick={() => { onFontFamilyChange(DEFAULT_FONT_FAMILY); onFontScaleChange(DEFAULT_FONT_SCALE); }}>{t('appearance.reset')}</button>
+          <button type="button" className="secondary" onClick={() => { onFontFamilyChange(DEFAULT_FONT_FAMILY); onFontScaleChange(DEFAULT_FONT_SCALE); onIconFamilyChange(DEFAULT_ICON_FAMILY); }}>{t('appearance.reset')}</button>
           <button type="button" className="primary" onClick={onClose}>{t('generic.done')}</button>
         </div>
       </section>
@@ -1036,9 +1073,9 @@ function OnboardingFlow({ services, bluetooth, status, signals, initialPermissio
           <h1>{t('onboarding.welcome_title')}</h1>
           <p>{t('onboarding.welcome_body')}</p>
           <div className="onboarding-promise-grid">
-            <article><span><Icon name="shield"/></span><strong>{t('onboarding.promise_control')}</strong><small>{t('onboarding.promise_control_detail')}</small></article>
-            <article><span><Icon name="car"/></span><strong>{t('onboarding.promise_vehicle')}</strong><small>{t('onboarding.promise_vehicle_detail')}</small></article>
-            <article><span><Icon name="activity"/></span><strong>{t('onboarding.promise_demo')}</strong><small>{t('onboarding.promise_demo_detail')}</small></article>
+            <article><span><Icon name="health_stable"/></span><strong>{t('onboarding.promise_control')}</strong><small>{t('onboarding.promise_control_detail')}</small></article>
+            <article><span><Icon name="vehicle"/></span><strong>{t('onboarding.promise_vehicle')}</strong><small>{t('onboarding.promise_vehicle_detail')}</small></article>
+            <article><span><Icon name="nav_live"/></span><strong>{t('onboarding.promise_demo')}</strong><small>{t('onboarding.promise_demo_detail')}</small></article>
           </div>
           <button className="onboarding-primary" type="button" onClick={() => setStep('features')}>{t('onboarding.start')}<Icon name="chevron"/></button>
           <small className="onboarding-legal">{t('onboarding.change_later')}</small>
@@ -1049,7 +1086,7 @@ function OnboardingFlow({ services, bluetooth, status, signals, initialPermissio
         <section className="onboarding-stage">
           <div className="onboarding-heading"><span>{t('onboarding.features_kicker')}</span><h1>{t('onboarding.features_title')}</h1><p>{t('onboarding.features_body')}</p></div>
           <div className="capability-list">
-            <article className="capability-card is-core"><span className="capability-icon"><Icon name="car"/></span><div><strong>{t('onboarding.core_title')}</strong><small>{t('onboarding.core_detail')}</small></div><b>{t('onboarding.required')}</b></article>
+            <article className="capability-card is-core"><span className="capability-icon"><Icon name="vehicle"/></span><div><strong>{t('onboarding.core_title')}</strong><small>{t('onboarding.core_detail')}</small></div><b>{t('onboarding.required')}</b></article>
             <CapabilityChoice icon="location" checked={gpsEnabled} onChange={(v) => { setGpsEnabled(v); if (!v) setMqttShareGps(false); }} title={t('onboarding.gps_title')} detail={t('onboarding.gps_detail')}/>
             <CapabilityChoice icon="phone" checked={sensorsEnabled} onChange={(v) => { setSensorsEnabled(v); if (!v) setMqttShareSensors(false); }} title={t('onboarding.sensors_title')} detail={t('onboarding.sensors_detail')}/>
             <CapabilityChoice icon="cloud" checked={mqttEnabled} onChange={setMqttEnabled} title={t('onboarding.mqtt_title')} detail={t('onboarding.mqtt_detail')}/>
@@ -1093,7 +1130,7 @@ function OnboardingFlow({ services, bluetooth, status, signals, initialPermissio
 
       {step === 'verify' && (
         <section className="onboarding-stage onboarding-verify">
-          <div className={`verification-emblem ${verified ? 'is-ready' : ''}`}><Icon name={verified ? 'shield' : 'activity'}/><i/></div>
+          <div className={`verification-emblem ${verified ? 'is-ready' : ''}`}><Icon name={verified ? 'health_stable' : 'activity'}/><i/></div>
           <span className="onboarding-kicker">{t('onboarding.verify_kicker')}</span>
           <h1>{verified ? t('onboarding.ready_title') : t('onboarding.verify_title')}</h1>
           <p>{verified ? t('onboarding.ready_body') : t('onboarding.verify_body')}</p>
@@ -1131,9 +1168,11 @@ function App() {
   const [onboardingOpen, setOnboardingOpen] = useState(!initialOnboarding.complete);
   const [onboardingRequired, setOnboardingRequired] = useState(!initialOnboarding.complete);
   const [language, setLanguageState] = useState(getLanguage());
+  const [languagePreference, setLanguagePreferenceState] = useState(readNativeLanguagePreference);
   setLanguage(language);
   const [readings, setReadings] = useState({ ...EMPTY_READINGS, ...(retainedPayload.readings || {}) });
   const [signals, setSignals] = useState(Array.isArray(retainedPayload.signals) ? retainedPayload.signals : []);
+  const [diagnostics, setDiagnostics] = useState(retainedPayload.diagnostics || { scan_status: 'idle', scanned_at: 0, dtcs: [], mil: null, reported_dtc_count: null });
   const [history, setHistory] = useState({});
   const [status, setStatus] = useState(telemetryBridge.status || 'offline');
   const [bluetooth, setBluetooth] = useState({ ...EMPTY_BLUETOOTH, ...(bluetoothBridge.lastState || {}) });
@@ -1147,7 +1186,14 @@ function App() {
     return FONT_FAMILIES.some((item) => item.id === saved) ? saved : DEFAULT_FONT_FAMILY;
   });
   const [fontScale, setFontScale] = useState(() => clampFontScale(initialAppearance.font_scale || localStorage.getItem('lotot-font-scale') || DEFAULT_FONT_SCALE));
+  const [iconFamily, setIconFamily] = useState(() => normalizeIconFamily(initialAppearance.icon_family || localStorage.getItem('lotot-icon-family') || DEFAULT_ICON_FAMILY));
   const [medium, setMediumState] = useState(bluetooth.medium || 'classic');
+  const [demoScenario, setDemoScenarioState] = useState(() => {
+    const nativeScenario = readNativeDemoScenario();
+    const saved = localStorage.getItem('lototi-demo-scenario');
+    if (nativeScenario) return nativeScenario;
+    return DEMO_SCENARIOS.some((item) => item.id === saved) ? saved : 'healthy';
+  });
   const [query, setQuery] = useState('');
   const [aiQuestion, setAiQuestion] = useState('');
   const [aiState, setAiState] = useState(() => ({ ...aiBridge.lastState, ...readNativeAiStatus() }));
@@ -1193,22 +1239,43 @@ function App() {
     document.documentElement.style.setProperty('--app-font-family', selected.stack);
     document.documentElement.style.webkitTextSizeAdjust = `${fontScale}%`;
     document.documentElement.style.textSizeAdjust = `${fontScale}%`;
+    document.documentElement.dataset.iconFamily = iconFamily;
     localStorage.setItem('lotot-font-family', selected.id);
     localStorage.setItem('lotot-font-scale', String(fontScale));
+    localStorage.setItem('lotot-icon-family', iconFamily);
     try {
       window.LotoTNative?.setAppearanceSettings?.(JSON.stringify({
         theme,
         font_family: selected.id,
         font_scale: fontScale,
+        icon_family: iconFamily,
       }));
     } catch (_) {
       // Older debug APKs simply keep using localStorage until the native bridge is updated.
     }
-  }, [theme, fontFamily, fontScale]);
+  }, [theme, fontFamily, fontScale, iconFamily]);
+
+  const changeLanguagePreference = (value) => {
+    const preference = normalizeLanguagePreference(value);
+    localStorage.setItem('lotot-language-preference', preference);
+    let resolved = preference === 'system' ? (navigator.language || 'en') : preference;
+    try {
+      resolved = window.LotoTNative?.setAppLanguage?.(preference) || resolved;
+    } catch (_) {
+      // Browser preview or an older APK: use the requested locale locally.
+    }
+    setLanguagePreferenceState(preference);
+    setLanguageState(setLanguage(resolved));
+  };
 
   useEffect(() => {
     document.documentElement.lang = language;
   }, [language]);
+
+  useEffect(() => {
+    localStorage.setItem('lototi-demo-scenario', demoScenario);
+    window.LotoTNative?.setDemoScenario?.(demoScenario);
+  }, [demoScenario]);
 
   useEffect(() => {
     setAiMessages((current) => {
@@ -1236,6 +1303,7 @@ function App() {
     const onTelemetry = (event) => {
       const payload = event.detail || {};
       if (payload.readings) setReadings((current) => ({ ...current, ...payload.readings }));
+      if (payload.diagnostics) setDiagnostics(payload.diagnostics);
       if (Array.isArray(payload.signals)) {
         const validSignals = payload.signals.filter((signal) => signal && signal.value !== null && signal.value !== undefined);
         setSignals(validSignals);
@@ -1251,6 +1319,7 @@ function App() {
         });
       }
       if (payload.mode) setStatus(payload.mode);
+      if (payload.demo_scenario && DEMO_SCENARIOS.some((item) => item.id === payload.demo_scenario)) setDemoScenarioState(payload.demo_scenario);
       if (payload.captured_at) setLastCapturedAt(Number(payload.captured_at));
       setPacketCount((count) => count + 1);
     };
@@ -1266,7 +1335,7 @@ function App() {
       if (event.detail?.medium) setMediumState(event.detail.medium);
     };
     const onBuiltins = (event) => setServices(event.detail || EMPTY_BUILTINS);
-    const onLanguage = (event) => setLanguageState(setLanguage(event.detail?.language || 'en'));
+    const onLanguage = (event) => { setLanguageState(setLanguage(event.detail?.language || 'en')); const pref = window.LotoTNative?.getAppLanguagePreference?.(); if (pref) setLanguagePreferenceState(normalizeLanguagePreference(pref)); };
     const onAi = (eventOrState) => {
       const next = eventOrState?.detail || eventOrState || {};
       setAiState((current) => ({ ...current, ...next }));
@@ -1302,6 +1371,8 @@ function App() {
     setNativeAvailable(Boolean(window.LotoTNative));
     const nativeLanguage = window.LotoTNative?.getAppLanguage?.();
     if (nativeLanguage) setLanguageState(setLanguage(nativeLanguage));
+    const nativeLanguagePreference = window.LotoTNative?.getAppLanguagePreference?.();
+    if (nativeLanguagePreference) setLanguagePreferenceState(normalizeLanguagePreference(nativeLanguagePreference));
     window.LotoTNative?.ready?.();
     return () => {
       window.removeEventListener('lotot:telemetry', onTelemetry);
@@ -1356,6 +1427,8 @@ function App() {
     return (rank[b.level] || 0) - (rank[a.level] || 0);
   }), [signals, language]);
 
+  const healthIcon = liveAlerts.some((item) => item.level === 'danger') ? 'health_critical' : liveAlerts.length ? 'health_warning' : 'health_stable';
+
   const alertSignals = useMemo(() => liveAlerts.map((item) => item.signal).filter(Boolean), [liveAlerts]);
 
   const categoryCounts = useMemo(() => signals.reduce((counts, signal) => {
@@ -1395,6 +1468,12 @@ function App() {
         ? t('status.instant')
         : t('status.delay', { seconds: Math.floor(lastAge / 1000) });
 
+  const diagnosticDtcs = Array.isArray(diagnostics?.dtcs) ? diagnostics.dtcs : [];
+  const diagnosticMil = diagnostics?.mil === null || diagnostics?.mil === undefined ? null : Number(diagnostics.mil) > 0;
+  const diagnosticReportedCount = diagnostics?.reported_dtc_count === null || diagnostics?.reported_dtc_count === undefined
+    ? null : Number(diagnostics.reported_dtc_count);
+  const faultScanBusy = diagnostics?.scan_status === 'scanning';
+
   const diagnosticCopy = signals.length
     ? { title: t('diagnostic.live_sensors', { count: signals.length }), body: t('diagnostic.last_packet', { age: ageLabel(lastCapturedAt, now), count: packetCount }) }
     : connected
@@ -1423,6 +1502,7 @@ function App() {
         const age = signal.updated_at ? Math.max(0, Math.round((Date.now() - Number(signal.updated_at)) / 1000)) : null;
         return `[${source}] ${signal.mnemonic || signal.label} | ${label} = ${signal.value}${signal.unit ? ` ${signal.unit}` : ''}${age !== null ? ` | age=${age}s` : ''}`;
       });
+    const scannedDtcLines = diagnosticDtcs.map((dtc) => `[${dtc.status || 'scanned'}] ${dtc.code}${dtc.description ? ` — ${dtc.description}` : ''}`);
     const recentConversation = aiMessages
       .filter((message) => ['user', 'assistant'].includes(message.role))
       .slice(-6)
@@ -1435,7 +1515,10 @@ function App() {
       `Data source counts: OBD=${obdSignals.length}, phone_motion=${motionSignals.length}, GPS=${gpsSignals.length}`,
       !ecuDataAvailable ? 'Evidence boundary: There is no live ECU/OBD evidence in this request. Do not infer engine, transmission, emissions, suspension, or DTC health from auxiliary phone sensors.' : null,
       connected ? `Adapter: ${connected.name || connected.address || 'connected'}` : 'Adapter: none',
-      'DTC evidence: no explicit DTC scan result is included unless listed below or grounded from a code named by the user. Missing DTC records do NOT mean zero DTCs.',
+      `ECU MIL status: ${diagnosticMil === null ? 'unknown' : diagnosticMil ? 'ON' : 'OFF'}`,
+      `ECU-reported DTC count: ${diagnosticReportedCount === null ? 'unknown' : diagnosticReportedCount}`,
+      `DTC scan state: ${diagnostics?.scan_status || 'idle'}${diagnostics?.scanned_at ? ` at ${new Date(Number(diagnostics.scanned_at)).toISOString()}` : ''}`,
+      scannedDtcLines.length ? `SCAN-CONFIRMED DTC EVIDENCE:\n- ${scannedDtcLines.join('\n- ')}` : 'DTC evidence: no explicit code list has been scanned in this session. Missing scan results do NOT mean zero DTCs.',
       liveAlerts.length ? `UI-derived alerts (not scan-confirmed): ${liveAlerts.map((alert) => alert.message).slice(0, 10).join(' | ')}` : 'UI-derived alerts: none',
       interestingSignals.length ? `Current signals:\n- ${interestingSignals.join('\n- ')}` : 'Current signals: unavailable',
       recentConversation ? `Recent conversation:\n${recentConversation}` : null,
@@ -1446,6 +1529,17 @@ function App() {
     setAiStreamingText('');
     setAiState((current) => ({ ...current, status: 'thinking', provider: null, error: null, text: null }));
     window.LotoTNative?.askAi?.(JSON.stringify({ question, context, language }));
+  };
+
+  const selectDemoScenario = (scenarioId) => {
+    if (!DEMO_SCENARIOS.some((item) => item.id === scenarioId)) return;
+    setDemoScenarioState(scenarioId);
+    window.LotoTNative?.setDemoScenario?.(scenarioId);
+  };
+
+  const startSelectedDemo = () => {
+    window.LotoTNative?.setDemoScenario?.(demoScenario);
+    window.LotoTNative?.startDemo?.();
   };
 
   const openConnection = () => {
@@ -1496,10 +1590,11 @@ function App() {
   const aiModelLabel = aiState.model || aiState.primary_model || t('ai.model_auto');
 
   if (onboardingOpen || !onboardingComplete) {
-    return <OnboardingFlow services={services} bluetooth={bluetooth} status={status} signals={signals} initialPermissionState={initialOnboarding} canClose={!onboardingRequired && onboardingComplete} onClose={() => setOnboardingOpen(false)} onComplete={finishOnboarding}/>;
+    return <IconFamilyProvider family={iconFamily}><OnboardingFlow services={services} bluetooth={bluetooth} status={status} signals={signals} initialPermissionState={initialOnboarding} canClose={!onboardingRequired && onboardingComplete} onClose={() => setOnboardingOpen(false)} onComplete={finishOnboarding}/></IconFamilyProvider>;
   }
 
   return (
+    <IconFamilyProvider family={iconFamily}>
     <main className="app-shell">
       <header className="topbar">
         <div className="brand" aria-label="LoToTi">
@@ -1518,7 +1613,7 @@ function App() {
           <section className="app-page app-page-overview">
             <section className={`connection-summary ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`}>
               <button type="button" onClick={connectionAction} disabled={!nativeAvailable}>
-                <span className="connection-icon"><Icon name={state.lost ? 'unlink' : connected ? 'link' : 'bluetooth'}/></span>
+                <span className="connection-icon"><Icon name={state.live || connected ? 'obd_connected' : 'obd_disconnected'}/></span>
                 <span className="connection-copy"><small>{state.label}</small><strong>{connected?.name || (state.lost ? lastDevice?.name || t('connection.lost') : t('connection.connect_adapter'))}</strong></span>
                 <span className="connection-meta"><em>{t('connection.live_signals', { count: signals.length })}</em><small>{fluxLabel}</small></span>
                 <Icon name="chevron"/>
@@ -1531,16 +1626,16 @@ function App() {
             </section>
 
             <section className="critical-overview">
-              <OverviewMetric label={t('overview.coolant')} value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="thermometer" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} detail="70–105 normal"/>
-              <OverviewMetric label={t('overview.oil')} value={valueOf('engine_oil_temperature')} unit="°C" icon="thermometer" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} detail="70–110 normal"/>
-              <OverviewMetric label={t('overview.voltage')} value={readings.module_voltage ?? valueOf('ecu_voltage')} unit="V" icon="bolt" tone={toneForVoltage(readings.module_voltage ?? valueOf('ecu_voltage'))} detail="12.3–14.8 V"/>
-              <OverviewMetric label={t('overview.fuel')} value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="fuel" tone={toneForFuel(valueOf('fuel_level', 'fuel_tank_level_input'))} detail={`${formatValue(valueOf('engine_fuel_rate'), 1)} L/h`}/>
-              <OverviewMetric label={t('overview.intake')} value={valueOf('intake_manifold_pressure')} unit="kPa" icon="wind" detail={`${formatValue(valueOf('intake_air_temperature'), 0)} °C`}/>
-              <OverviewMetric label={t('overview.pressure')} value={valueOf('fuel_pressure')} unit="kPa" icon="droplet" detail={`MAF ${formatValue(readings.maf, 1)} g/s`}/>
+              <OverviewMetric label={t('overview.coolant')} value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="sensor_coolant" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} detail="70–105 normal"/>
+              <OverviewMetric label={t('overview.oil')} value={valueOf('engine_oil_temperature')} unit="°C" icon="sensor_oil" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} detail="70–110 normal"/>
+              <OverviewMetric label={t('overview.voltage')} value={readings.module_voltage ?? valueOf('ecu_voltage')} unit="V" icon="sensor_voltage" tone={toneForVoltage(readings.module_voltage ?? valueOf('ecu_voltage'))} detail="12.3–14.8 V"/>
+              <OverviewMetric label={t('overview.fuel')} value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="sensor_fuel" tone={toneForFuel(valueOf('fuel_level', 'fuel_tank_level_input'))} detail={`${formatValue(valueOf('engine_fuel_rate'), 1)} L/h`}/>
+              <OverviewMetric label={t('overview.intake')} value={valueOf('intake_manifold_pressure')} unit="kPa" icon="sensor_intake" detail={`${formatValue(valueOf('intake_air_temperature'), 0)} °C`}/>
+              <OverviewMetric label={t('overview.pressure')} value={valueOf('fuel_pressure')} unit="kPa" icon="sensor_pressure" detail={`MAF ${formatValue(readings.maf, 1)} g/s`}/>
             </section>
 
             <section className={`health-card compact-health ${liveAlerts.length ? 'has-alerts' : ''}`} onClick={() => setActiveTab('health')} role="button" tabIndex="0">
-              <span className="health-icon"><Icon name="shield"/></span>
+              <span className="health-icon"><Icon name={healthIcon}/></span>
               <div><strong>{liveAlerts.length ? t('health.points', { count: liveAlerts.length }) : diagnosticCopy.title}</strong><p>{liveAlerts[0]?.message || diagnosticCopy.body}</p></div>
               <Icon name="chevron"/>
             </section>
@@ -1587,7 +1682,7 @@ function App() {
             <section className="ai-page-shell">
               <header className="ai-page-header">
                 <div className="ai-page-identity">
-                  <span className="ai-page-orb"><Icon name="bot"/></span>
+                  <span className="ai-page-orb"><Icon name="nav_ai"/></span>
                   <div><small>{t('ai.kicker')}</small><h1>LoToTi AI</h1><p>{t('ai.subtitle')}</p></div>
                 </div>
                 <div className="ai-provider-pill">
@@ -1597,15 +1692,15 @@ function App() {
               </header>
 
               <section className="ai-context-strip" aria-label={t('ai.context')}>
-                <span><Icon name={status === 'demo' ? 'play' : 'car'}/>{status === 'demo' ? t('status.demo') : connected ? t('status.live') : t('status.offline')}</span>
-                <span><Icon name="shield"/>{aiState.dtc_rows ? `${Number(aiState.dtc_rows).toLocaleString()} DTC` : 'DTC DB'}</span>
+                <span><Icon name={status === 'demo' ? 'play' : 'vehicle'}/>{status === 'demo' ? `${t('status.demo')} · ${t(demoScenarioOption(demoScenario).labelKey)}` : connected ? t('status.live') : t('status.offline')}</span>
+                <span><Icon name="health_stable"/>{aiState.dtc_rows ? `${Number(aiState.dtc_rows).toLocaleString()} DTC` : 'DTC DB'}</span>
                 <span><Icon name="activity"/>{signals.length} {t('ai.signals')}</span>
               </section>
 
               <div className="ai-chat-thread" ref={aiThreadRef}>
                 {aiMessages.map((message, index) => (
                   <article key={`${message.role}-${index}`} className={`ai-message is-${message.role}`}>
-                    {message.role !== 'user' && <span className="ai-message-avatar"><Icon name={message.role === 'error' ? 'shield' : 'bot'}/></span>}
+                    {message.role !== 'user' && <span className="ai-message-avatar"><Icon name={message.role === 'error' ? 'health_critical' : 'nav_ai'}/></span>}
                     <div className="ai-message-bubble">
                       <small>{message.meta || (message.role === 'user' ? t('ai.you') : 'LoToTi AI')}</small>
                       <MarkdownMessage text={message.text}/>
@@ -1614,7 +1709,7 @@ function App() {
                 ))}
                 {aiBusy && (
                   <article className="ai-message is-assistant is-thinking">
-                    <span className="ai-message-avatar"><Icon name="bot"/></span>
+                    <span className="ai-message-avatar"><Icon name="nav_ai"/></span>
                     <div className="ai-message-bubble">
                       <small>{aiState.provider ? [aiState.provider, aiState.model].filter(Boolean).join(' · ') : 'LoToTi AI'}</small>
                       {aiStreamingText ? <MarkdownMessage text={aiStreamingText}/> : <div className="ai-thinking-dots"><i/><i/><i/></div>}
@@ -1631,7 +1726,7 @@ function App() {
               </section>
 
               <form className="ai-composer" onSubmit={(event) => { event.preventDefault(); askLoToTiAi(); }}>
-                <textarea value={aiQuestion} onChange={(event) => setAiQuestion(event.target.value)} placeholder={t('ai.placeholder')} rows="1" onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); askLoToTiAi(); } }}/>
+                <textarea dir="auto" value={aiQuestion} onChange={(event) => setAiQuestion(event.target.value)} placeholder={t('ai.placeholder')} rows="1" onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); askLoToTiAi(); } }}/>
                 <button type="submit" aria-label={t('ai.ask')} disabled={!nativeAvailable || !aiState.configured || !aiQuestion.trim() || aiBusy}><Icon name="chevron"/></button>
               </form>
               <footer className="ai-page-footer"><span>{aiModelLabel}</span><span>·</span><span>{t('ai.context_auto')}</span></footer>
@@ -1646,18 +1741,45 @@ function App() {
             <section className="health-page-summary">
               <HealthOverview alerts={liveAlerts} signals={signals} lastCapturedAt={lastCapturedAt} now={now}/>
               <section className={`health-card health-page-message ${liveAlerts.length ? 'has-alerts' : ''}`}>
-                <span className="health-icon"><Icon name="shield"/></span>
+                <span className="health-icon"><Icon name={healthIcon}/></span>
                 <div><strong>{liveAlerts.length ? t('health.points', { count: liveAlerts.length }) : t('health.no_alerts')}</strong><p>{liveAlerts[0]?.message || t('health.no_alerts_detail')}</p></div>
               </section>
             </section>
 
+            <section className={`fault-scan-panel ${diagnosticMil ? 'has-mil' : ''}`}>
+              <header className="fault-scan-header">
+                <div><span>{t('faults.kicker')}</span><h2>{t('faults.title')}</h2><p>{t('faults.detail')}</p></div>
+                <button type="button" onClick={() => window.LotoTNative?.scanFaults?.()} disabled={!nativeAvailable || faultScanBusy || !['live', 'demo'].includes(status)}>
+                  <Icon name={faultScanBusy ? 'activity' : 'diagnostic_scan'}/><span>{faultScanBusy ? t('faults.scanning') : t('faults.scan')}</span>
+                </button>
+              </header>
+              <div className="fault-scan-summary">
+                <div><small>{t('faults.mil')}</small><strong className={diagnosticMil ? 'is-danger' : ''}>{diagnosticMil === null ? '—' : diagnosticMil ? t('faults.on') : t('faults.off')}</strong></div>
+                <div><small>{t('faults.reported')}</small><strong>{diagnosticReportedCount === null ? '—' : diagnosticReportedCount}</strong></div>
+                <div><small>{t('faults.last_scan')}</small><strong>{diagnostics?.scanned_at ? ageLabel(Number(diagnostics.scanned_at), now) : t('faults.not_scanned')}</strong></div>
+              </div>
+              {diagnosticDtcs.length > 0 ? (
+                <div className="fault-code-grid">
+                  {diagnosticDtcs.map((dtc, index) => (
+                    <article className="fault-code-card" key={`${dtc.code}-${dtc.status}-${index}`}>
+                      <div><code dir="ltr">{dtc.code}</code><span>{t(`faults.status_${dtc.status || 'confirmed'}`)}</span></div>
+                      <strong>{dtc.description || t('faults.no_description')}</strong>
+                      <small>{[dtc.type, dtc.manufacturer && dtc.manufacturer !== 'GENERIC' ? dtc.manufacturer : null].filter(Boolean).join(' · ')}</small>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="fault-scan-empty"><Icon name="dtc_fault"/><div><strong>{diagnostics?.scan_status === 'ready' ? t('faults.none_found') : t('faults.scan_needed')}</strong><p>{diagnostics?.scan_status === 'ready' ? t('faults.none_found_detail') : t('faults.scan_needed_detail')}</p></div></div>
+              )}
+            </section>
+
             <section className="critical-overview">
-              <OverviewMetric label={t('overview.coolant')} value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="thermometer" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} detail="70–105 normal"/>
-              <OverviewMetric label={t('overview.oil')} value={valueOf('engine_oil_temperature')} unit="°C" icon="thermometer" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} detail="70–110 normal"/>
-              <OverviewMetric label={t('overview.voltage')} value={readings.module_voltage ?? valueOf('ecu_voltage')} unit="V" icon="bolt" tone={toneForVoltage(readings.module_voltage ?? valueOf('ecu_voltage'))} detail="12.3–14.8 V"/>
-              <OverviewMetric label={t('overview.fuel')} value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="fuel" tone={toneForFuel(valueOf('fuel_level', 'fuel_tank_level_input'))} detail={`${formatValue(valueOf('engine_fuel_rate'), 1)} L/h`}/>
-              <OverviewMetric label={t('overview.intake')} value={valueOf('intake_manifold_pressure')} unit="kPa" icon="wind" detail={`${formatValue(valueOf('intake_air_temperature'), 0)} °C`}/>
-              <OverviewMetric label={t('overview.pressure')} value={valueOf('fuel_pressure')} unit="kPa" icon="droplet" detail={`MAF ${formatValue(readings.maf, 1)} g/s`}/>
+              <OverviewMetric label={t('overview.coolant')} value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="sensor_coolant" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} detail="70–105 normal"/>
+              <OverviewMetric label={t('overview.oil')} value={valueOf('engine_oil_temperature')} unit="°C" icon="sensor_oil" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} detail="70–110 normal"/>
+              <OverviewMetric label={t('overview.voltage')} value={readings.module_voltage ?? valueOf('ecu_voltage')} unit="V" icon="sensor_voltage" tone={toneForVoltage(readings.module_voltage ?? valueOf('ecu_voltage'))} detail="12.3–14.8 V"/>
+              <OverviewMetric label={t('overview.fuel')} value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="sensor_fuel" tone={toneForFuel(valueOf('fuel_level', 'fuel_tank_level_input'))} detail={`${formatValue(valueOf('engine_fuel_rate'), 1)} L/h`}/>
+              <OverviewMetric label={t('overview.intake')} value={valueOf('intake_manifold_pressure')} unit="kPa" icon="sensor_intake" detail={`${formatValue(valueOf('intake_air_temperature'), 0)} °C`}/>
+              <OverviewMetric label={t('overview.pressure')} value={valueOf('fuel_pressure')} unit="kPa" icon="sensor_pressure" detail={`MAF ${formatValue(readings.maf, 1)} g/s`}/>
             </section>
 
             <section className="data-panel health-alert-panel">
@@ -1670,7 +1792,7 @@ function App() {
                   <SignalCard key={signalKey(signal)} signal={signal} favorite={favorites.includes(signalKey(signal))} onToggleFavorite={toggleFavorite} history={history} now={now}/>
                 ))}
                 {!alertSignals.length && (
-                  <div className="empty-signals health-clear-state"><Icon name="shield"/><strong>{t('health.no_alerts')}</strong><p>{t('health.no_alerts_detail')}</p></div>
+                  <div className="empty-signals health-clear-state"><Icon name="health_stable"/><strong>{t('health.no_alerts')}</strong><p>{t('health.no_alerts_detail')}</p></div>
                 )}
               </div>
             </section>
@@ -1690,19 +1812,39 @@ function App() {
               <p className="builtins-note">{t('service.note')}</p>
             </section>
 
+            <section className="demo-lab-panel">
+              <header className="demo-lab-header">
+                <div><span>{t('demo.kicker')}</span><h2>{t('demo.title')}</h2><p>{t('demo.detail')}</p></div>
+                <span className={`demo-runtime-badge ${status === 'demo' ? 'is-running' : ''}`}><i/>{status === 'demo' ? t('demo.running') : t('demo.ready')}</span>
+              </header>
+              <div className="demo-scenario-grid">
+                {DEMO_SCENARIOS.map((item) => (
+                  <button type="button" key={item.id} className={demoScenario === item.id ? 'is-active' : ''} onClick={() => selectDemoScenario(item.id)}>
+                    <span><Icon name={item.icon}/></span>
+                    <div><strong>{t(item.labelKey)}</strong><small>{t(item.detailKey)}</small></div>
+                    {item.code && <code dir="ltr">{item.code}</code>}
+                  </button>
+                ))}
+              </div>
+              <div className="demo-lab-footer">
+                <div><small>{t('demo.selected')}</small><strong>{t(demoScenarioOption(demoScenario).labelKey)}</strong></div>
+                <button type="button" onClick={startSelectedDemo} disabled={!nativeAvailable}><Icon name="play"/><span>{status === 'demo' ? t('demo.apply') : t('demo.start')}</span></button>
+              </div>
+            </section>
+
             <section className="appearance-panel">
               <header><div><span>{t('appearance.kicker')}</span><h2>{t('appearance.title')}</h2></div><button type="button" onClick={() => setAppearanceOpen(true)}><Icon name="sliders"/><span>{t('generic.configure')}</span></button></header>
               <button className="appearance-entry" type="button" onClick={() => setAppearanceOpen(true)}>
-                <span className="appearance-entry-icon"><Icon name="type"/></span>
-                <span className="appearance-entry-copy"><small>{t('appearance.font_and_size')}</small><strong>{t(fontFamilyOption(fontFamily).labelKey)} · {fontScale}%</strong><em>{t('appearance.entry_detail')}</em></span>
+                <span className="appearance-entry-icon"><Icon name="nav_more"/></span>
+                <span className="appearance-entry-copy"><small>{t('appearance.font_and_size')}</small><strong>{languageOption(languagePreference).labelKey ? t(languageOption(languagePreference).labelKey) : languageOption(languagePreference).label} · {t(fontFamilyOption(fontFamily).labelKey)} · {fontScale}% · {t(iconFamilyOption(iconFamily).labelKey)}</strong><em>{t('appearance.entry_detail')}</em></span>
                 <Icon name="chevron"/>
               </button>
             </section>
 
             <section className="actions">
-              <button className="primary" type="button" onClick={connectionAction} disabled={!nativeAvailable}><Icon name={status === 'lost' ? 'refresh' : 'bluetooth'}/><span>{connected ? t('action.connection') : status === 'lost' && lastDevice ? t('action.reconnect') : t('action.connect')}</span></button>
-              <button className="secondary" type="button" onClick={() => window.LotoTNative?.startDemo?.()} disabled={!nativeAvailable}><Icon name="play"/><span>{t('action.demo')}</span></button>
-              <button className="tools-button" type="button" onClick={reopenOnboarding}><Icon name="shield"/><span>{t('action.setup_privacy')}</span><Icon name="chevron"/></button>
+              <button className="primary" type="button" onClick={connectionAction} disabled={!nativeAvailable}><Icon name={status === 'lost' ? 'refresh' : (state.live || connected) ? 'obd_connected' : 'obd_disconnected'}/><span>{connected ? t('action.connection') : status === 'lost' && lastDevice ? t('action.reconnect') : t('action.connect')}</span></button>
+              <button className="secondary" type="button" onClick={startSelectedDemo} disabled={!nativeAvailable}><Icon name="play"/><span>{t('action.demo')}</span></button>
+              <button className="tools-button" type="button" onClick={reopenOnboarding}><Icon name="health_stable"/><span>{t('action.setup_privacy')}</span><Icon name="chevron"/></button>
               <button className="tools-button" type="button" onClick={() => window.LotoTNative?.openNativeTools?.()} disabled={!nativeAvailable}><Icon name="tool"/><span>{t('action.advanced_settings')}</span><Icon name="chevron"/></button>
             </section>
 
@@ -1715,9 +1857,15 @@ function App() {
 
       <ConnectionSheet open={connectionOpen} onClose={() => setConnectionOpen(false)} bluetooth={bluetooth} medium={medium} setMedium={setMedium} onScan={(selectedMedium) => window.LotoTNative?.scanBluetooth?.(selectedMedium)} onConnect={connectDevice} onDisconnect={() => window.LotoTNative?.disconnectBluetooth?.()}/>
       <ServicesSheet open={servicesOpen} onClose={() => setServicesOpen(false)} services={services} signals={signals} onSave={(payload) => window.LotoTNative?.configureBuiltins?.(JSON.stringify(payload))} onRequestLocation={() => window.LotoTNative?.requestLocationPermission?.()} onPublishNow={() => window.LotoTNative?.publishMqttNow?.()}/>
-      <AppearanceSheet open={appearanceOpen} onClose={() => setAppearanceOpen(false)} theme={theme} onThemeChange={setTheme} fontFamily={fontFamily} onFontFamilyChange={setFontFamily} fontScale={fontScale} onFontScaleChange={(value) => setFontScale(clampFontScale(value))}/>
+      <AppearanceSheet open={appearanceOpen} onClose={() => setAppearanceOpen(false)} theme={theme} onThemeChange={setTheme} languagePreference={languagePreference} onLanguageChange={changeLanguagePreference} fontFamily={fontFamily} onFontFamilyChange={setFontFamily} fontScale={fontScale} onFontScaleChange={(value) => setFontScale(clampFontScale(value))} iconFamily={iconFamily} onIconFamilyChange={(value) => setIconFamily(normalizeIconFamily(value))}/>
     </main>
+    </IconFamilyProvider>
   );
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+const root = createRoot(document.getElementById('root'));
+if (new URLSearchParams(window.location.search).get('icons') === '1') {
+  root.render(<IconShowcase />);
+} else {
+  root.render(<App />);
+}

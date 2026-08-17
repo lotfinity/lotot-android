@@ -71,23 +71,27 @@ final class LoToTiAiClient
                 BuildConfig.LOTOTI_NVIDIA_API_KEY,
                 BuildConfig.LOTOTI_NVIDIA_BASE_URL,
                 BuildConfig.LOTOTI_NVIDIA_MODEL);
-        Provider liteLlm = new Provider("litellm", "LoToTi LiteLLM",
+        Provider liteLlm = new Provider("litellm", "LoToTi LiteLLM · Codex",
                 BuildConfig.LOTOTI_LITELLM_API_KEY,
                 BuildConfig.LOTOTI_LITELLM_BASE_URL,
                 BuildConfig.LOTOTI_LITELLM_MODEL);
+        Provider liteLlmFallback = new Provider("litellm_fallback", "LoToTi LiteLLM · StepFun fallback",
+                BuildConfig.LOTOTI_LITELLM_API_KEY,
+                BuildConfig.LOTOTI_LITELLM_BASE_URL,
+                BuildConfig.LOTOTI_LITELLM_FALLBACK_MODEL);
 
         String primary = safe(BuildConfig.LOTOTI_AI_PRIMARY).toLowerCase(Locale.US);
         if ("nvidia".equals(primary))
         {
-            add(nvidia); add(openCode); add(liteLlm);
+            add(nvidia); add(openCode); add(liteLlm); add(liteLlmFallback);
         }
         else if ("litellm".equals(primary))
         {
-            add(liteLlm); add(openCode); add(nvidia);
+            add(liteLlm); add(liteLlmFallback); add(openCode); add(nvidia);
         }
         else
         {
-            add(openCode); add(nvidia); add(liteLlm);
+            add(openCode); add(nvidia); add(liteLlm); add(liteLlmFallback);
         }
     }
 
@@ -180,7 +184,7 @@ final class LoToTiAiClient
         body.put("model", provider.model);
         body.put("temperature", 0.15);
         body.put("stream", true);
-        body.put("max_tokens", 900);
+        body.put("max_tokens", 4096);
         JSONArray messages = new JSONArray();
         messages.put(message("system", systemPrompt(responseLanguage)));
         messages.put(message("user", "DIAGNOSTIC CONTEXT:\n" + safe(diagnosticContext)
@@ -201,6 +205,10 @@ final class LoToTiAiClient
 
         StringBuilder answer = new StringBuilder();
         StringBuilder nonSse = new StringBuilder();
+        int streamEvents = 0;
+        int reasoningChars = 0;
+        int malformedEvents = 0;
+        String finishReason = null;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                 connection.getInputStream(), StandardCharsets.UTF_8)))
         {
@@ -219,24 +227,42 @@ final class LoToTiAiClient
                 try
                 {
                     JSONObject chunk = new JSONObject(payload);
+                    streamEvents++;
                     JSONArray choices = chunk.optJSONArray("choices");
                     if (choices == null || choices.length() == 0) continue;
                     JSONObject choice = choices.optJSONObject(0);
+                    if (choice != null && !choice.isNull("finish_reason")) finishReason = choice.optString("finish_reason", finishReason);
                     JSONObject delta = choice == null ? null : choice.optJSONObject("delta");
+                    if (delta != null)
+                    {
+                        String reasoning = extractContent(delta.opt("reasoning_content"));
+                        if (reasoning == null || reasoning.isEmpty()) reasoning = extractContent(delta.opt("reasoning"));
+                        if (reasoning != null) reasoningChars += reasoning.length();
+                    }
                     String text = extractContent(delta == null ? null : delta.opt("content"));
                     if (text != null && !text.isEmpty())
                     {
-                        answer.append(text);
-                        callback.onDelta(provider.label, provider.model, text);
+                        String addition = appendStreamingChunk(answer, text);
+                        if (!addition.isEmpty()) callback.onDelta(provider.label, provider.model, addition);
                     }
                 }
                 catch (Exception ignored)
                 {
+                    malformedEvents++;
                     // Ignore malformed keepalive/event chunks; final content is validated below.
                 }
             }
         }
 
+        if (BuildConfig.DEBUG)
+        {
+            Log.d("LoToTiAI", "Stream summary " + provider.id
+                    + " events=" + streamEvents
+                    + " contentChars=" + answer.length()
+                    + " reasoningChars=" + reasoningChars
+                    + " malformed=" + malformedEvents
+                    + " finish=" + String.valueOf(finishReason));
+        }
         if (answer.length() > 0) return answer.toString();
 
         // Compatibility fallback if an OpenAI-compatible server ignored stream=true.
@@ -259,10 +285,58 @@ final class LoToTiAiClient
         return null;
     }
 
+    /**
+     * Some OpenAI-compatible bridges emit overlapping text windows instead of
+     * strict token deltas (for example "P04" then "P0420" then "20 wa...").
+     * Merge the longest meaningful suffix/prefix overlap so both the live UI
+     * and final answer remain readable without disabling streaming.
+     */
+    private static String appendStreamingChunk(StringBuilder answer, String chunk)
+    {
+        if (chunk == null || chunk.isEmpty()) return "";
+        if (answer.length() == 0)
+        {
+            answer.append(chunk);
+            return chunk;
+        }
+
+        String current = answer.toString();
+        if (chunk.startsWith(current))
+        {
+            String addition = chunk.substring(current.length());
+            answer.append(addition);
+            return addition;
+        }
+
+        int maxOverlap = Math.min(current.length(), chunk.length());
+        int overlap = 0;
+        for (int size = maxOverlap; size >= 2; size--)
+        {
+            if (current.regionMatches(current.length() - size, chunk, 0, size))
+            {
+                overlap = size;
+                break;
+            }
+        }
+        String addition = chunk.substring(overlap);
+        answer.append(addition);
+        return addition;
+    }
+
     private static String systemPrompt(String responseLanguage)
     {
         String lang = safe(responseLanguage);
         if (lang.isEmpty()) lang = "en";
+        String languageStyle = "";
+        if ("ar-DZ".equalsIgnoreCase(lang) || "ar_DZ".equalsIgnoreCase(lang))
+        {
+            languageStyle = "\n\nALGERIAN DARIJA LANGUAGE PROFILE:\n"
+                    + "- Reply in natural Algerian Darija, primarily Arabic script.\n"
+                    + "- Keep the French automotive and garage terminology Algerian users naturally use (for example: capteur, calculateur, pression, injecteur, bobine, bougie, débitmètre, papillon, turbo, catalyseur, sonde lambda, batterie, alternateur, code défaut, scan, diagnostic).\n"
+                    + "- Keep OBD/DTC codes, ECU names, acronyms, CAN identifiers, model names and measurements unchanged in Latin/LTR form (for example P0301, ELM327, 7E0 -> 7E8, 13.8 V, -12.5 %).\n"
+                    + "- Prefer familiar Algerian phrasing over literal Modern Standard Arabic. Do not overdo slang; stay professional, concise and mechanically useful.\n"
+                    + "- Do not translate a familiar French technical term into obscure formal Arabic merely for purity.\n";
+        }
         return "You are LoToTi AI, an evidence-first automotive diagnostic copilot. Your job is to help the user understand what the available vehicle data actually supports, not to fill gaps with plausible-sounding guesses.\n\n"
                 + "STRICT DIAGNOSTIC RULES:\n"
                 + "1. Treat SESSION STATE and DATA SOURCE labels in the supplied context as authoritative. If there is no live OBD/ECU session and no Demo ECU stream, explicitly say that vehicle/engine health cannot be assessed from phone-only sensors.\n"
@@ -275,7 +349,8 @@ final class LoToTiAiClient
                 + "8. Flag safety-critical evidence clearly, but do not manufacture urgency.\n"
                 + "9. If SESSION STATE is Demo, clearly identify simulated observations as simulated.\n"
                 + "10. Reply in the app language code '" + lang + "' unless the user clearly writes in or requests another language.\n"
-                + "11. Use concise Markdown with short headings and bullets. Avoid long generic disclaimers and avoid repeating the raw context unless useful.";
+                + "11. Use concise Markdown with short headings and bullets. Avoid long generic disclaimers and avoid repeating the raw context unless useful."
+                + languageStyle;
     }
 
     private static JSONObject message(String role, String content) throws Exception

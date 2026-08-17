@@ -94,32 +94,91 @@ public class SettingsActivity extends AppCompatActivity
 	 *
 	 * @param activity Activity context
 	 */
-	static String getResolvedLanguage(Context context)
+	static String normalizeLanguageTag(String language)
+	{
+		String normalized = language == null ? "" : language.trim().replace('_', '-');
+		if (normalized.isEmpty()) return "en";
+		Locale locale = Locale.forLanguageTag(normalized);
+		if (locale == null || locale.getLanguage() == null || locale.getLanguage().isEmpty()) return "en";
+		return locale.toLanguageTag();
+	}
+
+	static String getLanguagePreference(Context context)
 	{
 		SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
 		String language = prefs.getString(KEY_APP_LANGUAGE, "system");
+		return language == null || language.trim().isEmpty() ? "system" : language.trim();
+	}
+
+	static String setLanguagePreference(Context context, String value)
+	{
+		String language = value == null ? "system" : value.trim();
+		if (language.isEmpty()) language = "system";
+		if (!"system".equals(language)) language = normalizeLanguageTag(language);
+		PreferenceManager.getDefaultSharedPreferences(context).edit()
+				.putString(KEY_APP_LANGUAGE, language).commit();
+		return language;
+	}
+
+	static String normalizeSupportedLanguage(String language)
+	{
+		Locale locale = Locale.forLanguageTag(normalizeLanguageTag(language));
+		String lang = locale.getLanguage();
+		String country = locale.getCountry();
+		if ("fr".equalsIgnoreCase(lang)) return "fr";
+		if ("en".equalsIgnoreCase(lang)) return "en";
+		if ("ar".equalsIgnoreCase(lang) && "DZ".equalsIgnoreCase(country)) return "ar-DZ";
+		return "en";
+	}
+
+	static String getResolvedLanguage(Context context)
+	{
+		String language = getLanguagePreference(context);
 		if ("system".equals(language))
 		{
-			Locale systemLocale = Resources.getSystem().getConfiguration().locale;
-			return systemLocale == null ? "en" : systemLocale.getLanguage();
+			Configuration systemConfig = Resources.getSystem().getConfiguration();
+			Locale systemLocale;
+			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
+				systemLocale = systemConfig.getLocales().isEmpty() ? null : systemConfig.getLocales().get(0);
+			else
+				systemLocale = systemConfig.locale;
+			return systemLocale == null ? "en" : normalizeSupportedLanguage(systemLocale.toLanguageTag());
 		}
-		return language == null || language.trim().isEmpty() ? "en" : language.trim();
+		return normalizeSupportedLanguage(language);
+	}
+
+	static Context wrapLocale(Context context)
+	{
+		String languageTag = getResolvedLanguage(context);
+		Locale locale = Locale.forLanguageTag(languageTag);
+		if (locale.getLanguage() == null || locale.getLanguage().isEmpty()) locale = Locale.ENGLISH;
+		Configuration config = new Configuration(context.getResources().getConfiguration());
+		config.setLocale(locale);
+		config.setLayoutDirection(locale);
+		return context.createConfigurationContext(config);
 	}
 
 	public static void applyLocale(Activity activity)
 	{
-		String language = getResolvedLanguage(activity);
-		Locale locale = new Locale(language);
+		String languageTag = getResolvedLanguage(activity);
+		Locale locale = Locale.forLanguageTag(languageTag);
+		if (locale.getLanguage() == null || locale.getLanguage().isEmpty()) locale = Locale.ENGLISH;
 		Locale.setDefault(locale);
 
 		Resources resources = activity.getResources();
-		Configuration config = resources.getConfiguration();
+		Configuration config = new Configuration(resources.getConfiguration());
 		config.setLocale(locale);
+		config.setLayoutDirection(locale);
 
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
 			activity.createConfigurationContext(config);
-		}
 		resources.updateConfiguration(config, resources.getDisplayMetrics());
+	}
+
+	@Override
+	protected void attachBaseContext(Context newBase)
+	{
+		super.attachBaseContext(wrapLocale(newBase));
 	}
 
 	@Override

@@ -18,6 +18,7 @@
 
 package com.fr3ts0n.ecu.gui.androbd;
 
+import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.os.Bundle;
@@ -179,6 +180,12 @@ public class DashBoardActivity extends AppCompatActivity
 			}
 		}
 		grid.setAdapter(adapter);
+	}
+
+	@Override
+	protected void attachBaseContext(Context newBase)
+	{
+		super.attachBaseContext(SettingsActivity.wrapLocale(newBase));
 	}
 
 	@Override

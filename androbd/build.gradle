@@ -40,9 +40,9 @@ android {
 
         resValue "string", "app_version", versionName
 
-        // Prototype-only managed AI credentials. Values are loaded from a private
-        // file outside Git. They are embedded in the APK by design for this phase.
-        buildConfigField "String", "LOTOTI_AI_PRIMARY", lototiBuildConfigString("lototi.ai.primary")
+        // Prototype-only managed AI credentials. Secrets/base URLs are loaded from
+        // a private file outside Git. LiteLLM is the primary route for this build.
+        buildConfigField "String", "LOTOTI_AI_PRIMARY", '"litellm"'
         buildConfigField "String", "LOTOTI_OPENCODE_API_KEY", lototiBuildConfigString("opencode.apiKey")
         buildConfigField "String", "LOTOTI_OPENCODE_BASE_URL", lototiBuildConfigString("opencode.baseUrl")
         buildConfigField "String", "LOTOTI_OPENCODE_MODEL", lototiBuildConfigString("opencode.model")
@@ -51,7 +51,8 @@ android {
         buildConfigField "String", "LOTOTI_NVIDIA_MODEL", lototiBuildConfigString("nvidia.model")
         buildConfigField "String", "LOTOTI_LITELLM_API_KEY", lototiBuildConfigString("litellm.apiKey")
         buildConfigField "String", "LOTOTI_LITELLM_BASE_URL", lototiBuildConfigString("litellm.baseUrl")
-        buildConfigField "String", "LOTOTI_LITELLM_MODEL", lototiBuildConfigString("litellm.model")
+        buildConfigField "String", "LOTOTI_LITELLM_MODEL", '"chatgpt/gpt-5.3-codex"'
+        buildConfigField "String", "LOTOTI_LITELLM_FALLBACK_MODEL", '"stepfun-ai/step-3.7-flash"'
 
         compileOptions {
             sourceCompatibility JavaVersion.VERSION_17
