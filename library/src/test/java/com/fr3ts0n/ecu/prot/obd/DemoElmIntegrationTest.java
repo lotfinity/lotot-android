@@ -87,10 +87,16 @@ class DemoElmIntegrationTest
 
         EcuDataItem rpmItem = EcuDataItems.byMnemonic.get("engine_speed");
         EcuDataItem vinItem = EcuDataItems.byMnemonic.get("vehicle_identification_number");
+        EcuDataItem calibrationItem = EcuDataItems.byMnemonic.get("calibration_identifier");
+        EcuDataItem ecuNameItem = EcuDataItems.byMnemonic.get("ecu_name");
         assertNotNull(rpmItem);
         assertNotNull(vinItem);
+        assertNotNull(calibrationItem);
+        assertNotNull(ecuNameItem);
         rpmItem.updatedAt = 0L;
         vinItem.updatedAt = 0L;
+        calibrationItem.updatedAt = 0L;
+        ecuNameItem.updatedAt = 0L;
 
         Thread thread = new Thread(prot, "demo-context-integration-test");
         thread.start();
@@ -109,6 +115,12 @@ class DemoElmIntegrationTest
             String vin = String.valueOf(vinItem.pv.get(EcuDataPv.FID_VALUE))
                     .replace(String.valueOf((char) 0), "").trim();
             assertEquals("WVWZZZAUZHL0T0T01", vin);
+            assertTrue(calibrationItem.updatedAt > 0L, "Mode 09 calibration ID should decode");
+            assertEquals("LOTOTI-DEMO-1500",
+                    String.valueOf(calibrationItem.pv.get(EcuDataPv.FID_VALUE)).trim());
+            assertTrue(ecuNameItem.updatedAt > 0L, "Mode 09 ECU name should decode");
+            assertEquals("ECM-LOTOTI-DEMO",
+                    String.valueOf(ecuNameItem.pv.get(EcuDataPv.FID_VALUE)).trim());
 
             prot.requestFaultCodesOnce(ObdProt.OBD_SVC_READ_CODES);
             boolean foundMisfire = false;

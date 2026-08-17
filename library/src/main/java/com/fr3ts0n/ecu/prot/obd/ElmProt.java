@@ -1352,13 +1352,17 @@ public class ElmProt
 				break;
 
 			case 0x0A:
+				// PID 09/0A is a fixed 20-byte ASCII ECU name. Do not prefix it
+				// with the item-count byte used by VIN/calibration PIDs.
+				String ecmName = String.format("%-20s", "ECM-LOTOTI-DEMO");
+				String tcmName = String.format("%-20s", "TCM-LOTOTI-DEMO");
 				if (demoHeadersEnabled)
 				{
-					handleTelegram(("7E81016490A01" + asciiHex("ECM-LOTOTI-DEMO")).toCharArray());
+					handleTelegram(("7E81016490A" + asciiHex(ecmName)).toCharArray());
 					Thread.sleep(5);
-					handleTelegram(("7E91016490A01" + asciiHex("TCM-LOTOTI-DEMO")).toCharArray());
+					handleTelegram(("7E91016490A" + asciiHex(tcmName)).toCharArray());
 				}
-				else handleTelegram(("490A01" + asciiHex("ECM-LOTOTI-DEMO")).toCharArray());
+				else handleTelegram(("490A" + asciiHex(ecmName)).toCharArray());
 				break;
 
 			default:
