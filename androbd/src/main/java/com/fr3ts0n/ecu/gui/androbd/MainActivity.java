@@ -2312,6 +2312,24 @@ public class MainActivity extends PluginManager
         mLototVehicleIdentityAttempts = 0;
     }
 
+    private boolean hasLotoTDecodedMode01Data()
+    {
+        // Built-in GPS/motion signals can exist while the ECU is still
+        // initializing, so they must never trigger Mode 09. Require at least
+        // one process variable that is populated by a real Mode-01 response.
+        String[] mnemonics = {
+                "number_fault_codes", "engine_speed", "vehicle_speed",
+                "engine_load_calculated", "engine_coolant_temperature",
+                "mass_airflow", "ecu_voltage"
+        };
+        for (String mnemonic : mnemonics)
+        {
+            EcuDataItem item = EcuDataItems.byMnemonic.get(mnemonic);
+            if (item != null && item.updatedAt > 0L) return true;
+        }
+        return false;
+    }
+
     private Object getLotoTRawValue(String mnemonic)
     {
         try
@@ -2614,7 +2632,7 @@ public class MainActivity extends PluginManager
             payload.put("diagnostics", getLotoTDiagnosticState());
             payload.put("vehicle", getLotoTVehicleIdentity());
             JSONArray signals = getLotoTSignals();
-            if (signals.length() > 0 && getLotoTVehicleIdentity().length() == 0
+            if (hasLotoTDecodedMode01Data() && getLotoTVehicleIdentity().length() == 0
                     && !mLototVehicleIdentityRequested
                     && mLototVehicleIdentityAttempts < LOTOT_VEHICLE_IDENTITY_MAX_ATTEMPTS)
             {
