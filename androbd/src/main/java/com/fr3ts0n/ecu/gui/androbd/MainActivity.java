@@ -1323,6 +1323,13 @@ public class MainActivity extends PluginManager
                 };
                 String[] labels = {"confirmed", "pending", "permanent"};
                 long waitMs = getMode() == MODE.DEMO ? 150L : 1000L;
+
+                // Refresh Mode 09 identity at scan time. This is especially useful
+                // for test/emulator sessions where the active vehicle profile can
+                // change without dropping the Bluetooth transport.
+                CommService.elm.requestVehicleIdentity();
+                Thread.sleep(waitMs);
+
                 for (int i = 0; i < services.length; i++)
                 {
                     // Ask exactly one DTC service at a time. The old setService()
@@ -1399,7 +1406,13 @@ public class MainActivity extends PluginManager
                 dtc.put("code", code);
                 dtc.put("status", status);
                 DTCDatabase.DTC dbItem = null;
-                try { dbItem = getLoToTiDtcDatabase().getDTC(code); } catch (Exception ignored) { }
+                try
+                {
+                    JSONObject identity = getLotoTVehicleIdentity();
+                    String dtcManufacturer = identity.optString("dtc_manufacturer", "").trim();
+                    dbItem = getLoToTiDtcDatabase().getDTC(code, dtcManufacturer);
+                }
+                catch (Exception ignored) { }
                 String description = dbItem == null ? null : dbItem.description;
                 if (description == null || description.trim().isEmpty())
                 {
@@ -1906,7 +1919,11 @@ public class MainActivity extends PluginManager
             String question = request.optString("question", "").trim();
             String context = request.optString("context", "");
             String manufacturer = request.optString("manufacturer", "").trim();
-            if (manufacturer.isEmpty()) manufacturer = getLotoTVehicleIdentity().optString("manufacturer", "").trim();
+            if (manufacturer.isEmpty())
+            {
+                JSONObject identity = getLotoTVehicleIdentity();
+                manufacturer = identity.optString("dtc_manufacturer", identity.optString("manufacturer", "")).trim();
+            }
             String responseLanguage = request.optString("language", mLototLanguage == null ? "en" : mLototLanguage);
             if (question.isEmpty())
             {
@@ -2413,9 +2430,55 @@ public class MainActivity extends PluginManager
                     vehicle.put("profile_id", "peugeot_expert_2014");
                     vehicle.put("source_profile", "Peugeot Expert 2014 2.0 HDi — DieselOBD replay");
                     vehicle.put("manufacturer", "Peugeot");
+                    vehicle.put("dtc_manufacturer", "PEUGEOT");
                     vehicle.put("model", "Expert");
                     vehicle.put("model_year", 2014);
                     vehicle.put("engine", "2.0 HDi");
+                }
+                else if (calibration.contains("CAPTIV") || ecuName.contains("CAPTIVA"))
+                {
+                    vehicle.put("profile_id", "chevrolet_captiva_2011");
+                    vehicle.put("source_profile", "Chevrolet Captiva 2011 2.0 Diesel — DieselOBD replay");
+                    vehicle.put("manufacturer", "Chevrolet");
+                    vehicle.put("dtc_manufacturer", "CHEVY");
+                    vehicle.put("model", "Captiva");
+                    vehicle.put("model_year", 2011);
+                    vehicle.put("engine", "2.0 Diesel");
+                }
+                else if (calibration.contains("KIASPT") || ecuName.contains("KIA-SPORTAGE"))
+                {
+                    vehicle.put("profile_id", "kia_sportage_2017");
+                    vehicle.put("source_profile", "Kia Sportage 2017 2.0 Diesel — DieselOBD replay");
+                    vehicle.put("manufacturer", "Kia");
+                    vehicle.put("dtc_manufacturer", "KIA");
+                    vehicle.put("model", "Sportage");
+                    vehicle.put("model_year", 2017);
+                    vehicle.put("engine", "2.0 Diesel");
+                }
+                else if (calibration.contains("BERLNG") || ecuName.contains("CITROEN-BERL"))
+                {
+                    vehicle.put("profile_id", "citroen_berlingo_2014");
+                    vehicle.put("source_profile", "Citroën Berlingo 2014 1.6 Diesel — DieselOBD replay");
+                    vehicle.put("manufacturer", "Citroën");
+                    vehicle.put("dtc_manufacturer", "CITROEN");
+                    vehicle.put("model", "Berlingo");
+                    vehicle.put("model_year", 2014);
+                    vehicle.put("engine", "1.6 Diesel");
+                }
+                else if (calibration.contains("P2008X") || ecuName.contains("PEUGEOT-2008"))
+                {
+                    vehicle.put("profile_id", "peugeot_2008_2022");
+                    vehicle.put("source_profile", "Peugeot 2008 2022 1.5 Diesel — DieselOBD replay");
+                    vehicle.put("manufacturer", "Peugeot");
+                    vehicle.put("dtc_manufacturer", "PEUGEOT");
+                    vehicle.put("model", "2008");
+                    vehicle.put("model_year", 2022);
+                    vehicle.put("engine", "1.5 Diesel");
+                }
+                else if (calibration.contains("HLTHY1") || ecuName.contains("HEALTHY-REF"))
+                {
+                    vehicle.put("profile_id", "dieselobd_healthy_reference");
+                    vehicle.put("source_profile", "DieselOBD Healthy Reference A — vehicle identity unavailable in processed master");
                 }
                 else if (calibration.contains("FORZA") || ecuName.contains("FORZA"))
                 {

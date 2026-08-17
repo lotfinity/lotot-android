@@ -1561,7 +1561,7 @@ function App() {
     setAiStreamingText('');
     setAiState((current) => ({ ...current, status: 'thinking', provider: null, error: null, text: null }));
     window.LotoTNative?.askAi?.(JSON.stringify({
-      question, context, language, manufacturer: vehicle?.manufacturer || ''
+      question, context, language, manufacturer: vehicle?.dtc_manufacturer || vehicle?.manufacturer || ''
     }));
   };
 
