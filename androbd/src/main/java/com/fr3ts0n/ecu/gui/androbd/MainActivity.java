@@ -903,7 +903,6 @@ public class MainActivity extends PluginManager
         }
    }
 
-    @Override
     protected boolean shouldAutoDiscoverPlugins()
     {
         return false;
