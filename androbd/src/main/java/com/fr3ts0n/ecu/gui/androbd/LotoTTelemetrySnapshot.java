@@ -34,6 +34,7 @@ final class LotoTTelemetrySnapshot
             observation.put("observed_at", observedAt);
             observation.put("unit", s.optString("unit", ""));
             observation.put("source", source);
+            observation.put("simulated", s.optBoolean("simulated", false));
             if (s.has("accuracy_m")) observation.put("accuracy_m", s.get("accuracy_m"));
             observations.put(key, observation);
             capturedAt = Math.max(capturedAt, observedAt);

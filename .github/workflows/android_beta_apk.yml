@@ -23,6 +23,8 @@ jobs:
           cache: npm
           cache-dependency-path: lotot-ui/package-lock.json
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - uses: gradle/actions/setup-gradle@v4
       - name: Check translations
         run: node lotot-ui/scripts/check-i18n.mjs

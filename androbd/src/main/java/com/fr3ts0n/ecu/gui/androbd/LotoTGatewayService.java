@@ -35,8 +35,8 @@ import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
- * Sticky foreground owner for GPS, motion, encrypted MQTT credentials and the
- * durable telemetry queue. MainActivity only feeds decoded OBD snapshots.
+ * Owns the vehicle transport and samples decoded OBD data independently of the UI.
+ * Foreground execution follows Android's connected-device/location/dataSync rules.
  */
 public final class LotoTGatewayService extends Service
         implements LotoTBuiltinServices.Listener, PropertyChangeListener

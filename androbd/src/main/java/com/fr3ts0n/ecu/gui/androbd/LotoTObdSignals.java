@@ -64,7 +64,8 @@ final class LotoTObdSignals
                 signal.put("pid", item.pid);
                 signal.put("offset", item.ofs);
                 signal.put("updated_at", item.updatedAt);
-                signal.put("source", source);
+                signal.put("source", "obd");
+                signal.put("simulated", "demo".equals(source));
 
                 Object minObject = item.pv.get(EcuDataPv.FID_MIN);
                 if (minObject instanceof Number)

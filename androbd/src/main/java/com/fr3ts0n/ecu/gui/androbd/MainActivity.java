@@ -4407,6 +4407,8 @@ public class MainActivity extends PluginManager
     {
         stopDemoService();
         if (mLototGateway == null) resetLotoTSignalTimestamps();
+        mLototVehicleIdentityRequested = false;
+        mLototVehicleIdentityAttempts = 0;
         ObdProt.setRealtimePidPriorityEnabled(true);
         mLototManualDisconnect = false;
         mLototLossLatched = false;
