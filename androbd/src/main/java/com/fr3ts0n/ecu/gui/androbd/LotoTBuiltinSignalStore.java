@@ -44,8 +44,8 @@ final class LotoTBuiltinSignalStore
     synchronized void define(String mnemonic, String label, String unit,
                              double min, double max, String source)
     {
-        signals.putIfAbsent(mnemonic,
-                new Signal(mnemonic, label, unit, min, max, source));
+        if (!signals.containsKey(mnemonic))
+            signals.put(mnemonic, new Signal(mnemonic, label, unit, min, max, source));
     }
 
     synchronized void update(String mnemonic, Object value)
@@ -80,7 +80,7 @@ final class LotoTBuiltinSignalStore
     synchronized void appendTo(JSONArray target) throws org.json.JSONException
     {
         List<Signal> ordered = new ArrayList<>(signals.values());
-        ordered.sort(Comparator.comparing(signal -> signal.mnemonic));
+        java.util.Collections.sort(ordered, (a, b) -> a.mnemonic.compareTo(b.mnemonic));
         for (Signal signal : ordered)
         {
             long maxAge = "gps".equals(signal.source) ? 30_000L : 5_000L;

@@ -22,6 +22,54 @@ import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public class GatewaySessionInstrumentedTest
 {
+    @Test
+    @androidx.test.filters.SdkSuppress(minSdkVersion=35)
+    public void android15DataSyncBudgetStopsForegroundService() throws Exception
+    {
+        // Only CI configures the shortened budget. Never alter a user's device settings.
+        org.junit.Assume.assumeTrue(android.os.Build.FINGERPRINT.contains("generic")
+                || android.os.Build.MODEL.contains("sdk_gphone"));
+        Context context=ApplicationProvider.getApplicationContext();
+        android.preference.PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit();
+        AtomicReference<LotoTGatewayService> service=new AtomicReference<>();
+        CountDownLatch bound=new CountDownLatch(1);
+        ServiceConnection connection=new ServiceConnection()
+        {
+            public void onServiceConnected(ComponentName name,IBinder binder)
+            { service.set(((LotoTGatewayService.LocalBinder)binder).getService()); bound.countDown(); }
+            public void onServiceDisconnected(ComponentName name) { }
+        };
+        ActivityScenario<MainActivity> activity=ActivityScenario.launch(new Intent(context,MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        context.bindService(new Intent(context,LotoTGatewayService.class),connection,Context.BIND_AUTO_CREATE);
+        assertTrue(bound.await(10,TimeUnit.SECONDS));
+        try
+        {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                try
+                {
+                    service.get().applyConfig("{\"mqtt\":{\"enabled\":true,\"host\":\"127.0.0.1\",\"port\":9}}");
+                    LotoTGatewayService.start(context);
+                }
+                catch(Exception ex) { throw new AssertionError(ex); }
+            });
+            assertTrue(service.get().getState().getBoolean("foreground"));
+            activity.close();
+            long deadline=SystemClock.elapsedRealtime()+20_000;
+            while(!service.get().getState().getBoolean("timed_out") && SystemClock.elapsedRealtime()<deadline)
+                SystemClock.sleep(200);
+            assertTrue("Android delivered the dataSync budget timeout",service.get().getState().getBoolean("timed_out"));
+            assertFalse(service.get().getState().getBoolean("foreground"));
+        }
+        finally
+        {
+            activity.close(); context.unbindService(connection);
+            context.stopService(new Intent(context,LotoTGatewayService.class));
+            android.preference.PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit();
+            SystemClock.sleep(1500);
+        }
+    }
+
     @Test public void activityRecreationAndFinishKeepTransportUntilExplicitDisconnect() throws Exception
     {
         Context context=ApplicationProvider.getApplicationContext();

@@ -42,3 +42,41 @@ jobs:
             library/build/reports/tests/
           if-no-files-found: error
           retention-days: 14
+
+  emulator-tests:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: lotot-build-and-tests
+          path: verification-build
+      - name: Allow emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            adb install -r verification-build/androbd/build/outputs/apk/verification/androbd-verification.apk
+            adb install -r verification-build/androbd/build/outputs/apk/androidTest/verification/androbd-verification-androidTest.apk
+            adb shell device_config put activity_manager data_sync_fgs_timeout_duration 3000
+            adb shell am instrument -w -r -e class com.fr3ts0n.ecu.gui.androbd.GatewayReliabilityInstrumentedTest,com.fr3ts0n.ecu.gui.androbd.GatewaySessionInstrumentedTest com.lotot.android.verification.test/androidx.test.runner.AndroidJUnitRunner > instrumentation.txt
+            cat instrumentation.txt
+            grep -q 'OK (' instrumentation.txt
+      - name: Emulator logs
+        if: always()
+        run: adb logcat -d -s AndroidRuntime LotoTConnection > emulator-logcat.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: emulator-test-results
+          path: |
+            instrumentation.txt
+            emulator-logcat.txt

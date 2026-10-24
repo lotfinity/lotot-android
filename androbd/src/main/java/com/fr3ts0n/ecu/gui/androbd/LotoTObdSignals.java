@@ -23,11 +23,13 @@ final class LotoTObdSignals
                         || System.currentTimeMillis() - item.updatedAt > 60_000L) continue;
                 updatedItems.add(item);
             }
-            updatedItems.sort(Comparator
-                    .comparingInt((EcuDataItem item) -> item.pid)
-                    .thenComparingInt(item -> item.ofs)
-                    .thenComparing(item -> String.valueOf(
-                            item.pv.get(EcuDataPv.FID_MNEMONIC))));
+            java.util.Collections.sort(updatedItems, (a, b) -> {
+                int order = Integer.compare(a.pid, b.pid);
+                if (order == 0) order = Integer.compare(a.ofs, b.ofs);
+                if (order == 0) order = String.valueOf(a.pv.get(EcuDataPv.FID_MNEMONIC))
+                        .compareTo(String.valueOf(b.pv.get(EcuDataPv.FID_MNEMONIC)));
+                return order;
+            });
 
             for (EcuDataItem item : updatedItems)
             {
@@ -50,14 +52,14 @@ final class LotoTObdSignals
 
                 Object mnemonicObject = item.pv.get(EcuDataPv.FID_MNEMONIC);
                 String mnemonic = mnemonicObject == null
-                        ? String.format("PID_%02X_%d", item.pid, item.ofs)
+                        ? String.format(java.util.Locale.ROOT, "PID_%02X_%d", item.pid, item.ofs)
                         : String.valueOf(mnemonicObject);
                 Object descriptionObject = item.pv.get(EcuDataPv.FID_DESCRIPT);
                 String description = descriptionObject == null
                         ? mnemonic : String.valueOf(descriptionObject);
 
                 JSONObject signal = new JSONObject();
-                signal.put("key", String.format("%02X.%d.%s", item.pid, item.ofs, mnemonic));
+                signal.put("key", String.format(java.util.Locale.ROOT, "%02X.%d.%s", item.pid, item.ofs, mnemonic));
                 signal.put("mnemonic", mnemonic);
                 signal.put("label", description);
                 signal.put("value", value);

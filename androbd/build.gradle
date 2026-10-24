@@ -61,11 +61,8 @@ android {
     }
 
     lint {
-        // abortOnError was previously inside defaultConfig{} where AGP ignores it.
-        // Moved here (android{} level) so it takes effect. To enforce lint on new
-        // code, run ./gradlew lint, commit the generated lint-baseline.xml, and
-        // remove this line.
-        abortOnError false
+        baseline = file('lint-baseline.xml')
+        abortOnError true
     }
 
     testBuildType 'verification'
