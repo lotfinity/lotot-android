@@ -81,7 +81,7 @@ public class GatewaySessionInstrumentedTest
                     {
                         service.get().applyConfig("{\"mqtt\":{\"enabled\":true,\"host\":\"127.0.0.1\",\"port\":9,\"interval_seconds\":1}}");
                         com.fr3ts0n.ecu.EcuDataItem rpm=com.fr3ts0n.ecu.EcuDataItems.byMnemonic.get("engine_speed");
-                        rpm.pv.put(com.fr3ts0n.ecu.EcuDataPv.FID_VALUE,1234.0);
+                        rpm.pv.put(com.fr3ts0n.ecu.EcuDataPv.FID_VALUE,Double.valueOf(1234.0));
                         rpm.updatedAt=System.currentTimeMillis();
                     }
                     catch(Exception ex) { throw new AssertionError(ex); }

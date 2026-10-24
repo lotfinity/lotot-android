@@ -62,6 +62,7 @@ public final class LotoTGatewayService extends Service
     private boolean timedOut;
     private boolean lost;
     private android.os.PowerManager.WakeLock sessionWakeLock;
+    private long wakeLockRenewedAt;
     private CommService transport;
     private Handler uiHandler;
     private long transportGeneration;
@@ -190,7 +191,12 @@ public final class LotoTGatewayService extends Service
                 }
             }
             // Renewed by the service sampler; a failed sampler cannot hold it forever.
-            if (sessionWakeLock != null && !sessionWakeLock.isHeld()) sessionWakeLock.acquire(10 * 60_000L);
+            long elapsed = android.os.SystemClock.elapsedRealtime();
+            if (sessionWakeLock != null && (!sessionWakeLock.isHeld() || elapsed - wakeLockRenewedAt >= 5 * 60_000L))
+            {
+                sessionWakeLock.acquire(10 * 60_000L);
+                wakeLockRenewedAt = elapsed;
+            }
         }
         else if (sessionWakeLock != null && sessionWakeLock.isHeld()) sessionWakeLock.release();
     }
@@ -470,7 +476,10 @@ public final class LotoTGatewayService extends Service
             if (CommService.medium == CommService.MEDIUM.USB)
             {
                 android.hardware.usb.UsbManager usb = (android.hardware.usb.UsbManager)getSystemService(USB_SERVICE);
-                qualifies = usb != null && usb.getDeviceList().values().stream().anyMatch(usb::hasPermission);
+                qualifies = false;
+                if (usb != null)
+                    for (android.hardware.usb.UsbDevice device : usb.getDeviceList().values())
+                        if (usb.hasPermission(device)) { qualifies = true; break; }
             }
             if (connectedWork && qualifies) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
 
