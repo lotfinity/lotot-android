@@ -140,8 +140,7 @@ class ObdItemAdapter extends ArrayAdapter<Object>
     Collection getPreferredItems(PvList pvs)
     {
         // filter PVs with preference selections
-        Set<String> pidsToShow = prefs.getStringSet(SettingsActivity.KEY_DATA_ITEMS,
-                                                    (Set<String>) pvs.keySet());
+        Set<String> pidsToShow = prefs.getStringSet(SettingsActivity.KEY_DATA_ITEMS, null);
         return getMatchingItems(pvs, pidsToShow);
     }
 
@@ -152,16 +151,22 @@ class ObdItemAdapter extends ArrayAdapter<Object>
      * @param pidsToShow Set of keys to be used as filter
      * @return Set of filtered data items
      */
-    private Collection<Object> getMatchingItems(PvList pvs, Set<String> pidsToShow)
+    static Collection<Object> getMatchingItems(PvList pvs, Set<String> pidsToShow)
     {
         HashSet<Object> filtered = new HashSet<>();
-        for (String key : pidsToShow)
+        // Native PID lists can use numeric keys. Preferences store string keys;
+        // never cast the live registry's keySet to Set<String> during recreation.
+        synchronized (pvs)
         {
-            IndexedProcessVar pv = (IndexedProcessVar) pvs.get(key);
-            if (pv != null)
-                filtered.add(pv);
+            for (Object key : pvs.keySet())
+            {
+                Object pv = pvs.get(key);
+                if (pv instanceof IndexedProcessVar
+                        && (pidsToShow == null || pidsToShow.contains(String.valueOf(key))))
+                    filtered.add(pv);
+            }
         }
-        return (filtered);
+        return filtered;
     }
 
     void filterPositions(int[] positions)
