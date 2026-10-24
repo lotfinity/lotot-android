@@ -75,7 +75,7 @@ import androidx.core.content.FileProvider;
 
 import com.dtcdatabase.DTCDatabase;
 import com.fr3ts0n.androbd.plugin.Plugin;
-import com.fr3ts0n.androbd.plugin.mgr.PluginManager;
+import com.fr3ts0n.androbd.plugin.mgr.LotoTPluginActivity;
 import com.fr3ts0n.ecu.EcuCodeItem;
 import com.fr3ts0n.ecu.EcuDataItem;
 import com.fr3ts0n.ecu.EcuDataItems;
@@ -119,7 +119,7 @@ import org.json.JSONObject;
 /**
  * Main Activity for AndrOBD app
  */
-public class MainActivity extends PluginManager
+public class MainActivity extends LotoTPluginActivity
         implements PvChangeListener,
         AdapterView.OnItemLongClickListener,
         PropertyChangeListener,
@@ -1020,6 +1020,11 @@ public class MainActivity extends PluginManager
 
         /* don't listen to ELM data changes any more */
         removeDataListeners();
+        mPidAdapter.disposeListeners();
+        mVidAdapter.disposeListeners();
+        mTidAdapter.disposeListeners();
+        mDfcAdapter.disposeListeners();
+        mPluginDataAdapter.disposeListeners();
         // don't listen to ELM property changes any more
         CommService.elm.removePropertyChangeListener(this);
 

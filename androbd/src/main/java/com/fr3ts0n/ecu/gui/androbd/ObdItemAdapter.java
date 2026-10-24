@@ -29,7 +29,8 @@ import android.widget.ArrayAdapter;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
-import com.fr3ts0n.androbd.plugin.mgr.PluginManager;
+import com.fr3ts0n.androbd.plugin.mgr.LotoTPluginActivity;
+import com.fr3ts0n.androbd.plugin.mgr.PluginHandler;
 import com.fr3ts0n.ecu.Conversion;
 import com.fr3ts0n.ecu.EcuDataItem;
 import com.fr3ts0n.ecu.EcuDataPv;
@@ -81,12 +82,15 @@ class ObdItemAdapter extends ArrayAdapter<Object>
      */
     static boolean allowDataUpdates = true;
     private final transient SharedPreferences prefs;
+    private final transient LotoTPluginActivity pluginOwner;
+    private final Set<IndexedProcessVar> subscriptions = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
 
     public ObdItemAdapter(Context context, int resource, PvList pvs)
     {
         super(context, resource);
         prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        pluginOwner = context instanceof LotoTPluginActivity ? (LotoTPluginActivity)context : null;
         mInflater = (LayoutInflater) context
                 .getSystemService(Context.LAYOUT_INFLATER_SERVICE);
         setPvList(pvs);
@@ -285,9 +289,10 @@ class ObdItemAdapter extends ArrayAdapter<Object>
                 }
 
                 // send update to plugin handler
-                if (PluginManager.pluginHandler != null)
+                PluginHandler plugins = pluginOwner == null ? null : pluginOwner.getActivePluginHandler();
+                if (plugins != null)
                 {
-                    PluginManager.pluginHandler.sendDataUpdate(
+                    plugins.sendDataUpdate(
                             pv.get(EcuDataPv.FID_MNEMONIC).toString(),
                             event.getValue().toString());
                 }
@@ -309,8 +314,9 @@ class ObdItemAdapter extends ArrayAdapter<Object>
             {
                 series = new XYSeries(String.valueOf(pv.get(EcuDataPv.FID_DESCRIPT)));
                 pv.put(FID_DATA_SERIES, series);
-                pv.addPvChangeListener(dataChangeHandler, PvChangeEvent.PV_MODIFIED);
             }
+            pv.addPvChangeListener(dataChangeHandler, PvChangeEvent.PV_MODIFIED);
+            subscriptions.add(pv);
 
             // assemble data items for plugin notification
             pluginStr.append(String.format("%s;%s;%s;%s\n",
@@ -322,10 +328,17 @@ class ObdItemAdapter extends ArrayAdapter<Object>
         }
 
         // notify plugins
-        if (PluginManager.pluginHandler != null)
+        PluginHandler plugins = pluginOwner == null ? null : pluginOwner.getActivePluginHandler();
+        if (plugins != null)
         {
-            PluginManager.pluginHandler.sendDataList(pluginStr.toString());
+            plugins.sendDataList(pluginStr.toString());
         }
+    }
+
+    synchronized void disposeListeners()
+    {
+        for (IndexedProcessVar pv : subscriptions) pv.removePvChangeListener(dataChangeHandler);
+        subscriptions.clear();
     }
 
     @Override

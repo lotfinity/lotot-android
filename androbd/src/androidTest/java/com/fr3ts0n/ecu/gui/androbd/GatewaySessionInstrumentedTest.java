@@ -142,9 +142,12 @@ public class GatewaySessionInstrumentedTest
                 while(transport.get().getState()!=CommService.STATE.CONNECTED && SystemClock.elapsedRealtime()<deadline)
                     SystemClock.sleep(100);
                 assertEquals(CommService.STATE.CONNECTED,transport.get().getState());
-                activity.recreate();
-                assertSame(transport.get(),service.get().getTransport());
-                assertEquals(CommService.MEDIUM.NETWORK,service.get().getTransportMedium());
+                for (int recreation=0; recreation<3; recreation++)
+                {
+                    activity.recreate();
+                    assertSame(transport.get(),service.get().getTransport());
+                    assertEquals(CommService.MEDIUM.NETWORK,service.get().getTransportMedium());
+                }
                 activity.close();
                 InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
                     try
