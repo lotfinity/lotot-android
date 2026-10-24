@@ -61,6 +61,7 @@ public final class LotoTGatewayService extends Service
     private boolean closing;
     private boolean timedOut;
     private boolean lost;
+    private android.os.PowerManager.WakeLock sessionWakeLock;
     private CommService transport;
     private Handler uiHandler;
     private long transportGeneration;
@@ -73,6 +74,7 @@ public final class LotoTGatewayService extends Service
         @Override public void run()
         {
             if (closing || timedOut) return;
+            updateSessionWakeLock();
             sampleTelemetry();
             if (transport != null && transport.getState() == CommService.STATE.CONNECTED
                     && (CommService.medium == CommService.MEDIUM.BLUETOOTH || CommService.medium == CommService.MEDIUM.BLE)
@@ -132,6 +134,7 @@ public final class LotoTGatewayService extends Service
                 else if (state == CommService.STATE.OFFLINE || state == CommService.STATE.NONE)
                 {
                     vehicleSessionActive = false;
+                    updateSessionWakeLock();
                     ObdProt.setRealtimePidPriorityEnabled(false);
                 }
                 sampleTelemetry();
@@ -167,8 +170,29 @@ public final class LotoTGatewayService extends Service
         }
         vehicleSessionActive = false;
         lost = false;
+        updateSessionWakeLock();
         ObdProt.setRealtimePidPriorityEnabled(false);
         sampleTelemetry();
+    }
+
+    private void updateSessionWakeLock()
+    {
+        if (!closing && !timedOut && hasVehicleSession())
+        {
+            if (sessionWakeLock == null)
+            {
+                android.os.PowerManager power = (android.os.PowerManager)getSystemService(POWER_SERVICE);
+                if (power != null)
+                {
+                    sessionWakeLock = power.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK,
+                            getPackageName() + ":vehicle-session");
+                    sessionWakeLock.setReferenceCounted(false);
+                }
+            }
+            // Renewed by the service sampler; a failed sampler cannot hold it forever.
+            if (sessionWakeLock != null && !sessionWakeLock.isHeld()) sessionWakeLock.acquire(10 * 60_000L);
+        }
+        else if (sessionWakeLock != null && sessionWakeLock.isHeld()) sessionWakeLock.release();
     }
 
     @Override public void propertyChange(PropertyChangeEvent event)
@@ -260,6 +284,7 @@ public final class LotoTGatewayService extends Service
     void setVehicleSessionActive(boolean active)
     {
         vehicleSessionActive = active;
+        updateSessionWakeLock();
         if (!active || transport != null) reconcileForeground(true);
     }
 

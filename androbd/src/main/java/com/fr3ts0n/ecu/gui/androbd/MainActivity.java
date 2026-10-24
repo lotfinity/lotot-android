@@ -336,6 +336,7 @@ public class MainActivity extends PluginManager
     private LotoTBluetoothManager mLototBluetoothManager;
     private LotoTGatewayService mLototGateway;
     private boolean mLototGatewayBound;
+    private boolean mLototGatewayBinding;
     private final Handler mLototGatewayHandler = new Handler(Looper.getMainLooper());
     private final ServiceConnection mLototGatewayConnection = new ServiceConnection()
     {
@@ -753,7 +754,7 @@ public class MainActivity extends PluginManager
         initializeLotoTDashboard();
         // Bind first; foreground execution begins only after a user-enabled
         // background capability or an explicit vehicle session requires it.
-        bindService(new Intent(this, LotoTGatewayService.class),
+        mLototGatewayBinding = bindService(new Intent(this, LotoTGatewayService.class),
                 mLototGatewayConnection, Context.BIND_AUTO_CREATE);
         applyLotoTSystemBars(prefs.getString(PREF_LOTOT_THEME, "dark"));
 
@@ -1047,13 +1048,15 @@ public class MainActivity extends PluginManager
         mLototGatewayHandler.removeCallbacksAndMessages(null);
         if (mLototGateway != null) mLototGateway.detachUi(mHandler);
         if (mLototGateway != null) mLototGateway.removeListener(this);
-        if (mLototGatewayBound)
+        if (mLototGatewayBinding)
         {
             try { unbindService(mLototGatewayConnection); }
             catch (IllegalArgumentException ignored) { }
         }
         mLototGatewayBound = false;
+        mLototGatewayBinding = false;
         mLototGateway = null;
+        mHandler.removeCallbacksAndMessages(null);
         if (mLoToTiAiClient != null)
         {
             mLoToTiAiClient.shutdown();
@@ -2239,6 +2242,9 @@ public class MainActivity extends PluginManager
     {
         runOnUiThread(() ->
         {
+            if (isDestroyed()) return;
+            if (mLototGateway != null && mCommService != null && !mLototGateway.hasVehicleSession())
+                onDisconnect();
             publishLotoTBuiltinState();
             publishLotoTTelemetry();
         });
