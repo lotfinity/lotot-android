@@ -68,6 +68,14 @@ public class GatewaySessionInstrumentedTest
             });
             assertTrue(service.get().getState().getBoolean("foreground"));
             activity.close();
+            // ActivityScenario may leave its bootstrap activity resumed. Put the
+            // entire UID behind the launcher so Android actually charges its budget.
+            try (android.os.ParcelFileDescriptor shell = InstrumentationRegistry.getInstrumentation()
+                    .getUiAutomation().executeShellCommand("input keyevent KEYCODE_HOME"))
+            {
+                try (java.io.InputStream input = new android.os.ParcelFileDescriptor.AutoCloseInputStream(shell))
+                { while (input.read() != -1) { } }
+            }
             long deadline=SystemClock.elapsedRealtime()+20_000;
             while(!service.get().getState().getBoolean("timed_out") && SystemClock.elapsedRealtime()<deadline)
                 SystemClock.sleep(200);
