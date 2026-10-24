@@ -2674,7 +2674,7 @@ public class MainActivity extends LotoTPluginActivity
     @SuppressLint("GestureBackNavigation")
     public void onBackPressed()
     {
-        if (getListAdapter() == pluginHandler)
+        if (pluginHandler != null && getListAdapter() == pluginHandler)
         {
             setObdService(obdService, null);
         } else

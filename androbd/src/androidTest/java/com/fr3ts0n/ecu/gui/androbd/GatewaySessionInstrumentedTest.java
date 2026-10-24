@@ -81,6 +81,7 @@ public class GatewaySessionInstrumentedTest
                 SystemClock.sleep(200);
             assertTrue("Android delivered the dataSync budget timeout",service.get().getState().getBoolean("timed_out"));
             assertFalse(service.get().getState().getBoolean("foreground"));
+            assertEquals("service_time_budget_exhausted",service.get().getState().getString("foreground_error"));
         }
         finally
         {
