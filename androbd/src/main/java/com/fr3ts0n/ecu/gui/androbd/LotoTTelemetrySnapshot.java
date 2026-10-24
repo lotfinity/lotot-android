@@ -57,7 +57,7 @@ final class LotoTTelemetrySnapshot
     {
         // Password rotation for the same principal keeps its backlog. A broker,
         // account, client or provisioned device change starts a separate partition.
-        return hash(LotoTMqttPublisher.buildBrokerUri(config) + "\n" + config.username.trim()
+        return hash(LotoTMqttPublisher.buildBrokerUri(config) + "\n" + (config.username == null ? "" : config.username)
                 + "\n" + config.clientId + "\n" + config.deviceUid);
     }
 

@@ -2,6 +2,8 @@
 
 The gateway owns the physical adapter transport and samples decoded measurements without a running activity or WebView. Closing/recreating the screen leaves an active vehicle session running; explicit disconnect ends it. A killed process does not claim to restore an unknown vehicle connection. Returning to the app allows the user to reconnect.
 
+Native list selection preserves the registry's numeric PID keys during recreation. Legacy external-plugin hosting is activity-scoped and discovery is explicit; the upstream submodule remains unchanged. Screen destruction detaches native measurement listeners, so old activities cannot receive new session updates. A rejected foreground-service start reports a paused/error state and does not start an orphan transport.
+
 Only an actual qualifying adapter session uses `connectedDevice`. GPS uses `location` when authorized. Standalone MQTT uses `dataSync` and respects Android's timeout: it preserves the queue, stops foreground execution, and exposes a paused state. Reopening the app and saving service settings can resume work under Android's rules. The code does not promise permanent background execution or process-death survival.
 
 Capture and delivery run independently. Synchronous Paho operations have a five-second completion deadline, connection attempts have a six-second timeout, and replay yields between bounded batches. Successful rows are removed only after configured MQTT operations finish; QoS 0 retains its normal best-effort semantics. Broker acknowledgement is not proof of backend ingestion. Consumers must deduplicate `external_id` because replay after process death can redeliver a snapshot.

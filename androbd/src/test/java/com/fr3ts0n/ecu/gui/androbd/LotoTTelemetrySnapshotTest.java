@@ -57,7 +57,9 @@ public class LotoTTelemetrySnapshotTest
         assertEquals(original, LotoTTelemetrySnapshot.destination(config));
         config.host="b.example";
         assertNotEquals(original, LotoTTelemetrySnapshot.destination(config));
-        config.host="a.example"; config.username="bob";
+        config.host="a.example"; config.username=" alice";
+        assertNotEquals(original, LotoTTelemetrySnapshot.destination(config));
+        config.username="bob";
         assertNotEquals(original, LotoTTelemetrySnapshot.destination(config));
         config.username="alice"; config.deviceUid="vehicle-b";
         assertNotEquals(original, LotoTTelemetrySnapshot.destination(config));
