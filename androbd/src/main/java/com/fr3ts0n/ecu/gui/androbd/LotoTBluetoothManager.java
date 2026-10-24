@@ -201,7 +201,8 @@ final class LotoTBluetoothManager
 
     private void removeMediumDevices(String medium)
     {
-        devices.entrySet().removeIf(entry -> medium.equals(entry.getValue().medium));
+        java.util.Iterator<DeviceRecord> iterator = devices.values().iterator();
+        while (iterator.hasNext()) if (medium.equals(iterator.next().medium)) iterator.remove();
         notifyChanged();
     }
 

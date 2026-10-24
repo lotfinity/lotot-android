@@ -1,6 +1,9 @@
 // Algerian Darija (ar-DZ) — Arabic-script Darija with natural French automotive terminology.
 // Technical identifiers, codes and units intentionally remain Latin/LTR.
 export const AR_DZ = Object.freeze({
+  "service.sync_paused": "Sync حبست؛ عاود افتح réglages باش تكمل",
+  "service.queue_dropped": "Stockage عمر: {count} relevé(s) قدام تمسحو",
+  "service.queue_held": "{count} relevé(s) قدام محفوظين لوجهة أخرى",
   "category.all": "الكل",
   "category.favorites": "المفضلة",
   "category.diagnostic": "Diagnostic",
@@ -191,7 +194,7 @@ export const AR_DZ = Object.freeze({
   "service.enable_accelerometer": "فعّل accéléromètre",
   "service.accelerometer_detail": "Échantillonnage natif بـ 10 Hz، والعرض يتنقص على cadence تاع dashboard.",
   "service.gateway_title": "Passerelle MQTT موثوقة",
-  "service.gateway_detail": "Service دائم، file hors ligne و reprise automatique",
+  "service.gateway_detail": "Stockage hors ligne و reprise، حسب حدود Android",
   "service.background_gateway": "PASSERELLE DE FOND",
   "service.running": "Service راهو يخدم",
   "service.starting": "راهو يبدا…",

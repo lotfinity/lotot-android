@@ -65,6 +65,7 @@ final class LotoTMotionSensorProvider implements SensorEventListener
         if (sensorManager != null && registered) sensorManager.unregisterListener(this);
         registered = false;
         status = "disabled";
+        store.clearSource("motion");
         notifyState();
     }
 

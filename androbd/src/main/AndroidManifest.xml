@@ -22,6 +22,8 @@
         android:maxSdkVersion="32" />
     <!-- allow access to WIFI adapter -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Wi-Fi OBD sessions qualify as connected-device work. -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- post notifications (SDK 33+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -35,7 +37,8 @@
     <application
         android:allowBackup="true"
         android:description="@string/app_description"
-        android:fullBackupContent="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"

@@ -859,6 +859,9 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
             <b>{services.mqtt?.status === 'syncing' ? `${Math.max(0, (services.mqtt.syncing_total || 0) - (services.mqtt.syncing_remaining || 0))}/${services.mqtt.syncing_total || 0}` : queued}</b>
           </div>
           <p className="gateway-security"><Icon name="health_stable"/><span>{t('service.security', { count: services.mqtt?.queue_capacity || 10000 })}</span></p>
+          {services.mqtt?.queue_held > 0 && <p className="inline-service-error" role="status">{t('service.queue_held', { count: services.mqtt.queue_held })}</p>}
+          {services.mqtt?.queue_dropped > 0 && <p className="inline-service-error" role="status">{t('service.queue_dropped', { count: services.mqtt.queue_dropped })}</p>}
+          {services.timed_out && <p className="inline-service-error" role="status">{t('service.sync_paused')}</p>}
           <SwitchRow checked={Boolean(mqtt.enabled)} onChange={(value) => updateMqtt('enabled', value)} title={t('service.enable_mqtt')} description={t('service.enable_mqtt_detail')}/>
           <div className="mqtt-form">
             <label><span>{t('service.protocol')}</span><select value={mqtt.protocol} onChange={(event) => updateMqtt('protocol', event.target.value)}><option value="tcp://">TCP</option><option value="ssl://">SSL/TLS</option><option value="ws://">WebSocket</option><option value="wss://">Secure WebSocket</option></select></label>

@@ -75,7 +75,7 @@ import androidx.core.content.FileProvider;
 
 import com.dtcdatabase.DTCDatabase;
 import com.fr3ts0n.androbd.plugin.Plugin;
-import com.fr3ts0n.androbd.plugin.mgr.PluginManager;
+import com.fr3ts0n.androbd.plugin.mgr.LotoTPluginActivity;
 import com.fr3ts0n.ecu.EcuCodeItem;
 import com.fr3ts0n.ecu.EcuDataItem;
 import com.fr3ts0n.ecu.EcuDataItems;
@@ -119,7 +119,7 @@ import org.json.JSONObject;
 /**
  * Main Activity for AndrOBD app
  */
-public class MainActivity extends PluginManager
+public class MainActivity extends LotoTPluginActivity
         implements PvChangeListener,
         AdapterView.OnItemLongClickListener,
         PropertyChangeListener,
@@ -336,24 +336,8 @@ public class MainActivity extends PluginManager
     private LotoTBluetoothManager mLototBluetoothManager;
     private LotoTGatewayService mLototGateway;
     private boolean mLototGatewayBound;
+    private boolean mLototGatewayBinding;
     private final Handler mLototGatewayHandler = new Handler(Looper.getMainLooper());
-    private final Runnable mLototGatewaySampler = new Runnable()
-    {
-        @Override public void run()
-        {
-            try
-            {
-                if (mLototGateway != null
-                        && ("live".equals(mLototStatus) || "demo".equals(mLototStatus)))
-                    mLototGateway.updateTelemetry(getLotoTSignals());
-            }
-            catch (Exception ex)
-            {
-                log.log(Level.FINER, "Unable to feed LotoT foreground gateway", ex);
-            }
-            if (mLototGatewayBound) mLototGatewayHandler.postDelayed(this, 1000L);
-        }
-    };
     private final ServiceConnection mLototGatewayConnection = new ServiceConnection()
     {
         @Override public void onServiceConnected(ComponentName name, IBinder service)
@@ -362,8 +346,22 @@ public class MainActivity extends PluginManager
             mLototGateway = binder.getService();
             mLototGatewayBound = true;
             mLototGateway.addListener(MainActivity.this);
-            mLototGatewayHandler.removeCallbacks(mLototGatewaySampler);
-            mLototGatewayHandler.post(mLototGatewaySampler);
+            mLototGateway.attachUi(mHandler);
+            mLototGateway.refreshForegroundService();
+            mCommService = mLototGateway.getTransport();
+            if (mLototGateway.hasVehicleSession())
+            {
+                CommService.medium = mLototGateway.getTransportMedium();
+                mLototConnectedAddress = mLototGateway.getDeviceAddress();
+                mLototConnectedMedium = mLototGateway.getDeviceMedium();
+                mConnectedDeviceName = mLototGateway.getDeviceName();
+                mLototSelectedDeviceName = mConnectedDeviceName;
+                mode = MODE.ONLINE;
+                mLototStatus = mLototGateway.getSessionStatus();
+                obdService = CommService.elm.getService();
+                publishLotoTStatus();
+                publishLotoTBluetoothState();
+            }
             publishLotoTBuiltinState();
             publishLotoTTelemetry();
         }
@@ -373,7 +371,7 @@ public class MainActivity extends PluginManager
             if (mLototGateway != null) mLototGateway.removeListener(MainActivity.this);
             mLototGateway = null;
             mLototGatewayBound = false;
-            mLototGatewayHandler.removeCallbacks(mLototGatewaySampler);
+
         }
     };
     private String mLototBluetoothMedium = LotoTBluetoothManager.MEDIUM_CLASSIC;
@@ -555,7 +553,7 @@ public class MainActivity extends PluginManager
 
                     case MESSAGE_UPDATE_VIEW:
                         long lototNow = System.currentTimeMillis();
-                        checkLotoTConnectionWatchdog(lototNow);
+
                         if (lototNow - mLototLastNativeListUpdate >= NATIVE_LIST_UPDATE_TIME)
                         {
                             getListView().invalidateViews();
@@ -583,7 +581,9 @@ public class MainActivity extends PluginManager
                         if (state == ElmProt.STAT.ECU_DETECTED
                                 && obdService == ObdProt.OBD_SVC_NONE)
                         {
-                            setObdService(ObdProt.OBD_SVC_DATA, getString(R.string.obd_data));
+                            if (CommService.elm.getService() != ObdProt.OBD_SVC_DATA)
+                                setObdService(ObdProt.OBD_SVC_DATA, getString(R.string.obd_data));
+                            else obdService = ObdProt.OBD_SVC_DATA;
                             showLotoTDashboard();
                         }
                         else if (istRestoreWanted(PRESELECT.LAST_SERVICE))
@@ -756,7 +756,7 @@ public class MainActivity extends PluginManager
         initializeLotoTDashboard();
         // Bind first; foreground execution begins only after a user-enabled
         // background capability or an explicit vehicle session requires it.
-        bindService(new Intent(this, LotoTGatewayService.class),
+        mLototGatewayBinding = bindService(new Intent(this, LotoTGatewayService.class),
                 mLototGatewayConnection, Context.BIND_AUTO_CREATE);
         applyLotoTSystemBars(prefs.getString(PREF_LOTOT_THEME, "dark"));
 
@@ -1018,38 +1018,23 @@ public class MainActivity extends PluginManager
         // Stop toolbar hider thread
         setAutoHider(false);
 
-        try
-        {
-            // Reduce ELM power consumption by setting it to sleep
-            CommService.elm.goToSleep();
-            // wait until message is out ...
-            Thread.sleep(100, 0);
-        } catch (InterruptedException e)
-        {
-            // do nothing
-            log.log(Level.FINER, e.getLocalizedMessage());
-        }
-
         /* don't listen to ELM data changes any more */
         removeDataListeners();
+        mPidAdapter.disposeListeners();
+        mVidAdapter.disposeListeners();
+        mTidAdapter.disposeListeners();
+        mDfcAdapter.disposeListeners();
+        mPluginDataAdapter.disposeListeners();
         // don't listen to ELM property changes any more
         CommService.elm.removePropertyChangeListener(this);
 
-        // stop demo service if it was started
-        setMode(MODE.OFFLINE);
-
-        // stop communication service
-        if (mCommService != null)
+        // Demo is a screen-scoped simulation; a real transport is service-owned.
+        if (mLototGateway == null || !mLototGateway.hasVehicleSession())
         {
-            mCommService.stop();
+            setMode(MODE.OFFLINE);
+            if (mCommService != null) mCommService.stop();
         }
-        
-        // if bluetooth adapter was switched OFF before ...
-        if (mBluetoothAdapter != null && !initialBtStateEnabled)
-        {
-            // ... turn it OFF again
-            mBluetoothAdapter.disable();
-        }
+        prefs.unregisterOnSharedPreferenceChangeListener(this);
 
         log.info(String.format("%s %s finished",
                 getString(R.string.app_name),
@@ -1067,15 +1052,18 @@ public class MainActivity extends PluginManager
             mLototBluetoothManager.destroy();
             mLototBluetoothManager = null;
         }
-        mLototGatewayHandler.removeCallbacks(mLototGatewaySampler);
+        mLototGatewayHandler.removeCallbacksAndMessages(null);
+        if (mLototGateway != null) mLototGateway.detachUi(mHandler);
         if (mLototGateway != null) mLototGateway.removeListener(this);
-        if (mLototGatewayBound)
+        if (mLototGatewayBinding)
         {
             try { unbindService(mLototGatewayConnection); }
             catch (IllegalArgumentException ignored) { }
         }
         mLototGatewayBound = false;
+        mLototGatewayBinding = false;
         mLototGateway = null;
+        mHandler.removeCallbacksAndMessages(null);
         if (mLoToTiAiClient != null)
         {
             mLoToTiAiClient.shutdown();
@@ -1272,6 +1260,8 @@ public class MainActivity extends PluginManager
     @Override
     public void startLotoTDemo()
     {
+        if (mLototGateway != null) mLototGateway.disconnectVehicle();
+        mCommService = null;
         mLototManualDisconnect = false;
         mLototLossLatched = false;
         mLototWatchdogTriggered = false;
@@ -1483,6 +1473,7 @@ public class MainActivity extends PluginManager
     @Override
     public void disconnectLotoTBluetooth()
     {
+        if (mLototGateway != null) mLototGateway.disconnectVehicle();
         mLototManualDisconnect = true;
         mLototLossLatched = false;
         mLototWatchdogTriggered = false;
@@ -1649,7 +1640,6 @@ public class MainActivity extends PluginManager
     {
         if (mLototGateway == null) return;
         mLototGateway.setVehicleSessionActive(active);
-        if (mLototGateway.requiresForeground()) LotoTGatewayService.start(this);
     }
 
     private void prepareLotoTNonBluetoothConnection(String address, String medium, String name)
@@ -1720,7 +1710,7 @@ public class MainActivity extends PluginManager
         try
         {
             boolean needsPermission = mLototGateway.applyConfig(json);
-            if (mLototGateway.requiresForeground()) LotoTGatewayService.start(this);
+
             publishLotoTBuiltinState();
             publishLotoTTelemetry();
             if (needsPermission) requestLotoTLocationPermission();
@@ -2258,6 +2248,9 @@ public class MainActivity extends PluginManager
     {
         runOnUiThread(() ->
         {
+            if (isDestroyed()) return;
+            if (mLototGateway != null && mCommService != null && !mLototGateway.hasVehicleSession())
+                onDisconnect();
             publishLotoTBuiltinState();
             publishLotoTTelemetry();
         });
@@ -2301,7 +2294,8 @@ public class MainActivity extends PluginManager
             // each PID response is decoded. Numeric zero is valid; "n/a", NaN,
             // empty payloads and unsupported PIDs remain unavailable.
             EcuDataItem item = EcuDataItems.byMnemonic.get(mnemonic);
-            if (item == null || item.pv == null) return JSONObject.NULL;
+            if (item == null || item.pv == null || item.updatedAt <= 0L
+                    || System.currentTimeMillis() - item.updatedAt > 60_000L) return JSONObject.NULL;
             Object value = item.pv.get(EcuDataPv.FID_VALUE);
             if (value instanceof Number)
             {
@@ -2557,69 +2551,7 @@ public class MainActivity extends PluginManager
         {
             if ("live".equals(mLototStatus) || "demo".equals(mLototStatus))
             {
-            ArrayList<EcuDataItem> updatedItems = new ArrayList<>();
-            for (EcuDataItem item : EcuDataItems.byMnemonic.values())
-            {
-                if (item == null || item.pv == null || item.updatedAt <= 0L) continue;
-                updatedItems.add(item);
-            }
-            updatedItems.sort(Comparator
-                    .comparingInt((EcuDataItem item) -> item.pid)
-                    .thenComparingInt(item -> item.ofs)
-                    .thenComparing(item -> String.valueOf(
-                            item.pv.get(EcuDataPv.FID_MNEMONIC))));
-
-            for (EcuDataItem item : updatedItems)
-            {
-                Object value = item.pv.get(EcuDataPv.FID_VALUE);
-                if (value instanceof Number)
-                {
-                    double numeric = ((Number) value).doubleValue();
-                    if (!Double.isFinite(numeric)) continue;
-                    value = numeric;
-                }
-                else
-                {
-                    if (value == null) continue;
-                    String stringValue = String.valueOf(value).trim();
-                    if (stringValue.isEmpty()
-                            || "n/a".equalsIgnoreCase(stringValue)
-                            || "nan".equalsIgnoreCase(stringValue)) continue;
-                    value = stringValue;
-                }
-
-                Object mnemonicObject = item.pv.get(EcuDataPv.FID_MNEMONIC);
-                String mnemonic = mnemonicObject == null
-                        ? String.format("PID_%02X_%d", item.pid, item.ofs)
-                        : String.valueOf(mnemonicObject);
-                Object descriptionObject = item.pv.get(EcuDataPv.FID_DESCRIPT);
-                String description = descriptionObject == null
-                        ? mnemonic : String.valueOf(descriptionObject);
-
-                JSONObject signal = new JSONObject();
-                signal.put("key", String.format("%02X.%d.%s", item.pid, item.ofs, mnemonic));
-                signal.put("mnemonic", mnemonic);
-                signal.put("label", description);
-                signal.put("value", value);
-                signal.put("unit", item.pv.getUnits());
-                signal.put("pid", item.pid);
-                signal.put("offset", item.ofs);
-                signal.put("updated_at", item.updatedAt);
-
-                Object minObject = item.pv.get(EcuDataPv.FID_MIN);
-                if (minObject instanceof Number)
-                {
-                    double min = ((Number) minObject).doubleValue();
-                    if (Double.isFinite(min)) signal.put("min", min);
-                }
-                Object maxObject = item.pv.get(EcuDataPv.FID_MAX);
-                if (maxObject instanceof Number)
-                {
-                    double max = ((Number) maxObject).doubleValue();
-                    if (Double.isFinite(max)) signal.put("max", max);
-                }
-                signals.put(signal);
-            }
+            signals = LotoTObdSignals.collect("demo".equals(mLototStatus) ? "demo" : "obd");
             }
             if (mLototGateway != null) mLototGateway.appendSignals(signals);
         }
@@ -2702,7 +2634,6 @@ public class MainActivity extends PluginManager
                 // is running, so queued Mode-09 one-shot requests can be consumed.
                 requestLotoTVehicleIdentity();
             }
-            if (mLototGateway != null) mLototGateway.updateTelemetry(signals);
             payload.put("signals", signals);
             payload.put("signal_count", signals.length());
             if (BuildConfig.DEBUG && capturedAt - mLototLastDebugLog >= 1000L)
@@ -2743,7 +2674,7 @@ public class MainActivity extends PluginManager
     @SuppressLint("GestureBackNavigation")
     public void onBackPressed()
     {
-        if (getListAdapter() == pluginHandler)
+        if (pluginHandler != null && getListAdapter() == pluginHandler)
         {
             setObdService(obdService, null);
         } else
@@ -2849,11 +2780,7 @@ public class MainActivity extends PluginManager
             }
 
             if(id == R.id.disconnect) {
-                // stop communication service
-                if (mCommService != null) {
-                    mCommService.stop();
-                }
-                setMode(MODE.OFFLINE);
+                disconnectLotoTBluetooth();
                 return true;
             }
 
@@ -2990,6 +2917,7 @@ public class MainActivity extends PluginManager
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data)
     {
+        super.onActivityResult(requestCode, resultCode, data);
         boolean secureConnection = false;
 
         switch (requestCode)
@@ -3030,8 +2958,8 @@ public class MainActivity extends PluginManager
                 if (resultCode == Activity.RESULT_OK)
                 {
                     setLotoTStatus("connecting");
-                    mCommService = new UsbCommService(this, mHandler);
-                    mCommService.connect(UsbDeviceListActivity.selectedPort, true);
+                    mCommService = createLotoTTransport(CommService.MEDIUM.USB);
+                    if (mCommService != null) mCommService.connect(UsbDeviceListActivity.selectedPort, true);
                 } else
                 {
                     mLototConnectedAddress = null;
@@ -4202,8 +4130,8 @@ public class MainActivity extends PluginManager
         // Get the BluetoothDevice object
         BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
         // Attempt to connect to the device
-        mCommService = new BtCommService(this, mHandler);
-        mCommService.connect(device, secure);
+        mCommService = createLotoTTransport(CommService.MEDIUM.BLUETOOTH);
+        if (mCommService != null) mCommService.connect(device, secure);
     }
 
     /**
@@ -4219,8 +4147,8 @@ public class MainActivity extends PluginManager
         BluetoothDevice device = mBluetoothAdapter.getRemoteLeDevice(address, ADDRESS_TYPE_PUBLIC);
         // Attempt to connect to the device
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
-            mCommService = new BleCommService(this, mHandler);
-            mCommService.connect(device, secure);
+            mCommService = createLotoTTransport(CommService.MEDIUM.BLE);
+            if (mCommService != null) mCommService.connect(device, secure);
         }
     }
 
@@ -4233,8 +4161,8 @@ public class MainActivity extends PluginManager
     private void connectNetworkDevice(String address, int port)
     {
         // Attempt to connect to the device
-        mCommService = new NetworkCommService(this, mHandler);
-        ((NetworkCommService) mCommService).connect(address, port);
+        mCommService = createLotoTTransport(CommService.MEDIUM.NETWORK);
+        if (mCommService != null) ((NetworkCommService) mCommService).connect(address, port);
     }
 
     /**
@@ -4481,10 +4409,32 @@ public class MainActivity extends PluginManager
      * Handle bluetooth connection established ...
      */
     @SuppressLint("StringFormatInvalid")
+    private CommService createLotoTTransport(CommService.MEDIUM medium)
+    {
+        if (mLototGateway == null)
+        {
+            mLototBluetoothError = getString(R.string.unabletoconnect);
+            setLotoTStatus("offline");
+            return null;
+        }
+        CommService created = mLototGateway.createTransport(medium, mLototConnectedAddress,
+                mLototConnectedMedium, mLototSelectedDeviceName, mHandler);
+        if (created == null)
+        {
+            mLototBluetoothError = getString(R.string.unabletoconnect);
+            mode = MODE.OFFLINE;
+            setLotoTStatus("offline");
+            publishLotoTBluetoothState();
+        }
+        return created;
+    }
+
     private void onConnect()
     {
         stopDemoService();
-        resetLotoTSignalTimestamps();
+        if (mLototGateway == null) resetLotoTSignalTimestamps();
+        mLototVehicleIdentityRequested = false;
+        mLototVehicleIdentityAttempts = 0;
         ObdProt.setRealtimePidPriorityEnabled(true);
         mLototManualDisconnect = false;
         mLototLossLatched = false;
@@ -4498,7 +4448,7 @@ public class MainActivity extends PluginManager
         // display connection status
         setStatus(getString(R.string.title_connected_to, mConnectedDeviceName));
         // send RESET to Elm adapter
-        CommService.elm.reset();
+        if (mLototGateway == null) CommService.elm.reset();
         mLototBluetoothError = null;
         setLotoTVehicleSessionActive(true);
         setLotoTStatus("live");

@@ -114,6 +114,7 @@ final class LotoTGpsProvider implements LocationListener
     {
         stopUpdates();
         status = "disabled";
+        store.clearSource("gps");
         error = null;
         notifyState();
     }
@@ -132,12 +133,20 @@ final class LotoTGpsProvider implements LocationListener
     public void onLocationChanged(Location location)
     {
         if (!enabled || location == null) return;
-        store.update("GPS_LATITUDE", location.getLatitude());
-        store.update("GPS_LONGITUDE", location.getLongitude());
-        if (location.hasAltitude()) store.update("GPS_ALTITUDE", location.getAltitude());
-        if (location.hasBearing()) store.update("GPS_BEARING", location.getBearing());
-        if (location.hasSpeed()) store.update("GPS_SPEED", location.getSpeed() * 3.6d);
-        lastUpdateAt = System.currentTimeMillis();
+        long now = System.currentTimeMillis();
+        // A last-known fix may be hours old. Preserve its age across wall-clock changes.
+        long ageMs = Math.max(0L, (android.os.SystemClock.elapsedRealtimeNanos()
+                - location.getElapsedRealtimeNanos()) / 1_000_000L);
+        if (ageMs > 30_000L) { status = "waiting"; notifyState(); return; }
+        long observedAt = Math.min(now, location.getTime());
+        Double accuracy = location.hasAccuracy() ? (double) location.getAccuracy() : null;
+        store.clearSource("gps");
+        store.update("GPS_LATITUDE", location.getLatitude(), observedAt, accuracy);
+        store.update("GPS_LONGITUDE", location.getLongitude(), observedAt, accuracy);
+        if (location.hasAltitude()) store.update("GPS_ALTITUDE", location.getAltitude(), observedAt, accuracy);
+        if (location.hasBearing()) store.update("GPS_BEARING", location.getBearing(), observedAt, accuracy);
+        if (location.hasSpeed()) store.update("GPS_SPEED", location.getSpeed() * 3.6d, observedAt, accuracy);
+        lastUpdateAt = observedAt;
         status = "active";
         error = null;
         notifyState();

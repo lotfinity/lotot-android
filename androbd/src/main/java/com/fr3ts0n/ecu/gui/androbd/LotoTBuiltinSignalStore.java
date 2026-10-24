@@ -25,6 +25,7 @@ final class LotoTBuiltinSignalStore
         final String source;
         Object value;
         long updatedAt;
+        Double accuracy;
 
         Signal(String mnemonic, String label, String unit,
                double min, double max, String source)
@@ -43,11 +44,20 @@ final class LotoTBuiltinSignalStore
     synchronized void define(String mnemonic, String label, String unit,
                              double min, double max, String source)
     {
-        signals.putIfAbsent(mnemonic,
-                new Signal(mnemonic, label, unit, min, max, source));
+        if (!signals.containsKey(mnemonic))
+            signals.put(mnemonic, new Signal(mnemonic, label, unit, min, max, source));
     }
 
     synchronized void update(String mnemonic, Object value)
+    { update(mnemonic, value, System.currentTimeMillis(), null); }
+
+    synchronized void clearSource(String source)
+    {
+        for (Signal signal : signals.values())
+            if (source.equals(signal.source)) { signal.value = null; signal.updatedAt = 0; }
+    }
+
+    synchronized void update(String mnemonic, Object value, long observedAt, Double accuracy)
     {
         Signal signal = signals.get(mnemonic);
         if (signal == null || value == null) return;
@@ -63,16 +73,19 @@ final class LotoTBuiltinSignalStore
             if (text.isEmpty()) return;
             signal.value = text;
         }
-        signal.updatedAt = System.currentTimeMillis();
+        signal.updatedAt = observedAt;
+        signal.accuracy = accuracy;
     }
 
     synchronized void appendTo(JSONArray target) throws org.json.JSONException
     {
         List<Signal> ordered = new ArrayList<>(signals.values());
-        ordered.sort(Comparator.comparing(signal -> signal.mnemonic));
+        java.util.Collections.sort(ordered, (a, b) -> a.mnemonic.compareTo(b.mnemonic));
         for (Signal signal : ordered)
         {
-            if (signal.updatedAt <= 0L || signal.value == null) continue;
+            long maxAge = "gps".equals(signal.source) ? 30_000L : 5_000L;
+            if (signal.updatedAt <= 0L || signal.value == null
+                    || System.currentTimeMillis() - signal.updatedAt > maxAge) continue;
             JSONObject json = new JSONObject();
             json.put("key", "builtin." + signal.source + "." + signal.mnemonic);
             json.put("mnemonic", signal.mnemonic);
@@ -81,6 +94,7 @@ final class LotoTBuiltinSignalStore
             json.put("unit", signal.unit);
             json.put("source", signal.source);
             json.put("updated_at", signal.updatedAt);
+            if (signal.accuracy != null) json.put("accuracy_m", signal.accuracy);
             json.put("min", signal.min);
             json.put("max", signal.max);
             target.put(json);
