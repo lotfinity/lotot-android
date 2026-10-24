@@ -56,6 +56,7 @@ public class GatewaySessionInstrumentedTest
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         context.bindService(new Intent(context,LotoTGatewayService.class),connection,Context.BIND_AUTO_CREATE);
         assertTrue(bound.await(10,TimeUnit.SECONDS));
+        boolean boundToService = true;
         try
         {
             InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
@@ -67,6 +68,11 @@ public class GatewaySessionInstrumentedTest
                 catch(Exception ex) { throw new AssertionError(ex); }
             });
             assertTrue(service.get().getState().getBoolean("foreground"));
+            // Keep a Java reference for assertions, but remove the live binding:
+            // a bound test client can keep the UID important and prevent the
+            // framework from charging the dataSync background FGS budget.
+            context.unbindService(connection);
+            boundToService = false;
             activity.close();
             // ActivityScenario may leave its bootstrap activity resumed. Put the
             // entire UID behind the launcher so Android actually charges its budget.
@@ -76,16 +82,20 @@ public class GatewaySessionInstrumentedTest
                 try (java.io.InputStream input = new android.os.ParcelFileDescriptor.AutoCloseInputStream(shell))
                 { while (input.read() != -1) { } }
             }
-            long deadline=SystemClock.elapsedRealtime()+20_000;
+            // The shortened OS budget is 3 seconds, but emulator scheduling and
+            // activity-background transitions can delay delivery substantially.
+            long deadline=SystemClock.elapsedRealtime()+45_000;
             while(!service.get().getState().getBoolean("timed_out") && SystemClock.elapsedRealtime()<deadline)
                 SystemClock.sleep(200);
-            assertTrue("Android delivered the dataSync budget timeout",service.get().getState().getBoolean("timed_out"));
+            assertTrue("Android delivered the dataSync budget timeout after unbinding the foreground test client; state="
+                    +service.get().getState(),service.get().getState().getBoolean("timed_out"));
             assertFalse(service.get().getState().getBoolean("foreground"));
             assertEquals("service_time_budget_exhausted",service.get().getState().getString("foreground_error"));
         }
         finally
         {
-            activity.close(); context.unbindService(connection);
+            activity.close();
+            if (boundToService) context.unbindService(connection);
             context.stopService(new Intent(context,LotoTGatewayService.class));
             android.preference.PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit();
             SystemClock.sleep(1500);
