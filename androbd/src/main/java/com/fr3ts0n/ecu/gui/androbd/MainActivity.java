@@ -347,6 +347,7 @@ public class MainActivity extends PluginManager
             mLototGatewayBound = true;
             mLototGateway.addListener(MainActivity.this);
             mLototGateway.attachUi(mHandler);
+            mLototGateway.refreshForegroundService();
             mCommService = mLototGateway.getTransport();
             if (mLototGateway.hasVehicleSession())
             {
@@ -1634,7 +1635,6 @@ public class MainActivity extends PluginManager
     {
         if (mLototGateway == null) return;
         mLototGateway.setVehicleSessionActive(active);
-        if (mLototGateway.requiresForeground()) LotoTGatewayService.start(this);
     }
 
     private void prepareLotoTNonBluetoothConnection(String address, String medium, String name)
@@ -1705,7 +1705,7 @@ public class MainActivity extends PluginManager
         try
         {
             boolean needsPermission = mLototGateway.applyConfig(json);
-            if (mLototGateway.requiresForeground()) LotoTGatewayService.start(this);
+
             publishLotoTBuiltinState();
             publishLotoTTelemetry();
             if (needsPermission) requestLotoTLocationPermission();
@@ -2954,7 +2954,7 @@ public class MainActivity extends PluginManager
                 {
                     setLotoTStatus("connecting");
                     mCommService = createLotoTTransport(CommService.MEDIUM.USB);
-                    mCommService.connect(UsbDeviceListActivity.selectedPort, true);
+                    if (mCommService != null) mCommService.connect(UsbDeviceListActivity.selectedPort, true);
                 } else
                 {
                     mLototConnectedAddress = null;
@@ -4126,7 +4126,7 @@ public class MainActivity extends PluginManager
         BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
         // Attempt to connect to the device
         mCommService = createLotoTTransport(CommService.MEDIUM.BLUETOOTH);
-        mCommService.connect(device, secure);
+        if (mCommService != null) mCommService.connect(device, secure);
     }
 
     /**
@@ -4143,7 +4143,7 @@ public class MainActivity extends PluginManager
         // Attempt to connect to the device
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
             mCommService = createLotoTTransport(CommService.MEDIUM.BLE);
-            mCommService.connect(device, secure);
+            if (mCommService != null) mCommService.connect(device, secure);
         }
     }
 
@@ -4157,7 +4157,7 @@ public class MainActivity extends PluginManager
     {
         // Attempt to connect to the device
         mCommService = createLotoTTransport(CommService.MEDIUM.NETWORK);
-        ((NetworkCommService) mCommService).connect(address, port);
+        if (mCommService != null) ((NetworkCommService) mCommService).connect(address, port);
     }
 
     /**
@@ -4407,9 +4407,21 @@ public class MainActivity extends PluginManager
     private CommService createLotoTTransport(CommService.MEDIUM medium)
     {
         if (mLototGateway == null)
-            throw new IllegalStateException("Gateway is still binding; retry connection");
-        return mLototGateway.createTransport(medium, mLototConnectedAddress,
+        {
+            mLototBluetoothError = getString(R.string.unabletoconnect);
+            setLotoTStatus("offline");
+            return null;
+        }
+        CommService created = mLototGateway.createTransport(medium, mLototConnectedAddress,
                 mLototConnectedMedium, mLototSelectedDeviceName, mHandler);
+        if (created == null)
+        {
+            mLototBluetoothError = getString(R.string.unabletoconnect);
+            mode = MODE.OFFLINE;
+            setLotoTStatus("offline");
+            publishLotoTBluetoothState();
+        }
+        return created;
     }
 
     private void onConnect()

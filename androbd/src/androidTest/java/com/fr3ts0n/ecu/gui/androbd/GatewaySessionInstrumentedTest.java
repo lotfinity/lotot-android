@@ -22,6 +22,19 @@ import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public class GatewaySessionInstrumentedTest
 {
+    @Test public void backgroundServiceStartRejectionDoesNotEscape()
+    {
+        Context actual=ApplicationProvider.getApplicationContext();
+        Context denied=new android.content.ContextWrapper(actual)
+        {
+            @Override public ComponentName startForegroundService(Intent service)
+            { throw new IllegalStateException("Background start restricted for test"); }
+            @Override public ComponentName startService(Intent service)
+            { throw new IllegalStateException("Background start restricted for test"); }
+        };
+        assertFalse(LotoTGatewayService.start(denied));
+    }
+
     @Test
     @androidx.test.filters.SdkSuppress(minSdkVersion=35)
     public void android15DataSyncBudgetStopsForegroundService() throws Exception

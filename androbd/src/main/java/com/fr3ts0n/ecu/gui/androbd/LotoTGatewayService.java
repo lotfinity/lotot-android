@@ -58,8 +58,10 @@ public final class LotoTGatewayService extends Service
     private String lastNotificationFingerprint = "";
     private boolean vehicleSessionActive;
     private boolean foregroundActive;
+    private boolean started;
     private boolean closing;
     private boolean timedOut;
+    private String foregroundError;
     private boolean lost;
     private android.os.PowerManager.WakeLock sessionWakeLock;
     private long wakeLockRenewedAt;
@@ -116,6 +118,7 @@ public final class LotoTGatewayService extends Service
     {
         disconnectVehicle();
         timedOut = false;
+        foregroundError = null;
         uiHandler = ui;
         deviceAddress = address; deviceMedium = mediumName; deviceName = name;
         long generation = ++transportGeneration;
@@ -158,9 +161,14 @@ public final class LotoTGatewayService extends Service
         CommService.medium = medium;
         lost = false;
         vehicleSessionActive = true;
+        if (!start(this))
+        {
+            foregroundError = "background_start_restricted";
+            onTimeout(0, 0);
+            return null;
+        }
         reconcileForeground(true);
-        LotoTGatewayService.start(this);
-        return transport;
+        return timedOut ? null : transport;
     }
 
     void disconnectVehicle()
@@ -214,13 +222,17 @@ public final class LotoTGatewayService extends Service
             });
     }
 
-    static void start(Context context)
+    static boolean start(Context context)
     {
-        Intent intent = new Intent(context, LotoTGatewayService.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-            ContextCompat.startForegroundService(context, intent);
-        else
-            context.startService(intent);
+        try
+        {
+            Intent intent = new Intent(context, LotoTGatewayService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                ContextCompat.startForegroundService(context, intent);
+            else context.startService(intent);
+            return true;
+        }
+        catch (SecurityException | IllegalStateException denied) { return false; }
     }
 
     @Override public void onCreate()
@@ -236,6 +248,8 @@ public final class LotoTGatewayService extends Service
 
     @Override public int onStartCommand(Intent intent, int flags, int startId)
     {
+        if (timedOut) { stopSelf(startId); return START_NOT_STICKY; }
+        started = true;
         reconcileForeground(true);
         // A killed process has no vehicle transport to restore. Never claim a
         // sticky vehicle session, or start location collection from the background.
@@ -272,10 +286,11 @@ public final class LotoTGatewayService extends Service
     boolean applyConfig(String json) throws org.json.JSONException
     {
         timedOut = false;
+        foregroundError = null;
         handler.removeCallbacks(sampler);
         handler.post(sampler);
         boolean permission = builtins != null && builtins.applyConfig(json);
-        reconcileForeground(true);
+        refreshForegroundService();
         return permission;
     }
 
@@ -333,6 +348,7 @@ public final class LotoTGatewayService extends Service
         state.put("vehicle_session", hasVehicleSession());
         state.put("session_status", getSessionStatus());
         state.put("timed_out", timedOut);
+        state.put("foreground_error", foregroundError == null ? JSONObject.NULL : foregroundError);
         return state;
     }
 
@@ -344,6 +360,12 @@ public final class LotoTGatewayService extends Service
 
     void refreshForegroundService()
     {
+        if (!started && !timedOut && requiresForeground() && !start(this))
+        {
+            foregroundError = "background_start_restricted";
+            onTimeout(0, 0);
+            return;
+        }
         reconcileForeground(true);
     }
 
@@ -361,6 +383,7 @@ public final class LotoTGatewayService extends Service
                 foregroundActive = false;
             }
             lastNotificationFingerprint = "";
+            started = false;
             stopSelf();
             return;
         }
@@ -382,12 +405,14 @@ public final class LotoTGatewayService extends Service
     @Override public void onTimeout(int startId, int fgsType)
     {
         timedOut = true;
+        if (foregroundError == null) foregroundError = "service_time_budget_exhausted";
         handler.removeCallbacks(sampler);
         disconnectVehicle();
         if (builtins != null) builtins.pauseForTimeout();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE);
         else stopForeground(true);
         foregroundActive = false;
+        started = false;
         stopSelf();
         for (Listener listener : listeners) listener.onGatewayStateChanged();
     }
@@ -512,6 +537,7 @@ public final class LotoTGatewayService extends Service
             }
             catch (SecurityException | IllegalStateException ex)
             {
+                foregroundError = "foreground_permission_or_start_restricted";
                 onTimeout(0, type);
                 return;
             }
