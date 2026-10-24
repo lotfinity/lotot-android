@@ -117,6 +117,7 @@ public final class LotoTGatewayService extends Service
                                String name, Handler ui)
     {
         disconnectVehicle();
+        boolean resumeBuiltinServices = timedOut;
         timedOut = false;
         foregroundError = null;
         uiHandler = ui;
@@ -167,6 +168,9 @@ public final class LotoTGatewayService extends Service
             onTimeout(0, 0);
             return null;
         }
+        if (resumeBuiltinServices && builtins != null) builtins.start();
+        handler.removeCallbacks(sampler);
+        handler.post(sampler);
         reconcileForeground(true);
         return timedOut ? null : transport;
     }
