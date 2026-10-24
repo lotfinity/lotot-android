@@ -350,6 +350,7 @@ public class MainActivity extends PluginManager
             mCommService = mLototGateway.getTransport();
             if (mLototGateway.hasVehicleSession())
             {
+                CommService.medium = mLototGateway.getTransportMedium();
                 mLototConnectedAddress = mLototGateway.getDeviceAddress();
                 mLototConnectedMedium = mLototGateway.getDeviceMedium();
                 mConnectedDeviceName = mLototGateway.getDeviceName();

@@ -123,6 +123,7 @@ public class GatewaySessionInstrumentedTest
                 assertEquals(CommService.STATE.CONNECTED,transport.get().getState());
                 activity.recreate();
                 assertSame(transport.get(),service.get().getTransport());
+                assertEquals(CommService.MEDIUM.NETWORK,service.get().getTransportMedium());
                 activity.close();
                 InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
                     try

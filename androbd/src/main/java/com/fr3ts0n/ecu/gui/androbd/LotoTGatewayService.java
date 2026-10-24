@@ -64,6 +64,7 @@ public final class LotoTGatewayService extends Service
     private android.os.PowerManager.WakeLock sessionWakeLock;
     private long wakeLockRenewedAt;
     private CommService transport;
+    private CommService.MEDIUM transportMedium;
     private Handler uiHandler;
     private long transportGeneration;
     private String deviceAddress;
@@ -78,7 +79,7 @@ public final class LotoTGatewayService extends Service
             updateSessionWakeLock();
             sampleTelemetry();
             if (transport != null && transport.getState() == CommService.STATE.CONNECTED
-                    && (CommService.medium == CommService.MEDIUM.BLUETOOTH || CommService.medium == CommService.MEDIUM.BLE)
+                    && (transportMedium == CommService.MEDIUM.BLUETOOTH || transportMedium == CommService.MEDIUM.BLE)
                     && LotoTConnectionWatchdog.isTimedOut(System.currentTimeMillis(),
                     transport.getConnectedAtMs(), transport.getLastReceiveActivityMs(), 15_000L, 3_500L))
                 transport.connectionLost();
@@ -99,6 +100,7 @@ public final class LotoTGatewayService extends Service
     void attachUi(Handler ui) { uiHandler = ui; }
     void detachUi(Handler ui) { if (uiHandler == ui) uiHandler = null; }
     CommService getTransport() { return transport; }
+    CommService.MEDIUM getTransportMedium() { return transportMedium; }
     boolean hasVehicleSession() { return vehicleSessionActive && transport != null; }
     String getDeviceAddress() { return deviceAddress; }
     String getDeviceMedium() { return deviceMedium; }
@@ -152,6 +154,7 @@ public final class LotoTGatewayService extends Service
             case NETWORK: transport = new NetworkCommService(getApplicationContext(), events); break;
             default: throw new IllegalArgumentException("Unsupported transport");
         }
+        transportMedium = medium;
         CommService.medium = medium;
         lost = false;
         vehicleSessionActive = true;
@@ -470,10 +473,10 @@ public final class LotoTGatewayService extends Service
                         Manifest.permission.BLUETOOTH) == PackageManager.PERMISSION_GRANTED;
             boolean connectedWork = hasVehicleSession();
             boolean qualifies = bluetoothGranted;
-            if (CommService.medium == CommService.MEDIUM.NETWORK)
+            if (transportMedium == CommService.MEDIUM.NETWORK)
                 qualifies = ContextCompat.checkSelfPermission(this,
                         Manifest.permission.CHANGE_NETWORK_STATE) == PackageManager.PERMISSION_GRANTED;
-            if (CommService.medium == CommService.MEDIUM.USB)
+            if (transportMedium == CommService.MEDIUM.USB)
             {
                 android.hardware.usb.UsbManager usb = (android.hardware.usb.UsbManager)getSystemService(USB_SERVICE);
                 qualifies = false;
