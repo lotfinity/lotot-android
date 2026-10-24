@@ -1,4 +1,7 @@
 export const FR = {
+  "service.sync_paused": "Synchronisation suspendue ; ouvrez les réglages pour reprendre",
+  "service.queue_dropped": "Limite de stockage : {count} ancien(s) relevé(s) supprimé(s)",
+  "service.queue_held": "{count} ancien(s) relevé(s) conservé(s) pour une autre destination",
   'category.all': 'Tout', 'category.favorites': 'Favoris', 'category.diagnostic': 'Diagnostic',
   'category.engine': 'Moteur', 'category.driving': 'Conduite', 'category.temperature': 'Températures',
   'category.fuel': 'Carburant', 'category.air': 'Air', 'category.pressure': 'Pressions',
@@ -91,7 +94,7 @@ export const FR = {
   'service.phone_detail': 'Accélérations latérale, longitudinale et verticale',
   'service.enable_accelerometer': 'Activer l’accéléromètre',
   'service.accelerometer_detail': 'Échantillonnage natif à 10 Hz, affichage réduit à la cadence du dashboard.',
-  'service.gateway_title': 'Passerelle MQTT fiable', 'service.gateway_detail': 'Service permanent, file hors ligne et reprise automatique',
+  'service.gateway_title': 'Passerelle MQTT fiable', 'service.gateway_detail': "Stockage hors ligne et reprise ; limites Android en arrière-plan",
   'service.background_gateway': 'PASSERELLE DE FOND', 'service.running': 'Service actif', 'service.starting': 'Démarrage…',
   'service.local_empty': 'File locale vide · données à jour', 'service.local_saved': '{count} relevé(s) conservé(s) sur le téléphone',
   'service.security': 'Mot de passe protégé par Android Keystore · file SQLite limitée à {count} relevés.',

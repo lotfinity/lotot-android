@@ -14,6 +14,15 @@ import android.content.pm.ServiceInfo;
 import android.os.Binder;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.Message;
+import com.fr3ts0n.ecu.EcuDataItems;
+import com.fr3ts0n.ecu.EcuDataItem;
+import com.fr3ts0n.ecu.prot.obd.ElmProt;
+import com.fr3ts0n.ecu.prot.obd.ObdProt;
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
 import android.preference.PreferenceManager;
 
 import androidx.core.app.NotificationCompat;
@@ -30,7 +39,7 @@ import java.util.concurrent.CopyOnWriteArraySet;
  * durable telemetry queue. MainActivity only feeds decoded OBD snapshots.
  */
 public final class LotoTGatewayService extends Service
-        implements LotoTBuiltinServices.Listener
+        implements LotoTBuiltinServices.Listener, PropertyChangeListener
 {
     interface Listener { void onGatewayStateChanged(); }
 
@@ -49,6 +58,128 @@ public final class LotoTGatewayService extends Service
     private String lastNotificationFingerprint = "";
     private boolean vehicleSessionActive;
     private boolean foregroundActive;
+    private boolean closing;
+    private boolean timedOut;
+    private boolean lost;
+    private CommService transport;
+    private Handler uiHandler;
+    private long transportGeneration;
+    private String deviceAddress;
+    private String deviceMedium;
+    private String deviceName;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable sampler = new Runnable()
+    {
+        @Override public void run()
+        {
+            if (closing || timedOut) return;
+            sampleTelemetry();
+            if (transport != null && transport.getState() == CommService.STATE.CONNECTED
+                    && (CommService.medium == CommService.MEDIUM.BLUETOOTH || CommService.medium == CommService.MEDIUM.BLE)
+                    && LotoTConnectionWatchdog.isTimedOut(System.currentTimeMillis(),
+                    transport.getConnectedAtMs(), transport.getLastReceiveActivityMs(), 15_000L, 3_500L))
+                transport.connectionLost();
+            handler.postDelayed(this, 1000L);
+        }
+    };
+
+    private void sampleTelemetry()
+    {
+        if (builtins == null) return;
+        JSONArray signals = hasVehicleSession() && transport.getState() == CommService.STATE.CONNECTED
+                ? LotoTObdSignals.collect("obd") : ElmProt.runDemo
+                ? LotoTObdSignals.collect("demo") : new JSONArray();
+        try { builtins.appendSignals(signals); } catch (org.json.JSONException ignored) { }
+        builtins.updateTelemetry(signals);
+    }
+
+    void attachUi(Handler ui) { uiHandler = ui; }
+    void detachUi(Handler ui) { if (uiHandler == ui) uiHandler = null; }
+    CommService getTransport() { return transport; }
+    boolean hasVehicleSession() { return vehicleSessionActive && transport != null; }
+    String getDeviceAddress() { return deviceAddress; }
+    String getDeviceMedium() { return deviceMedium; }
+    String getDeviceName() { return deviceName; }
+    String getSessionStatus()
+    {
+        return hasVehicleSession() ? transport.getState() == CommService.STATE.CONNECTED
+                ? "live" : "connecting" : lost ? "lost" : "offline";
+    }
+
+    CommService createTransport(CommService.MEDIUM medium, String address, String mediumName,
+                               String name, Handler ui)
+    {
+        disconnectVehicle();
+        timedOut = false;
+        uiHandler = ui;
+        deviceAddress = address; deviceMedium = mediumName; deviceName = name;
+        long generation = ++transportGeneration;
+        Handler events = new Handler(Looper.getMainLooper(), message -> {
+            if (generation != transportGeneration || closing) return true;
+            if (message.what == MainActivity.MESSAGE_DEVICE_NAME)
+                deviceName = message.getData().getString(MainActivity.DEVICE_NAME);
+            if (message.what == MainActivity.MESSAGE_CONNECTION_LOST) lost = true;
+            if (message.what == MainActivity.MESSAGE_STATE_CHANGE)
+            {
+                CommService.STATE state = (CommService.STATE) message.obj;
+                if (state == CommService.STATE.CONNECTED)
+                {
+                    for (EcuDataItem item : EcuDataItems.byMnemonic.values()) item.updatedAt = 0L;
+                    ObdProt.setRealtimePidPriorityEnabled(true);
+                    CommService.elm.reset();
+                    vehicleSessionActive = true;
+                }
+                else if (state == CommService.STATE.OFFLINE || state == CommService.STATE.NONE)
+                {
+                    vehicleSessionActive = false;
+                    ObdProt.setRealtimePidPriorityEnabled(false);
+                }
+                sampleTelemetry();
+                reconcileForeground(true);
+            }
+            if (uiHandler != null) uiHandler.sendMessage(Message.obtain(message));
+            return true;
+        });
+        switch (medium)
+        {
+            case BLUETOOTH: transport = new BtCommService(getApplicationContext(), events); break;
+            case BLE: transport = new BleCommService(getApplicationContext(), events); break;
+            case USB: transport = new UsbCommService(getApplicationContext(), events); break;
+            case NETWORK: transport = new NetworkCommService(getApplicationContext(), events); break;
+            default: throw new IllegalArgumentException("Unsupported transport");
+        }
+        CommService.medium = medium;
+        lost = false;
+        vehicleSessionActive = true;
+        reconcileForeground(true);
+        LotoTGatewayService.start(this);
+        return transport;
+    }
+
+    void disconnectVehicle()
+    {
+        transportGeneration++;
+        if (transport != null)
+        {
+            transport.suppressConnectionLossNotification();
+            transport.stop();
+            transport = null;
+        }
+        vehicleSessionActive = false;
+        lost = false;
+        ObdProt.setRealtimePidPriorityEnabled(false);
+        sampleTelemetry();
+    }
+
+    @Override public void propertyChange(PropertyChangeEvent event)
+    {
+        if (ElmProt.PROP_STATUS.equals(event.getPropertyName())
+                && event.getNewValue() == ElmProt.STAT.ECU_DETECTED)
+            handler.post(() -> {
+                if (hasVehicleSession() && CommService.elm.getService() == ObdProt.OBD_SVC_NONE)
+                    CommService.elm.setService(ObdProt.OBD_SVC_DATA, true);
+            });
+    }
 
     static void start(Context context)
     {
@@ -66,18 +197,27 @@ public final class LotoTGatewayService extends Service
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
         builtins = new LotoTBuiltinServices(getApplicationContext(), preferences, this);
         builtins.start();
+        CommService.elm.addPropertyChangeListener(this);
+        handler.post(sampler);
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId)
     {
         reconcileForeground(true);
-        return requiresForeground() ? START_STICKY : START_NOT_STICKY;
+        // A killed process has no vehicle transport to restore. Never claim a
+        // sticky vehicle session, or start location collection from the background.
+        return START_NOT_STICKY;
     }
 
     @Override public IBinder onBind(Intent intent) { return binder; }
 
     @Override public void onDestroy()
     {
+        closing = true;
+        handler.removeCallbacksAndMessages(null);
+        CommService.elm.removePropertyChangeListener(this);
+        uiHandler = null;
+        disconnectVehicle();
         if (builtins != null)
         {
             builtins.stop();
@@ -98,6 +238,9 @@ public final class LotoTGatewayService extends Service
 
     boolean applyConfig(String json) throws org.json.JSONException
     {
+        timedOut = false;
+        handler.removeCallbacks(sampler);
+        handler.post(sampler);
         boolean permission = builtins != null && builtins.applyConfig(json);
         reconcileForeground(true);
         return permission;
@@ -117,7 +260,7 @@ public final class LotoTGatewayService extends Service
     void setVehicleSessionActive(boolean active)
     {
         vehicleSessionActive = active;
-        reconcileForeground(true);
+        if (!active || transport != null) reconcileForeground(true);
     }
 
     boolean requiresForeground()
@@ -148,23 +291,20 @@ public final class LotoTGatewayService extends Service
         if (builtins != null) builtins.appendSignals(target);
     }
 
-    void updateTelemetry(JSONArray signals)
-    {
-        if (builtins != null) builtins.updateTelemetry(signals);
-    }
-
     JSONObject getState() throws org.json.JSONException
     {
         JSONObject state = builtins == null ? new JSONObject() : builtins.getState();
         state.put("foreground", foregroundActive);
         state.put("service", foregroundActive ? "foreground" : "bound");
-        state.put("vehicle_session", vehicleSessionActive);
+        state.put("vehicle_session", hasVehicleSession());
+        state.put("session_status", getSessionStatus());
+        state.put("timed_out", timedOut);
         return state;
     }
 
     @Override public void onBuiltinServicesStateChanged()
     {
-        reconcileForeground(false);
+        handler.post(() -> reconcileForeground(false));
         for (Listener listener : listeners) listener.onGatewayStateChanged();
     }
 
@@ -175,6 +315,7 @@ public final class LotoTGatewayService extends Service
 
     private void reconcileForeground(boolean force)
     {
+        if (closing || timedOut) return;
         if (!requiresForeground())
         {
             if (foregroundActive)
@@ -201,7 +342,20 @@ public final class LotoTGatewayService extends Service
         lastNotificationFingerprint = fingerprint;
         lastNotificationAt = now;
         startForegroundSafely(buildNotification());
-        foregroundActive = true;
+        foregroundActive = !timedOut;
+    }
+
+    @Override public void onTimeout(int startId, int fgsType)
+    {
+        timedOut = true;
+        handler.removeCallbacks(sampler);
+        disconnectVehicle();
+        if (builtins != null) builtins.pauseForTimeout();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE);
+        else stopForeground(true);
+        foregroundActive = false;
+        stopSelf();
+        for (Listener listener : listeners) listener.onGatewayStateChanged();
     }
 
     private String notificationFingerprint()
@@ -283,7 +437,17 @@ public final class LotoTGatewayService extends Service
             else
                 bluetoothGranted = ContextCompat.checkSelfPermission(this,
                         Manifest.permission.BLUETOOTH) == PackageManager.PERMISSION_GRANTED;
-            if (bluetoothGranted) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
+            boolean connectedWork = hasVehicleSession();
+            boolean qualifies = bluetoothGranted;
+            if (CommService.medium == CommService.MEDIUM.NETWORK)
+                qualifies = ContextCompat.checkSelfPermission(this,
+                        Manifest.permission.CHANGE_NETWORK_STATE) == PackageManager.PERMISSION_GRANTED;
+            if (CommService.medium == CommService.MEDIUM.USB)
+            {
+                android.hardware.usb.UsbManager usb = (android.hardware.usb.UsbManager)getSystemService(USB_SERVICE);
+                qualifies = usb != null && usb.getDeviceList().values().stream().anyMatch(usb::hasPermission);
+            }
+            if (connectedWork && qualifies) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
 
             boolean locationGranted = ContextCompat.checkSelfPermission(this,
                     Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -302,15 +466,19 @@ public final class LotoTGatewayService extends Service
             catch (Exception ignored) { }
             if (locationGranted && locationEnabled)
                 type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
-            if (mqttEnabled) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
+            if (mqttEnabled && type == 0) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
             if (type == 0) type = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
             try
             {
                 startForeground(NOTIFICATION_ID, notification, type);
                 return;
             }
-            catch (SecurityException ignored) { }
+            catch (SecurityException | IllegalStateException ex)
+            {
+                onTimeout(0, type);
+                return;
+            }
         }
-        startForeground(NOTIFICATION_ID, notification);
+        else startForeground(NOTIFICATION_ID, notification);
     }
 }

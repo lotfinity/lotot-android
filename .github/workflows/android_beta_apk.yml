@@ -1,28 +1,42 @@
 name: Android Beta APK build
 
-on:
-  workflow_dispatch:
+on: [workflow_dispatch]
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
-
-      - name: set up JDK 17
-        uses: actions/setup-java@v4
+          submodules: recursive
+      - uses: actions/setup-java@v4
         with:
           java-version: '17'
-          distribution: 'temurin'
-
-      - name: Build with Gradle
-        run: ./gradlew :androbd:assembleDebug --stacktrace
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+          distribution: temurin
+      - uses: actions/setup-node@v4
         with:
-          name: androbd-beta
-          path: androbd/build/outputs/apk/debug/*.apk
+          node-version: '22.14.0'
+          cache: npm
+          cache-dependency-path: lotot-ui/package-lock.json
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Check translations
+        run: node lotot-ui/scripts/check-i18n.mjs
+      - name: Build and test current sources
+        run: ./gradlew --no-daemon :library:test :androbd:testDebugUnitTest :androbd:lintDebug :androbd:assembleDebug :androbd:assembleVerification :androbd:assembleVerificationAndroidTest --stacktrace
+      - name: APK checksums
+        run: find androbd/build/outputs/apk -name '*.apk' -exec sha256sum {} \;
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lotot-build-and-tests
+          path: |
+            androbd/build/outputs/apk/**/*.apk
+            androbd/build/reports/
+            library/build/reports/tests/
           if-no-files-found: error
+          retention-days: 14

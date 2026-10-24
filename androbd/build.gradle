@@ -32,8 +32,8 @@ android {
         applicationId 'com.lotot.android'
         minSdkVersion 23
         targetSdkVersion 36
-        versionCode 110
-        versionName '0.9.0-ui'
+        versionCode 111
+        versionName '0.9.1-gateway'
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders = [usesCleartextTraffic: "false"]
@@ -68,9 +68,17 @@ android {
         abortOnError false
     }
 
+    testBuildType 'verification'
+
     buildTypes {
         debug {
             manifestPlaceholders = [usesCleartextTraffic: "true"]
+        }
+        verification {
+            initWith debug
+            applicationIdSuffix '.verification'
+            versionNameSuffix '-verification'
+            matchingFallbacks = ['debug']
         }
         release {
             manifestPlaceholders = [usesCleartextTraffic: "false"]
@@ -97,9 +105,31 @@ dependencies {
 
     // Local (JVM) unit tests
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20250517'
 
     // Android instrumented tests
     androidTestImplementation 'androidx.test.ext:junit:1.3.0'
     androidTestImplementation 'androidx.test:runner:1.7.0'
     androidTestImplementation 'androidx.test:rules:1.7.0'
+    androidTestImplementation 'androidx.test:core:1.7.0'
 }
+
+// The APK must always package assets generated from the current React sources.
+// Exec tasks declare inputs/outputs so unchanged local builds stay incremental.
+def uiDirectory = rootProject.layout.projectDirectory.dir('lotot-ui')
+def installLototUi = tasks.register('installLototUi', Exec) {
+    workingDir uiDirectory
+    commandLine 'npm', 'ci', '--no-audit', '--no-fund'
+    inputs.files(uiDirectory.file('package.json'), uiDirectory.file('package-lock.json'))
+    outputs.file(uiDirectory.file('node_modules/.package-lock.json'))
+}
+def buildLototUi = tasks.register('buildLototUi', Exec) {
+    dependsOn installLototUi
+    workingDir uiDirectory
+    commandLine 'npm', 'run', 'build'
+    inputs.files(fileTree(uiDirectory) {
+        exclude 'node_modules/**', 'dist/**'
+    })
+    outputs.dir(layout.projectDirectory.dir('src/main/assets/lotot'))
+}
+tasks.named('preBuild').configure { dependsOn buildLototUi }

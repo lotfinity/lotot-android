@@ -147,19 +147,14 @@ final class LotoTBuiltinServices implements
 
     void updateTelemetry(JSONArray signals)
     {
-        Map<String, String> values = new LinkedHashMap<>();
-        if (signals != null)
-        {
-            for (int i = 0; i < signals.length(); i++)
-            {
-                JSONObject signal = signals.optJSONObject(i);
-                if (signal == null || signal.isNull("value")) continue;
-                String mnemonic = signal.optString("mnemonic", "").trim();
-                if (mnemonic.isEmpty()) continue;
-                values.put(mnemonic, String.valueOf(signal.opt("value")));
-            }
-        }
-        mqtt.updateSnapshot(values);
+        mqtt.updateSnapshot(signals);
+    }
+
+    void pauseForTimeout()
+    {
+        mqtt.suspendNetwork();
+        gps.setEnabled(false);
+        sensors.setEnabled(false);
     }
 
     JSONObject getState() throws org.json.JSONException

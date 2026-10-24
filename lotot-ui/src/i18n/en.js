@@ -1,4 +1,7 @@
 export const EN = {
+  "service.sync_paused": "Background sync paused; reopen settings to resume",
+  "service.queue_dropped": "Storage limit reached: {count} oldest reading(s) removed",
+  "service.queue_held": "{count} older reading(s) held for another destination",
   'category.all': 'All',
   'category.favorites': 'Favorites',
   'category.diagnostic': 'Diagnostics',
@@ -196,7 +199,7 @@ export const EN = {
   'service.enable_accelerometer': 'Enable accelerometer',
   'service.accelerometer_detail': 'Native 10 Hz sampling, reduced to dashboard refresh rate.',
   'service.gateway_title': 'Reliable MQTT gateway',
-  'service.gateway_detail': 'Persistent service, offline queue and automatic recovery',
+  'service.gateway_detail': "Offline storage and recovery; background sync follows Android limits",
   'service.background_gateway': 'BACKGROUND GATEWAY',
   'service.running': 'Service running',
   'service.starting': 'Starting…',
