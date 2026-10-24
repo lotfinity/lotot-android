@@ -83,7 +83,9 @@ final class LotoTBuiltinSignalStore
         ordered.sort(Comparator.comparing(signal -> signal.mnemonic));
         for (Signal signal : ordered)
         {
-            if (signal.updatedAt <= 0L || signal.value == null) continue;
+            long maxAge = "gps".equals(signal.source) ? 30_000L : 5_000L;
+            if (signal.updatedAt <= 0L || signal.value == null
+                    || System.currentTimeMillis() - signal.updatedAt > maxAge) continue;
             JSONObject json = new JSONObject();
             json.put("key", "builtin." + signal.source + "." + signal.mnemonic);
             json.put("mnemonic", signal.mnemonic);

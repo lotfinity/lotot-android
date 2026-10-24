@@ -67,7 +67,7 @@ public class LotoTTelemetrySnapshotTest
     {
         LotoTBuiltinSignalStore store = new LotoTBuiltinSignalStore();
         store.define("GPS_SPEED", "Speed", "km/h", 0, 300, "gps");
-        store.update("GPS_SPEED", 42, 100_000, 5.0);
+        store.update("GPS_SPEED", 42, System.currentTimeMillis(), 5.0);
         JSONArray before = new JSONArray(); store.appendTo(before);
         assertEquals(1, before.length());
         store.clearSource("gps");

@@ -95,7 +95,8 @@ final class LotoTMqttPublisher
     private String error;
     private long lastPublishAt;
     private long lastAttemptAt;
-    private long lastEnqueueAt;
+    private long lastEnqueueElapsed = -1;
+    private long nextRetryElapsed;
     private long nextRetryAt;
     private long publishedMessages;
     private int consecutiveFailures;
@@ -146,6 +147,7 @@ final class LotoTMqttPublisher
         lastDestination = LotoTTelemetrySnapshot.destination(config);
         consecutiveFailures = 0;
         nextRetryAt = 0L;
+        nextRetryElapsed = 0L;
         if (!normalized.enabled)
         {
             status = "disabled";
@@ -198,7 +200,9 @@ final class LotoTMqttPublisher
         synchronized (this)
         {
             if (stopped || !config.enabled || config.host.isEmpty()) return;
-            if (!force && now-lastEnqueueAt < config.intervalSeconds*1000L) return;
+            long elapsed = android.os.SystemClock.elapsedRealtime();
+            if (!force && lastEnqueueElapsed >= 0
+                    && elapsed-lastEnqueueElapsed < config.intervalSeconds*1000L) return;
             JSONObject snapshot = LotoTTelemetrySnapshot.build(latestSignals, config, now);
             if (snapshot == null) return;
             String fingerprint = snapshot.getJSONObject("metadata").getJSONObject("observations").toString();
@@ -208,7 +212,7 @@ final class LotoTMqttPublisher
             queue.enqueue(LotoTTelemetrySnapshot.destination(config), config.prefix + "snapshot",
                     snapshot.toString(), config.qos, config.retain, snapshot.getLong("captured_at"));
             lastObservationFingerprint = fingerprint;
-            lastEnqueueAt = now;
+            lastEnqueueElapsed = elapsed;
         }
         notifyState();
     }
@@ -235,7 +239,7 @@ final class LotoTMqttPublisher
             {
                 synchronized (this) { status = "up_to_date"; syncingRemaining = 0; syncingTotal = 0; }
             }
-            else if (System.currentTimeMillis() >= nextRetryAt) flushQueue(current, generation);
+            else if (android.os.SystemClock.elapsedRealtime() >= nextRetryElapsed) flushQueue(current, generation);
             notifyState();
         }
         catch (Exception ex)
@@ -288,6 +292,7 @@ final class LotoTMqttPublisher
             {
                 consecutiveFailures = 0;
                 nextRetryAt = 0L;
+                nextRetryElapsed = 0L;
                 error = null;
                 syncingRemaining = queue.count(destination);
                 status = syncingRemaining == 0 ? "up_to_date" : "syncing";
@@ -301,6 +306,7 @@ final class LotoTMqttPublisher
                 consecutiveFailures++;
                 long delay = retryDelayMs(consecutiveFailures);
                 nextRetryAt = System.currentTimeMillis() + delay;
+                nextRetryElapsed = android.os.SystemClock.elapsedRealtime() + delay;
                 syncingRemaining = queue.count(destination);
                 status = "queued";
                 error = ex.getClass().getSimpleName();

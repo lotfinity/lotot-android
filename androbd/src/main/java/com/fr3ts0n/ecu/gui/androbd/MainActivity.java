@@ -2288,7 +2288,8 @@ public class MainActivity extends PluginManager
             // each PID response is decoded. Numeric zero is valid; "n/a", NaN,
             // empty payloads and unsupported PIDs remain unavailable.
             EcuDataItem item = EcuDataItems.byMnemonic.get(mnemonic);
-            if (item == null || item.pv == null) return JSONObject.NULL;
+            if (item == null || item.pv == null || item.updatedAt <= 0L
+                    || System.currentTimeMillis() - item.updatedAt > 60_000L) return JSONObject.NULL;
             Object value = item.pv.get(EcuDataPv.FID_VALUE);
             if (value instanceof Number)
             {

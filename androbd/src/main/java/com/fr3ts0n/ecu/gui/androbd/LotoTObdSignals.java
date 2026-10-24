@@ -19,7 +19,8 @@ final class LotoTObdSignals
             ArrayList<EcuDataItem> updatedItems = new ArrayList<>();
             for (EcuDataItem item : EcuDataItems.byMnemonic.values())
             {
-                if (item == null || item.pv == null || item.updatedAt <= 0L) continue;
+                if (item == null || item.pv == null || item.updatedAt <= 0L
+                        || System.currentTimeMillis() - item.updatedAt > 60_000L) continue;
                 updatedItems.add(item);
             }
             updatedItems.sort(Comparator

@@ -76,7 +76,19 @@ public class GatewaySessionInstrumentedTest
                 activity.recreate();
                 assertSame(transport.get(),service.get().getTransport());
                 activity.close();
-                SystemClock.sleep(1500);
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                    try
+                    {
+                        service.get().applyConfig("{\"mqtt\":{\"enabled\":true,\"host\":\"127.0.0.1\",\"port\":9,\"interval_seconds\":1}}");
+                        com.fr3ts0n.ecu.EcuDataItem rpm=com.fr3ts0n.ecu.EcuDataItems.byMnemonic.get("engine_speed");
+                        rpm.pv.put(com.fr3ts0n.ecu.EcuDataPv.FID_VALUE,1234.0);
+                        rpm.updatedAt=System.currentTimeMillis();
+                    }
+                    catch(Exception ex) { throw new AssertionError(ex); }
+                });
+                SystemClock.sleep(2500);
+                assertTrue("Service sampled a decoded PID with no activity",service.get().getState()
+                        .getJSONObject("mqtt").getInt("queue_depth")>0);
                 assertTrue(service.get().hasVehicleSession());
                 assertEquals(CommService.STATE.CONNECTED,transport.get().getState());
                 // Simulate the Android dataSync timeout callback without changing device settings.
@@ -92,6 +104,7 @@ public class GatewaySessionInstrumentedTest
                 InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> service.get().disconnectVehicle());
                 activity.close(); context.unbindService(connection);
                 context.stopService(new Intent(context,LotoTGatewayService.class));
+                android.preference.PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit();
             }
         }
     }
