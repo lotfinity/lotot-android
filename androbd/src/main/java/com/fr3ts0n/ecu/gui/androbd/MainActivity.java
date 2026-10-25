@@ -1444,6 +1444,22 @@ public class MainActivity extends LotoTPluginActivity
                 state.put("scanned_at", mLototFaultScanAt);
                 state.put("dtcs", new JSONArray(mLototScannedDtcs.toString()));
             }
+            // Translate a copy of the existing evidence, without rescanning or
+            // changing scan status, code identity, count or observation time.
+            JSONArray codes = state.optJSONArray("dtcs");
+            for (int i = 0; codes != null && i < codes.length(); i++)
+            {
+                JSONObject item = codes.optJSONObject(i);
+                if (item == null) continue;
+                DTCDatabase.DTC definition = getLoToTiDtcDatabase().getDTC(
+                        item.optString("code"), item.optString("manufacturer"));
+                if (definition != null)
+                {
+                    item.put("description", definition.description);
+                    item.put("description_language", definition.descriptionLocale);
+                    item.put("type_code", definition.type);
+                }
+            }
         }
         catch (Exception error)
         {
@@ -1515,6 +1531,7 @@ public class MainActivity extends LotoTPluginActivity
         runOnUiThread(() -> {
             SettingsActivity.applyLocale(MainActivity.this);
             publishLotoTLanguage();
+            publishLotoTTelemetry();
         });
         return resolved;
     }
@@ -1780,6 +1797,7 @@ public class MainActivity extends LotoTPluginActivity
     private DTCDatabase getLoToTiDtcDatabase()
     {
         if (mLoToTiDtcDatabase == null) mLoToTiDtcDatabase = DTCDatabase.getInstance(this);
+        mLoToTiDtcDatabase.setLocale(SettingsActivity.getResolvedLanguage(this));
         return mLoToTiDtcDatabase;
     }
 
@@ -1825,6 +1843,7 @@ public class MainActivity extends LotoTPluginActivity
                 result.put("description", dtc.description);
                 result.put("type", dtc.type);
                 result.put("type_name", dtc.getTypeName());
+                result.put("description_language", dtc.descriptionLocale);
                 result.put("manufacturer", dtc.manufacturer == null ? "GENERIC" : dtc.manufacturer);
             }
         }

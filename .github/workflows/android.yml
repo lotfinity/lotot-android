@@ -32,8 +32,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Check translations
         run: node lotot-ui/scripts/check-i18n.mjs
-      - name: Test AI availability UI states
-        run: node --test lotot-ui/src/aiConnection.test.js
+      - name: Test UI states and translations
+        run: npm --prefix lotot-ui test
+      - name: Validate offline DTC translations
+        run: |
+          python3 tools/check-dtc-translations.py
+          python3 tools/check-native-translations.py
       - name: Build and test current sources
         run: ./gradlew --no-daemon :library:test :androbd:testVerificationUnitTest :androbd:lintDebug :androbd:assembleDebug :androbd:assembleVerification :androbd:assembleVerificationAndroidTest --stacktrace
       - name: APK checksums
@@ -75,7 +79,7 @@ jobs:
             adb install -r verification-build/androbd/build/outputs/apk/androidTest/verification/androbd-verification-androidTest.apk
             adb shell am compat enable FGS_INTRODUCE_TIME_LIMITS com.lotot.android.verification
             adb shell device_config put activity_manager data_sync_fgs_timeout_duration 3000
-            adb shell am instrument -w -r -e class com.fr3ts0n.ecu.gui.androbd.GatewayReliabilityInstrumentedTest,com.fr3ts0n.ecu.gui.androbd.GatewaySessionInstrumentedTest com.lotot.android.verification.test/androidx.test.runner.AndroidJUnitRunner > instrumentation.txt
+            adb shell am instrument -w -r -e class com.fr3ts0n.ecu.gui.androbd.GatewayReliabilityInstrumentedTest,com.fr3ts0n.ecu.gui.androbd.GatewaySessionInstrumentedTest,com.fr3ts0n.ecu.gui.androbd.DtcLocalizationInstrumentedTest com.lotot.android.verification.test/androidx.test.runner.AndroidJUnitRunner > instrumentation.txt
             adb logcat -d -s AndroidRuntime ActivityManager LotoTConnection > emulator-logcat.txt
             cat instrumentation.txt
             grep -q 'OK (' instrumentation.txt

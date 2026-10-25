@@ -5,7 +5,7 @@ import './styles.css';
 import { getLanguage, setLanguage, t, LANGUAGE_REGISTRY } from './i18n.js';
 import Icon from './icons/Icon.jsx';
 import IconShowcase from './icons/IconShowcase.jsx';
-import { renderBidiText } from './i18n/BidiText.jsx';
+import { BidiText, renderBidiText } from './i18n/BidiText.jsx';
 import { DEFAULT_ICON_FAMILY, IconFamilyProvider, normalizeIconFamily } from './icons/IconFamilyContext.jsx';
 
 const EMPTY_READINGS = {
@@ -515,7 +515,7 @@ function VoltageBand({ signal, historyValues }) {
   const min = 10; const max = 16;
   const position = value === null ? 0 : (clamp(value, min, max) - min) / (max - min) * 100;
   const tone = value === null ? 'unknown' : value < 11.8 || value > 15.2 ? 'danger' : value < 12.3 || value > 14.8 ? 'warning' : 'normal';
-  return <div className={`voltage-chart tone-${tone}`}><div className="voltage-track" style={{ '--marker': `${position}%` }}><b/></div><div className="voltage-labels" dir="ltr"><span>10 V</span><span>12.3–14.8 V normal</span><span>16 V</span></div><Sparkline values={historyValues} tone={tone === 'danger' ? 'danger' : tone === 'warning' ? 'warning' : 'electrical'}/></div>;
+  return <div className={`voltage-chart tone-${tone}`}><div className="voltage-track" style={{ '--marker': `${position}%` }}><b/></div><div className="voltage-labels" dir="ltr"><span>10 V</span><span>12.3–14.8 V · {t('generic.normal')}</span><span>16 V</span></div><Sparkline values={historyValues} tone={tone === 'danger' ? 'danger' : tone === 'warning' ? 'warning' : 'electrical'}/></div>;
 }
 
 function RangeChart({ signal, historyValues, category }) {
@@ -865,7 +865,7 @@ function ServicesSheet({ open, onClose, services, signals, onSave, onRequestLoca
           {services.timed_out && <p className="inline-service-error" role="status">{t('service.sync_paused')}</p>}
           <SwitchRow checked={Boolean(mqtt.enabled)} onChange={(value) => updateMqtt('enabled', value)} title={t('service.enable_mqtt')} description={t('service.enable_mqtt_detail')}/>
           <div className="mqtt-form">
-            <label><span>{t('service.protocol')}</span><select value={mqtt.protocol} onChange={(event) => updateMqtt('protocol', event.target.value)}><option value="tcp://">TCP</option><option value="ssl://">SSL/TLS</option><option value="ws://">WebSocket</option><option value="wss://">Secure WebSocket</option></select></label>
+            <label><span>{t('service.protocol')}</span><select value={mqtt.protocol} onChange={(event) => updateMqtt('protocol', event.target.value)}><option value="tcp://">TCP</option><option value="ssl://">SSL/TLS</option><option value="ws://">WebSocket</option><option value="wss://">{t('service.secure_websocket')}</option></select></label>
             <label className="is-wide"><span>{t('service.server')}</span><input value={mqtt.host} onChange={(event) => updateMqtt('host', event.target.value)} placeholder="mqtt.example.com"/></label>
             <label><span>{t('service.port')}</span><input type="number" value={mqtt.port} onChange={(event) => updateMqtt('port', event.target.value)} inputMode="numeric"/></label>
             <label><span>{t('service.interval')}</span><div className="input-unit"><input type="number" min="1" value={mqtt.interval_seconds} onChange={(event) => updateMqtt('interval_seconds', event.target.value)}/><em>s</em></div></label>
@@ -1283,6 +1283,13 @@ function App() {
   }, [demoScenario]);
 
   useEffect(() => {
+    try {
+      const raw = window.LotoTNative?.getDiagnosticState?.();
+      if (raw) setDiagnostics(JSON.parse(raw));
+    } catch (_) { /* Keep existing scan evidence if the bridge is unavailable. */ }
+  }, [language]);
+
+  useEffect(() => {
     setAiMessages((current) => {
       if (current.length !== 1 || current[0]?.role !== 'assistant') return current;
       return [{ ...current[0], text: t('ai.welcome') }];
@@ -1680,8 +1687,8 @@ function App() {
             </section>
 
             <section className="critical-overview">
-              <OverviewMetric label={t('overview.coolant')} value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="sensor_coolant" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} detail="70–105 normal"/>
-              <OverviewMetric label={t('overview.oil')} value={valueOf('engine_oil_temperature')} unit="°C" icon="sensor_oil" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} detail="70–110 normal"/>
+              <OverviewMetric label={t('overview.coolant')} value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="sensor_coolant" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} detail={t('temperature.normal_range', { min: 70, max: 105 })}/>
+              <OverviewMetric label={t('overview.oil')} value={valueOf('engine_oil_temperature')} unit="°C" icon="sensor_oil" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} detail={t('temperature.normal_range', { min: 70, max: 110 })}/>
               <OverviewMetric label={t('overview.voltage')} value={readings.module_voltage ?? valueOf('ecu_voltage')} unit="V" icon="sensor_voltage" tone={toneForVoltage(readings.module_voltage ?? valueOf('ecu_voltage'))} detail="12.3–14.8 V"/>
               <OverviewMetric label={t('overview.fuel')} value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="sensor_fuel" tone={toneForFuel(valueOf('fuel_level', 'fuel_tank_level_input'))} detail={`${formatValue(valueOf('engine_fuel_rate'), 1)} L/h`}/>
               <OverviewMetric label={t('overview.intake')} value={valueOf('intake_manifold_pressure')} unit="kPa" icon="sensor_intake" detail={`${formatValue(valueOf('intake_air_temperature'), 0)} °C`}/>
@@ -1817,8 +1824,10 @@ function App() {
                   {diagnosticDtcs.map((dtc, index) => (
                     <article className="fault-code-card" key={`${dtc.code}-${dtc.status}-${index}`}>
                       <div><code dir="ltr">{dtc.code}</code><span>{t(`faults.status_${dtc.status || 'confirmed'}`)}</span></div>
-                      <strong>{dtc.description || t('faults.no_description')}</strong>
-                      <small>{[dtc.type, dtc.manufacturer && dtc.manufacturer !== 'GENERIC' ? dtc.manufacturer : null].filter(Boolean).join(' · ')}</small>
+                      <strong><BidiText>{dtc.description || t('faults.no_description')}</BidiText></strong>
+                      {language !== 'en' && dtc.description_language === 'en' && <small className="definition-fallback">{t('faults.definition_en')}</small>}
+                      {language === 'ar-DZ' && dtc.description_language === 'fr' && <small className="definition-fallback">{t('faults.definition_fr')}</small>}
+                      <small>{[t('faults.type_' + (dtc.type_code || dtc.code?.[0] || 'unknown'), {}, t('faults.type_unknown')), dtc.manufacturer && dtc.manufacturer !== 'GENERIC' ? dtc.manufacturer : null].filter(Boolean).join(' · ')}</small>
                     </article>
                   ))}
                 </div>
@@ -1828,8 +1837,8 @@ function App() {
             </section>
 
             <section className="critical-overview">
-              <OverviewMetric label={t('overview.coolant')} value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="sensor_coolant" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} detail="70–105 normal"/>
-              <OverviewMetric label={t('overview.oil')} value={valueOf('engine_oil_temperature')} unit="°C" icon="sensor_oil" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} detail="70–110 normal"/>
+              <OverviewMetric label={t('overview.coolant')} value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="sensor_coolant" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} detail={t('temperature.normal_range', { min: 70, max: 105 })}/>
+              <OverviewMetric label={t('overview.oil')} value={valueOf('engine_oil_temperature')} unit="°C" icon="sensor_oil" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} detail={t('temperature.normal_range', { min: 70, max: 110 })}/>
               <OverviewMetric label={t('overview.voltage')} value={readings.module_voltage ?? valueOf('ecu_voltage')} unit="V" icon="sensor_voltage" tone={toneForVoltage(readings.module_voltage ?? valueOf('ecu_voltage'))} detail="12.3–14.8 V"/>
               <OverviewMetric label={t('overview.fuel')} value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="sensor_fuel" tone={toneForFuel(valueOf('fuel_level', 'fuel_tank_level_input'))} detail={`${formatValue(valueOf('engine_fuel_rate'), 1)} L/h`}/>
               <OverviewMetric label={t('overview.intake')} value={valueOf('intake_manifold_pressure')} unit="kPa" icon="sensor_intake" detail={`${formatValue(valueOf('intake_air_temperature'), 0)} °C`}/>

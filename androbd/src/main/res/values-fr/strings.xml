@@ -231,4 +231,9 @@
     <string name="lotot_gateway_syncing">Synchronisation · %1$d restant(s)</string>
     <string name="lotot_gateway_offline">Hors ligne · %1$d relevé(s) stocké(s)</string>
     <string name="lotot_gateway_current">Données véhicule à jour</string>
+    <string name="lotot_dashboard_description">Tableau de bord LoToTi de santé du véhicule en direct</string>
+    <string name="open_log_dir">Ouvrir le dossier des journaux</string>
+    <string name="open_log_dir_description">Ouvrir le dossier des journaux dans un gestionnaire de fichiers</string>
+    <string name="log_dir_not_found">Dossier des journaux introuvable — activez la journalisation et redémarrez l’application</string>
+    <string name="log_dir_no_app">Aucun gestionnaire de fichiers trouvé — chemin copié dans le presse-papiers</string>
 </resources>

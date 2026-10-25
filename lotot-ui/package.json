@@ -7,7 +7,7 @@
     "build": "vite build && node scripts/postbuild.mjs",
     "dev": "vite --host 0.0.0.0 --port 5173",
     "i18n:check": "node scripts/check-i18n.mjs",
-    "test": "node --test src/aiConnection.test.js"
+    "test": "node --test src/aiConnection.test.js src/i18n/index.test.js"
   },
   "dependencies": {
     "react": "^18.3.1",
