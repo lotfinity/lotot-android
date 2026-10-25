@@ -47,4 +47,4 @@ Tests cover migration, partition persistence, FIFO across clock rollback, overfl
 
 The ordinary APK still uses `com.lotot.android`. Existing installs require the original compatible signing key for an update. Never uninstall the driver app to work around a signing mismatch.
 
-AI provider routing and embedded-credential delivery are unchanged by this reliability work. A configured build still needs the existing external AI properties file. Blank CI builds do not acquire provider credentials automatically.
+The vehicle reliability layer is independent of AI routing. Current LoToTi AI builds use one gateway and a restricted external gateway token; upstream provider credentials stay on the server. See LOTOTI_AI.md for availability checks and build configuration. Blank CI builds do not acquire gateway credentials automatically.

@@ -1,16 +1,11 @@
 /*
- * LoToTi prototype AI client.
- *
- * Provider credentials are intentionally embedded at build time for the
- * prototype requested by the product owner. Do not log or expose them.
+ * LoToTi AI uses one authenticated gateway. Provider credentials, model choice
+ * and failover stay on the server; only a restricted gateway token is packaged.
  */
 package com.fr3ts0n.ecu.gui.androbd;
 
-import android.util.Log;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
-
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -18,9 +13,6 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -28,160 +20,206 @@ final class LoToTiAiClient
 {
     interface Callback
     {
-        void onAttempt(String provider, String model);
-        void onDelta(String provider, String model, String delta);
-        void onSuccess(String provider, String model, String text);
+        void onAttempt();
+        void onDelta(String delta);
+        void onSuccess(String text);
         void onError(String message);
     }
 
-    private static final class Provider
+    interface ConnectionFactory { HttpURLConnection open(URL url) throws Exception; }
+    interface Clock { long now(); }
+
+    private static final String MODEL = "lototi-auto";
+    private static final long STATUS_TTL_MS = 90000;
+    private static final long CHECK_INTERVAL_MS = 30000;
+    private static final class Gateway
     {
-        final String id;
-        final String label;
         final String apiKey;
         final String baseUrl;
-        final String model;
-
-        Provider(String id, String label, String apiKey, String baseUrl, String model)
+        final String model = MODEL;
+        Gateway(String baseUrl, String apiKey)
         {
-            this.id = id;
-            this.label = label;
             this.apiKey = safe(apiKey);
             this.baseUrl = safe(baseUrl).replaceAll("/+$", "");
-            this.model = safe(model);
         }
-
         boolean isConfigured()
         {
-            return !apiKey.isEmpty() && baseUrl.startsWith("https://")
-                    && model.matches("[A-Za-z0-9._:/-]+") && !model.isEmpty();
+            try {
+                URL url = new URL(baseUrl);
+                return !apiKey.isEmpty() && "https".equals(url.getProtocol())
+                        && !url.getHost().isEmpty() && url.getUserInfo() == null
+                        && url.getQuery() == null && url.getRef() == null;
+            } catch (Exception ignored) { return false; }
         }
     }
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final List<Provider> providers = new ArrayList<>();
+    private final ExecutorService statusExecutor = Executors.newSingleThreadExecutor();
+    private final Gateway gateway;
+    private final ConnectionFactory connections;
+    private final Clock clock;
+    private boolean checking;
+    private boolean connected;
+    private boolean available;
+    private long checkedAt;
+    private String availability = "unknown";
 
     LoToTiAiClient()
     {
-        Provider openCode = new Provider("opencode", "DeepSeek via OpenCode Go",
-                BuildConfig.LOTOTI_OPENCODE_API_KEY,
-                BuildConfig.LOTOTI_OPENCODE_BASE_URL,
-                BuildConfig.LOTOTI_OPENCODE_MODEL);
-        Provider nvidia = new Provider("nvidia", "NVIDIA NIM",
-                BuildConfig.LOTOTI_NVIDIA_API_KEY,
-                BuildConfig.LOTOTI_NVIDIA_BASE_URL,
-                BuildConfig.LOTOTI_NVIDIA_MODEL);
-        Provider liteLlm = new Provider("litellm", "LoToTi LiteLLM · Codex",
-                BuildConfig.LOTOTI_LITELLM_API_KEY,
-                BuildConfig.LOTOTI_LITELLM_BASE_URL,
-                BuildConfig.LOTOTI_LITELLM_MODEL);
-        Provider liteLlmFallback = new Provider("litellm_fallback", "LoToTi LiteLLM · StepFun fallback",
-                BuildConfig.LOTOTI_LITELLM_API_KEY,
-                BuildConfig.LOTOTI_LITELLM_BASE_URL,
-                BuildConfig.LOTOTI_LITELLM_FALLBACK_MODEL);
-
-        String primary = safe(BuildConfig.LOTOTI_AI_PRIMARY).toLowerCase(Locale.US);
-        if ("nvidia".equals(primary))
-        {
-            add(nvidia); add(openCode); add(liteLlm); add(liteLlmFallback);
-        }
-        else if ("litellm".equals(primary))
-        {
-            add(liteLlm); add(liteLlmFallback); add(openCode); add(nvidia);
-        }
-        else
-        {
-            add(openCode); add(nvidia); add(liteLlm); add(liteLlmFallback);
-        }
+        this(BuildConfig.LOTOTI_GATEWAY_BASE_URL, BuildConfig.LOTOTI_GATEWAY_API_KEY,
+                url -> (HttpURLConnection) url.openConnection(), System::currentTimeMillis);
     }
 
-    private void add(Provider provider)
+    LoToTiAiClient(String baseUrl, String apiKey, ConnectionFactory connections, Clock clock)
     {
-        if (provider.isConfigured()) providers.add(provider);
+        this.gateway = new Gateway(baseUrl, apiKey);
+        this.connections = connections;
+        this.clock = clock;
     }
 
-    JSONObject getState()
+    synchronized JSONObject getState()
     {
         JSONObject state = new JSONObject();
-        JSONArray available = new JSONArray();
+        boolean fresh = checkedAt > 0 && clock.now() - checkedAt >= 0
+                && clock.now() - checkedAt < STATUS_TTL_MS;
         try
         {
-            state.put("configured", !providers.isEmpty());
-            if (!providers.isEmpty())
-            {
-                state.put("primary", providers.get(0).id);
-                state.put("primary_label", providers.get(0).label);
-                state.put("primary_model", providers.get(0).model);
-                state.put("model", providers.get(0).model);
-            }
-            for (Provider provider : providers)
-            {
-                JSONObject item = new JSONObject();
-                item.put("id", provider.id);
-                item.put("label", provider.label);
-                item.put("model", provider.model);
-                available.put(item);
-            }
-            state.put("providers", available);
+            state.put("configured", gateway.isConfigured());
+            state.put("connected", fresh && connected);
+            state.put("available", fresh && available);
+            state.put("availability", !gateway.isConfigured() ? "unconfigured"
+                    : checking ? "checking" : fresh ? availability : "unknown");
+            state.put("checked_at", checkedAt);
         }
         catch (Exception ignored) { }
         return state;
     }
 
-    void ask(String question, String diagnosticContext, String responseLanguage, Callback callback)
+    /** A bounded synthetic request checks this token, route and actual inference.
+     * It sends no diagnostic, vehicle, conversation or personal data.
+     * UI visibility controls polling; native throttling coalesces duplicate calls.
+     */
+    void checkAvailability(Runnable changed)
     {
-        executor.execute(() ->
+        synchronized (this)
         {
-            if (providers.isEmpty())
+            if (!gateway.isConfigured() || checking
+                    || (checkedAt > 0 && clock.now() - checkedAt >= 0
+                    && clock.now() - checkedAt < CHECK_INTERVAL_MS))
             {
-                callback.onError("No LoToTi AI provider is configured in this build.");
+                changed.run();
                 return;
             }
-            List<String> errors = new ArrayList<>();
-            for (Provider provider : providers)
+            checking = true;
+        }
+        changed.run();
+        final long probeStarted = clock.now();
+        statusExecutor.execute(() -> {
+            HttpURLConnection connection = null;
+            boolean reached = false;
+            boolean ready = false;
+            try
             {
-                try
+                connection = connections.open(new URL(gateway.baseUrl + "/chat/completions"));
+                connection.setConnectTimeout(10000);
+                connection.setReadTimeout(30000);
+                connection.setInstanceFollowRedirects(false);
+                connection.setRequestMethod("POST");
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Content-Type", "application/json");
+                connection.setRequestProperty("Authorization", "Bearer " + gateway.apiKey);
+                connection.setRequestProperty("User-Agent", "LoToTi-Android/" + BuildConfig.VERSION_NAME);
+                JSONObject body = new JSONObject();
+                body.put("model", MODEL);
+                body.put("messages", new JSONArray().put(message("user", "Reply OK.")));
+                body.put("max_tokens", 1);
+                body.put("stream", false);
+                byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
+                connection.setFixedLengthStreamingMode(bytes.length);
+                try (OutputStream output = connection.getOutputStream()) { output.write(bytes); }
+                int code = connection.getResponseCode();
+                reached = true;
+                if (code >= 200 && code < 300)
                 {
-                    callback.onAttempt(provider.label, provider.model);
-                    if (BuildConfig.DEBUG) Log.d("LoToTiAI", "Trying " + provider.id + " model=" + provider.model);
-                    String text = requestStream(provider, question, diagnosticContext, responseLanguage, callback);
-                    if (text != null && !text.trim().isEmpty())
-                    {
-                        if (BuildConfig.DEBUG) Log.d("LoToTiAI", "Success " + provider.id + " model=" + provider.model);
-                        callback.onSuccess(provider.label, provider.model, text.trim());
-                        return;
-                    }
-                    errors.add(provider.label + ": empty response");
-                }
-                catch (Exception ex)
-                {
-                    String detail = ex.getMessage();
-                    if (detail == null || detail.trim().isEmpty()) detail = ex.getClass().getSimpleName();
-                    if (detail.length() > 80) detail = detail.substring(0, 80);
-                    errors.add(provider.label + ": " + detail);
-                    if (BuildConfig.DEBUG) Log.w("LoToTiAI", "Failed " + provider.id + " model=" + provider.model + " (" + detail + ")");
+                    JSONObject reply = new JSONObject(read(connection.getInputStream()));
+                    JSONArray choices = reply.optJSONArray("choices");
+                    ready = !reply.has("error") && choices != null && choices.length() > 0
+                            && choices.optJSONObject(0) != null
+                            && choices.optJSONObject(0).optJSONObject("message") != null;
                 }
             }
-            callback.onError(errors.isEmpty() ? "AI request failed" : String.join(" · ", errors));
+            catch (Exception ignored) { /* Raw gateway/provider errors never reach the UI. */ }
+            finally
+            {
+                if (connection != null) connection.disconnect();
+                synchronized (this)
+                {
+                    // A slower probe must not overwrite a newer chat result.
+                    if (checkedAt <= probeStarted)
+                    {
+                        connected = reached;
+                        available = ready;
+                        availability = ready ? "available" : reached ? "unavailable" : "offline";
+                        checkedAt = clock.now();
+                    }
+                    checking = false;
+                }
+                changed.run();
+            }
         });
     }
 
-    private String requestStream(Provider provider, String question, String diagnosticContext,
+    private synchronized void recordRequestResult(boolean success)
+    {
+        connected = success;
+        available = success;
+        availability = success ? "available" : "unavailable";
+        checkedAt = clock.now();
+    }
+
+    void ask(String question, String diagnosticContext, String responseLanguage, Callback callback)
+    {
+        executor.execute(() -> {
+            if (!gateway.isConfigured())
+            {
+                callback.onError("LoToTi AI is not configured in this build.");
+                return;
+            }
+            try
+            {
+                callback.onAttempt();
+                String text = requestStream(gateway, question, diagnosticContext, responseLanguage, callback);
+                if (text == null || text.trim().isEmpty()) throw new IllegalStateException("Empty answer");
+                recordRequestResult(true);
+                callback.onSuccess(text.trim());
+            }
+            catch (Exception ignored)
+            {
+                recordRequestResult(false);
+                callback.onError("LoToTi AI is temporarily unavailable. Please try again.");
+            }
+        });
+    }
+
+    private String requestStream(Gateway gateway, String question, String diagnosticContext,
                                  String responseLanguage, Callback callback) throws Exception
     {
-        URL url = new URL(provider.baseUrl + "/chat/completions");
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setConnectTimeout(30000);
+        URL url = new URL(gateway.baseUrl + "/chat/completions");
+        HttpURLConnection connection = connections.open(url);
+        try
+        {
+        connection.setConnectTimeout(15000);
         connection.setReadTimeout(120000);
+        connection.setInstanceFollowRedirects(false);
         connection.setRequestMethod("POST");
         connection.setDoOutput(true);
         connection.setRequestProperty("Content-Type", "application/json");
         connection.setRequestProperty("Accept", "text/event-stream");
-        connection.setRequestProperty("Authorization", "Bearer " + provider.apiKey);
-        if ("nvidia".equals(provider.id)) connection.setRequestProperty("X-NVIDIA-Source", "lototi");
+        connection.setRequestProperty("Authorization", "Bearer " + gateway.apiKey);
+        connection.setRequestProperty("User-Agent", "LoToTi-Android/" + BuildConfig.VERSION_NAME);
 
         JSONObject body = new JSONObject();
-        body.put("model", provider.model);
+        body.put("model", gateway.model);
         body.put("temperature", 0.15);
         body.put("stream", true);
         body.put("max_tokens", 4096);
@@ -243,7 +281,7 @@ final class LoToTiAiClient
                     if (text != null && !text.isEmpty())
                     {
                         String addition = appendStreamingChunk(answer, text);
-                        if (!addition.isEmpty()) callback.onDelta(provider.label, provider.model, addition);
+                        if (!addition.isEmpty()) callback.onDelta(addition);
                     }
                 }
                 catch (Exception ignored)
@@ -254,15 +292,6 @@ final class LoToTiAiClient
             }
         }
 
-        if (BuildConfig.DEBUG)
-        {
-            Log.d("LoToTiAI", "Stream summary " + provider.id
-                    + " events=" + streamEvents
-                    + " contentChars=" + answer.length()
-                    + " reasoningChars=" + reasoningChars
-                    + " malformed=" + malformedEvents
-                    + " finish=" + String.valueOf(finishReason));
-        }
         if (answer.length() > 0) return answer.toString();
 
         // Compatibility fallback if an OpenAI-compatible server ignored stream=true.
@@ -277,12 +306,14 @@ final class LoToTiAiClient
                 String text = extractContent(fullMessage == null ? null : fullMessage.opt("content"));
                 if (text != null && !text.isEmpty())
                 {
-                    callback.onDelta(provider.label, provider.model, text);
+                    callback.onDelta(text);
                     return text;
                 }
             }
         }
         return null;
+        }
+        finally { connection.disconnect(); }
     }
 
     /**
@@ -337,7 +368,7 @@ final class LoToTiAiClient
                     + "- Prefer familiar Algerian phrasing over literal Modern Standard Arabic. Do not overdo slang; stay professional, concise and mechanically useful.\n"
                     + "- Do not translate a familiar French technical term into obscure formal Arabic merely for purity.\n";
         }
-        return "You are LoToTi AI, an evidence-first automotive diagnostic copilot. Your job is to help the user understand what the available vehicle data actually supports, not to fill gaps with plausible-sounding guesses.\n\n"
+        return "Your public identity is LoToTi AI. Do not introduce backend provider or model names as your identity. You are an evidence-first automotive diagnostic copilot. Your job is to help the user understand what the available vehicle data actually supports, not to fill gaps with plausible-sounding guesses.\n\n"
                 + "STRICT DIAGNOSTIC RULES:\n"
                 + "1. Treat SESSION STATE and DATA SOURCE labels in the supplied context as authoritative. If there is no live OBD/ECU session and no Demo ECU stream, explicitly say that vehicle/engine health cannot be assessed from phone-only sensors.\n"
                 + "2. Never convert missing information into a negative finding. If no DTC records were supplied, say 'no DTC records were supplied' — never 'there are no DTCs' unless a scan explicitly reports zero.\n"
@@ -400,5 +431,6 @@ final class LoToTiAiClient
     void shutdown()
     {
         executor.shutdownNow();
+        statusExecutor.shutdownNow();
     }
 }

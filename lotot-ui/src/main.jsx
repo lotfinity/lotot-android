@@ -1,3 +1,4 @@
+import { aiConnectionState } from './aiConnection.js';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
@@ -163,7 +164,7 @@ const builtinBridge = window.lototBuiltinBridge = window.lototBuiltinBridge || {
 };
 
 const aiBridge = window.lototAiBridge = window.lototAiBridge || {
-  lastState: { status: 'idle', configured: false, providers: [] },
+  lastState: { status: 'idle', configured: false, availability: 'unknown', available: false },
 };
 
 window.lototReceiveTelemetry = (payload) => {
@@ -1353,14 +1354,14 @@ function App() {
         setAiMessages((current) => {
           const last = current[current.length - 1];
           if (last?.role === 'assistant' && last.text === next.text) return current;
-          return [...current, { role: 'assistant', text: next.text, meta: [next.provider, next.model].filter(Boolean).join(' · ') }];
+          return [...current, { role: 'assistant', text: next.text, meta: 'LoToTi AI' }];
         });
       } else if (next.status === 'error' && next.error) {
         setAiStreamingText('');
         setAiMessages((current) => {
           const last = current[current.length - 1];
-          if (last?.role === 'error' && last.text === next.error) return current;
-          return [...current, { role: 'error', text: next.error, meta: t('generic.error') }];
+          if (last?.role === 'error' && last.text === t('ai.unavailable_detail')) return current;
+          return [...current, { role: 'error', text: t('ai.unavailable_detail'), meta: t('generic.error') }];
         });
       }
     };
@@ -1502,7 +1503,7 @@ function App() {
 
   const askLoToTiAi = (presetQuestion = null) => {
     const question = String(presetQuestion || aiQuestion || '').trim();
-    if (!question || ['thinking', 'trying', 'streaming'].includes(aiState.status)) return;
+    if (!question || !nativeAvailable || !aiState.configured || ['thinking', 'trying', 'streaming'].includes(aiState.status)) return;
 
     const sourceFor = (signal) => signal?.source || (['live', 'demo'].includes(status) ? 'obd' : 'unknown');
     const obdSignals = signals.filter((signal) => sourceFor(signal) === 'obd');
@@ -1562,7 +1563,7 @@ function App() {
     setAiMessages((current) => [...current, { role: 'user', text: question, meta: status === 'demo' ? t('status.demo') : t('ai.you') }]);
     setAiQuestion('');
     setAiStreamingText('');
-    setAiState((current) => ({ ...current, status: 'thinking', provider: null, error: null, text: null }));
+    setAiState((current) => ({ ...current, status: 'thinking', error: null, text: null }));
     window.LotoTNative?.askAi?.(JSON.stringify({
       question, context, language, manufacturer: vehicle?.dtc_manufacturer || vehicle?.manufacturer || ''
     }));
@@ -1621,10 +1622,26 @@ function App() {
     setOnboardingOpen(true);
   };
 
+  useEffect(() => {
+    if (activeTab !== 'ai' || !nativeAvailable) return undefined;
+    const refresh = () => {
+      if (document.visibilityState === 'hidden') return;
+      setAiState((current) => ({ ...current, ...readNativeAiStatus() }));
+      window.LotoTNative?.checkAiConnection?.();
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60000);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [activeTab, nativeAvailable]);
+
   const aiBusy = ['thinking', 'trying', 'streaming'].includes(aiState.status);
-  const aiProviderLabel = aiState.provider || (aiBusy ? aiState.primary_label : aiState.provider) || aiState.primary_label || t('ai.ready');
-  const aiProviderIsFallback = Boolean(aiState.provider && aiState.primary_label && aiState.provider !== aiState.primary_label);
-  const aiModelLabel = aiState.model || aiState.primary_model || t('ai.model_auto');
+  const aiConnection = aiConnectionState(aiState, now);
+  const aiConnectionLabel = t('ai.connection.' + aiConnection);
+
 
   if (onboardingOpen || !onboardingComplete) {
     return <IconFamilyProvider family={iconFamily}><OnboardingFlow services={services} bluetooth={bluetooth} status={status} signals={signals} initialPermissionState={initialOnboarding} canClose={!onboardingRequired && onboardingComplete} onClose={() => setOnboardingOpen(false)} onComplete={finishOnboarding}/></IconFamilyProvider>;
@@ -1722,10 +1739,10 @@ function App() {
                   <span className="ai-page-orb"><Icon name="nav_ai"/></span>
                   <div><small>{t('ai.kicker')}</small><h1>LoToTi AI</h1><p>{t('ai.subtitle')}</p></div>
                 </div>
-                <div className="ai-provider-pill">
-                  <i className={aiState.configured ? 'is-online' : ''}/>
-                  <span>{aiBusy && !aiState.provider ? t('ai.thinking') : aiProviderLabel}{aiProviderIsFallback ? ` · ${t('ai.fallback')}` : ''}</span>
-                </div>
+                <button type="button" className="ai-provider-pill" onClick={() => window.LotoTNative?.checkAiConnection?.()} disabled={!nativeAvailable || aiConnection === 'checking'} aria-label={t('ai.check_connection')} title={t('ai.check_connection')}>
+                  <i className={aiConnection === 'available' ? 'is-online' : ''}/>
+                  <span role="status" aria-live="polite">{aiConnectionLabel}</span>
+                </button>
               </header>
 
               <section className="ai-context-strip" aria-label={t('ai.context')}>
@@ -1748,7 +1765,7 @@ function App() {
                   <article className="ai-message is-assistant is-thinking">
                     <span className="ai-message-avatar"><Icon name="nav_ai"/></span>
                     <div className="ai-message-bubble">
-                      <small>{aiState.provider ? [aiState.provider, aiState.model].filter(Boolean).join(' · ') : 'LoToTi AI'}</small>
+                      <small>LoToTi AI</small>
                       {aiStreamingText ? <MarkdownMessage text={aiStreamingText}/> : <div className="ai-thinking-dots"><i/><i/><i/></div>}
                     </div>
                   </article>
@@ -1766,7 +1783,7 @@ function App() {
                 <textarea dir="auto" value={aiQuestion} onChange={(event) => setAiQuestion(event.target.value)} placeholder={t('ai.placeholder')} rows="1" onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); askLoToTiAi(); } }}/>
                 <button type="submit" aria-label={t('ai.ask')} disabled={!nativeAvailable || !aiState.configured || !aiQuestion.trim() || aiBusy}><Icon name="chevron"/></button>
               </form>
-              <footer className="ai-page-footer"><span>{aiModelLabel}</span><span>·</span><span>{t('ai.context_auto')}</span></footer>
+              <footer className="ai-page-footer"><span>{t('ai.context_auto')}</span></footer>
             </section>
           </section>
         )}
