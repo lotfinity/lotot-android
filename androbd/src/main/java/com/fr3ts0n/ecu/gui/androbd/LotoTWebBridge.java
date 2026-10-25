@@ -40,6 +40,7 @@ final class LotoTWebBridge
         void publishLotoTMqttNow();
         void openLotoTNativeTools();
         String getLoToTiAiStatus();
+        void checkLoToTiAiConnection();
         void askLoToTiAi(String json);
         String lookupLoToTiDtc(String code, String manufacturer);
     }
@@ -201,6 +202,12 @@ final class LotoTWebBridge
     public String getAiStatus()
     {
         return host.getLoToTiAiStatus();
+    }
+
+    @JavascriptInterface
+    public void checkAiConnection()
+    {
+        activity.runOnUiThread(host::checkLoToTiAiConnection);
     }
 
     @JavascriptInterface

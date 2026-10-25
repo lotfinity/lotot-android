@@ -1784,6 +1784,15 @@ public class MainActivity extends LotoTPluginActivity
     }
 
     @Override
+    public void checkLoToTiAiConnection()
+    {
+        LoToTiAiClient client = getLoToTiAiClient();
+        client.checkAvailability(() -> runOnUiThread(() -> {
+            if (!isFinishing() && !isDestroyed()) publishLoToTiAiState(client.getState());
+        }));
+    }
+
+    @Override
     public String getLoToTiAiStatus()
     {
         JSONObject state = getLoToTiAiClient().getState();
@@ -1916,7 +1925,7 @@ public class MainActivity extends LotoTPluginActivity
             String responseLanguage = request.optString("language", mLototLanguage == null ? "en" : mLototLanguage);
             if (question.isEmpty())
             {
-                publishLoToTiAiResult(false, null, null, null, "Ask LoToTi AI a question first.");
+                publishLoToTiAiResult(false, null, "Ask LoToTi AI a question first.");
                 return;
             }
             String groundedContext = context
@@ -1925,56 +1934,52 @@ public class MainActivity extends LotoTPluginActivity
             publishLoToTiAiPending();
             getLoToTiAiClient().ask(question, groundedContext, responseLanguage, new LoToTiAiClient.Callback()
             {
-                @Override public void onAttempt(String provider, String model)
+                @Override public void onAttempt()
                 {
-                    runOnUiThread(() -> publishLoToTiAiAttempt(provider, model));
+                    runOnUiThread(() -> publishLoToTiAiAttempt());
                 }
 
-                @Override public void onDelta(String provider, String model, String delta)
+                @Override public void onDelta(String delta)
                 {
-                    runOnUiThread(() -> publishLoToTiAiDelta(provider, model, delta));
+                    runOnUiThread(() -> publishLoToTiAiDelta(delta));
                 }
 
-                @Override public void onSuccess(String provider, String model, String text)
+                @Override public void onSuccess(String text)
                 {
-                    runOnUiThread(() -> publishLoToTiAiResult(true, provider, model, text, null));
+                    runOnUiThread(() -> publishLoToTiAiResult(true, text, null));
                 }
 
                 @Override public void onError(String message)
                 {
-                    runOnUiThread(() -> publishLoToTiAiResult(false, null, null, null, message));
+                    runOnUiThread(() -> publishLoToTiAiResult(false, null, message));
                 }
             });
         }
         catch (Exception ex)
         {
-            publishLoToTiAiResult(false, null, null, null, "Invalid AI request.");
+            publishLoToTiAiResult(false, null, "Invalid AI request.");
         }
     }
 
 
-    private void publishLoToTiAiAttempt(String provider, String model)
+    private void publishLoToTiAiAttempt()
     {
-        JSONObject state = new JSONObject();
+        JSONObject state = getLoToTiAiClient().getState();
         try
         {
             state.put("status", "trying");
-            state.put("provider", provider == null ? JSONObject.NULL : provider);
-            state.put("model", model == null ? JSONObject.NULL : model);
         }
         catch (Exception ignored) { }
         publishLoToTiAiState(state);
     }
 
-    private void publishLoToTiAiDelta(String provider, String model, String delta)
+    private void publishLoToTiAiDelta(String delta)
     {
         if (delta == null || delta.isEmpty()) return;
-        JSONObject state = new JSONObject();
+        JSONObject state = getLoToTiAiClient().getState();
         try
         {
             state.put("status", "streaming");
-            state.put("provider", provider == null ? JSONObject.NULL : provider);
-            state.put("model", model == null ? JSONObject.NULL : model);
             state.put("delta", delta);
         }
         catch (Exception ignored) { }
@@ -1989,15 +1994,12 @@ public class MainActivity extends LotoTPluginActivity
         publishLoToTiAiState(state);
     }
 
-    private void publishLoToTiAiResult(boolean success, String provider, String model,
-                                        String text, String error)
+    private void publishLoToTiAiResult(boolean success, String text, String error)
     {
-        JSONObject state = new JSONObject();
+        JSONObject state = getLoToTiAiClient().getState();
         try
         {
             state.put("status", success ? "ready" : "error");
-            state.put("provider", provider == null ? JSONObject.NULL : provider);
-            state.put("model", model == null ? JSONObject.NULL : model);
             state.put("text", text == null ? JSONObject.NULL : text);
             state.put("error", error == null ? JSONObject.NULL : error);
         }

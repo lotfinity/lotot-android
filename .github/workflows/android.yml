@@ -32,6 +32,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Check translations
         run: node lotot-ui/scripts/check-i18n.mjs
+      - name: Test AI availability UI states
+        run: node --test lotot-ui/src/aiConnection.test.js
       - name: Build and test current sources
         run: ./gradlew --no-daemon :library:test :androbd:testVerificationUnitTest :androbd:lintDebug :androbd:assembleDebug :androbd:assembleVerification :androbd:assembleVerificationAndroidTest --stacktrace
       - name: APK checksums

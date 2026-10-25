@@ -32,27 +32,18 @@ android {
         applicationId 'com.lotot.android'
         minSdkVersion 23
         targetSdkVersion 36
-        versionCode 111
-        versionName '0.9.1-gateway'
+        versionCode 112
+        versionName '0.9.2-ai'
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders = [usesCleartextTraffic: "false"]
 
         resValue "string", "app_version", versionName
 
-        // Prototype-only managed AI credentials. Secrets/base URLs are loaded from
-        // a private file outside Git. LiteLLM is the primary route for this build.
-        buildConfigField "String", "LOTOTI_AI_PRIMARY", '"litellm"'
-        buildConfigField "String", "LOTOTI_OPENCODE_API_KEY", lototiBuildConfigString("opencode.apiKey")
-        buildConfigField "String", "LOTOTI_OPENCODE_BASE_URL", lototiBuildConfigString("opencode.baseUrl")
-        buildConfigField "String", "LOTOTI_OPENCODE_MODEL", lototiBuildConfigString("opencode.model")
-        buildConfigField "String", "LOTOTI_NVIDIA_API_KEY", lototiBuildConfigString("nvidia.apiKey")
-        buildConfigField "String", "LOTOTI_NVIDIA_BASE_URL", lototiBuildConfigString("nvidia.baseUrl")
-        buildConfigField "String", "LOTOTI_NVIDIA_MODEL", lototiBuildConfigString("nvidia.model")
-        buildConfigField "String", "LOTOTI_LITELLM_API_KEY", lototiBuildConfigString("litellm.apiKey")
-        buildConfigField "String", "LOTOTI_LITELLM_BASE_URL", lototiBuildConfigString("litellm.baseUrl")
-        buildConfigField "String", "LOTOTI_LITELLM_MODEL", '"chatgpt/gpt-5.3-codex"'
-        buildConfigField "String", "LOTOTI_LITELLM_FALLBACK_MODEL", '"stepfun-ai/step-3.7-flash"'
+        // Only the restricted LoToTi gateway token belongs in the app.
+        // Provider credentials and model failover remain server-side.
+        buildConfigField "String", "LOTOTI_GATEWAY_API_KEY", lototiBuildConfigString("litellm.apiKey")
+        buildConfigField "String", "LOTOTI_GATEWAY_BASE_URL", '"https://aigw.whatsynaptic.com/v1"'
 
         compileOptions {
             sourceCompatibility JavaVersion.VERSION_17
@@ -75,6 +66,13 @@ android {
             initWith debug
             applicationIdSuffix '.verification'
             versionNameSuffix '-verification'
+            matchingFallbacks = ['debug']
+        }
+        aiPreview {
+            initWith debug
+            applicationIdSuffix '.ai.preview'
+            versionNameSuffix '-preview'
+            resValue "string", "app_name", "LoToTi AI Preview"
             matchingFallbacks = ['debug']
         }
         release {
