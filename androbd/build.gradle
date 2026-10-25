@@ -30,10 +30,13 @@ android {
 
     defaultConfig {
         applicationId 'com.lotot.android'
+        // The language selector exposes exactly these locales. Legacy upstream
+        // translations are not selectable and must not define build coverage.
+        resourceConfigurations += ['en', 'fr', 'ar-rDZ']
         minSdkVersion 23
         targetSdkVersion 36
-        versionCode 112
-        versionName '0.9.2-ai'
+        versionCode 113
+        versionName '0.9.3-i18n'
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders = [usesCleartextTraffic: "false"]

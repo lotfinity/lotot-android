@@ -1633,3 +1633,11 @@ html[dir="rtl"] .language-choice-grid button strong { text-align: center; }
 .ai-provider-pill { cursor: pointer; font-family: inherit; }
 .ai-provider-pill:disabled { cursor: default; opacity: 1; }
 .ai-provider-pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* Bidirectional text follows the selected language; data coordinates do not. */
+.sparkline, .speed-ring, .metric-ring, .temperature-track, .voltage-track,
+.range-track, .signal-progress, .drive-bars i { direction: ltr; }
+.ai-page-identity > div, .ai-message-bubble, .fault-code-card { min-width: 0; }
+.fault-code-card strong { overflow-wrap: anywhere; text-align: start; }
+.definition-fallback { color: var(--muted); font-size: .65rem; }
+html[dir="rtl"] .ai-composer textarea { text-align: start; }
