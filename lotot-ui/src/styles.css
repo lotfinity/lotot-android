@@ -1641,3 +1641,52 @@ html[dir="rtl"] .language-choice-grid button strong { text-align: center; }
 .fault-code-card strong { overflow-wrap: anywhere; text-align: start; }
 .definition-fallback { color: var(--muted); font-size: .65rem; }
 html[dir="rtl"] .ai-composer textarea { text-align: start; }
+
+/* Fit the chat to the real WebView viewport, including keyboard resize. */
+.app-shell.has-ai-page {
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+.has-ai-page > .topbar { flex: 0 0 auto; }
+.has-ai-page > .page-stack { flex: 1 1 auto; min-height: 0; }
+.has-ai-page .app-page-ai { height: 100%; padding-bottom: 0; }
+.ai-page-shell > * { min-width: 0; }
+.ai-page-header { flex: 0 0 auto; flex-wrap: wrap; gap: 8px 12px; }
+.ai-page-identity { flex: 1 1 210px; gap: 10px; }
+.ai-page-identity p { line-height: 1.45; overflow-wrap: anywhere; }
+.ai-page-identity small { line-height: 1.4; letter-spacing: .08em; }
+.ai-provider-pill { flex: 0 1 auto; max-width: 100%; line-height: 1.4; }
+.ai-context-strip { flex: 0 0 auto; flex-wrap: wrap; overflow: visible; gap: 6px; }
+.ai-context-strip span { flex: 0 1 auto; min-width: 0; max-width: 100%; line-height: 1.45; overflow-wrap: anywhere; }
+.ai-context-strip svg { flex: 0 0 auto; }
+.ai-chat-thread { min-height: 0; }
+.ai-message { min-width: 0; }
+.ai-message-bubble { max-width: 100%; }
+.ai-markdown { line-height: 1.65; }
+.ai-markdown p, .ai-markdown li, .ai-markdown h3, .ai-markdown h4, .ai-markdown h5 { unicode-bidi: plaintext; text-align: start; }
+.ai-markdown pre { max-width: 100%; overflow-x: auto; }
+.ai-quick-prompts { gap: 6px; }
+.ai-quick-prompts button { line-height: 1.4; }
+.ai-composer { min-width: 0; align-items: center; }
+.ai-composer textarea {
+  min-width: 0;
+  min-height: calc(2.8em + 18px);
+  max-height: 8em;
+  padding: 9px;
+  line-height: 1.4;
+  overflow-y: auto;
+}
+.ai-composer button { width: 44px; height: 44px; }
+.ai-page-footer { line-height: 1.4; }
+html[dir="rtl"] .ai-page-identity small { letter-spacing: normal; }
+@media (max-height: 540px) {
+  .has-ai-page .ai-page-identity p, .has-ai-page .ai-page-identity small,
+  .has-ai-page .ai-context-strip, .has-ai-page .ai-quick-prompts,
+  .has-ai-page .ai-page-footer { display: none; }
+  .has-ai-page .ai-page-orb { width: 34px; height: 34px; }
+  .has-ai-page .ai-page-shell { gap: 6px; }
+}
