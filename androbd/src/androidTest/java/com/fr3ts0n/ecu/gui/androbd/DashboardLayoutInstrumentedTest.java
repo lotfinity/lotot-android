@@ -19,15 +19,15 @@ public class DashboardLayoutInstrumentedTest {
                     field.setAccessible(true);
                     Handler handler = (Handler) field.get(activity);
                     // Reproduce the delayed toolbar message that restored the old title bar.
-                    if (activity.getActionBar() != null) activity.getActionBar().show();
+                    if (activity.getSupportActionBar() != null) activity.getSupportActionBar().show();
                     Message message = Message.obtain(handler, MainActivity.MESSAGE_TOOLBAR_VISIBLE, Boolean.TRUE);
                     handler.dispatchMessage(message);
-                    assertNotNull(activity.getActionBar());
-                    assertFalse(activity.getActionBar().isShowing());
+                    assertNotNull(activity.getSupportActionBar());
+                    assertFalse(activity.getSupportActionBar().isShowing());
                     java.lang.reflect.Method status = MainActivity.class.getDeclaredMethod("setStatus", CharSequence.class);
                     status.setAccessible(true);
                     status.invoke(activity, "Connected");
-                    assertFalse(activity.getActionBar().isShowing());
+                    assertFalse(activity.getSupportActionBar().isShowing());
                 } catch (Exception e) { throw new AssertionError(e); }
             });
         }

@@ -23,7 +23,7 @@ import static android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
-import android.app.ActionBar;
+import androidx.appcompat.app.ActionBar;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.SearchManager;
@@ -659,7 +659,7 @@ public class MainActivity extends LotoTPluginActivity
                         // log action
                         log.fine(String.format("ActionBar: %s", visible ? "show" : "hide"));
                         // set action bar visibility
-                        ActionBar ab = getActionBar();
+                        ActionBar ab = getSupportActionBar();
                         if (ab != null)
                         {
                             if (visible && !isLotoTDashboardVisible())
@@ -780,7 +780,7 @@ public class MainActivity extends LotoTPluginActivity
         CommService.elm.addPropertyChangeListener(this);
 
         // set up action bar
-        ActionBar actionBar = getActionBar();
+        ActionBar actionBar = getSupportActionBar();
         if (actionBar != null)
         {
             actionBar.setDisplayShowTitleEnabled(true);
@@ -1004,6 +1004,11 @@ public class MainActivity extends LotoTPluginActivity
         updateTimer.schedule(updateTask, 0, DISPLAY_UPDATE_TIME);
 
         super.onResume();
+        if (isLotoTDashboardVisible())
+        {
+            ActionBar actionBar = getSupportActionBar();
+            if (actionBar != null) actionBar.hide();
+        }
     }
 
     /*
@@ -1223,7 +1228,7 @@ public class MainActivity extends LotoTPluginActivity
     private void showLotoTDashboard()
     {
         if (mLototView != null) setContentView(mLototView);
-        ActionBar actionBar = getActionBar();
+        ActionBar actionBar = getSupportActionBar();
         if (actionBar != null) actionBar.hide();
         publishLotoTStatus();
         publishLotoTLanguage();
@@ -2777,7 +2782,7 @@ public class MainActivity extends LotoTPluginActivity
         super.onOptionsMenuClosed(menu);
         if (findViewById(R.id.lotot_webview) != null)
         {
-            ActionBar actionBar = getActionBar();
+            ActionBar actionBar = getSupportActionBar();
             if (actionBar != null) actionBar.hide();
         }
     }
@@ -3533,7 +3538,7 @@ public class MainActivity extends LotoTPluginActivity
     {
         if (isLotoTDashboardVisible())
         {
-            ActionBar actionBar = getActionBar();
+            ActionBar actionBar = getSupportActionBar();
             if (actionBar != null) actionBar.hide();
             return;
         }
@@ -4085,7 +4090,7 @@ public class MainActivity extends LotoTPluginActivity
      */
     private void setStatus(CharSequence subTitle)
     {
-        final ActionBar actionBar = getActionBar();
+        final ActionBar actionBar = getSupportActionBar();
         if (actionBar != null)
         {
             actionBar.setSubtitle(subTitle);
@@ -4216,7 +4221,7 @@ public class MainActivity extends LotoTPluginActivity
         else
         {
             setContentView(mListView);
-            ActionBar actionBar = getActionBar();
+            ActionBar actionBar = getSupportActionBar();
             if (actionBar != null) actionBar.show();
         }
         getListView().setOnItemLongClickListener(this);
@@ -4224,7 +4229,7 @@ public class MainActivity extends LotoTPluginActivity
         getListView().setChoiceMode(ListView.CHOICE_MODE_SINGLE);
 
         // set title
-        ActionBar ab = getActionBar();
+        ActionBar ab = getSupportActionBar();
         if (ab != null)
         {
             // title specified ... show it

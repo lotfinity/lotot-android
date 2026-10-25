@@ -35,8 +35,8 @@ android {
         resourceConfigurations += ['en', 'fr', 'ar-rDZ']
         minSdkVersion 23
         targetSdkVersion 36
-        versionCode 114
-        versionName '0.9.4-ui'
+        versionCode 115
+        versionName '0.9.5-ui'
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders = [usesCleartextTraffic: "false"]
