@@ -205,7 +205,7 @@ export const FR = {
   'ai.ready': 'PRÊT',
   'ai.thinking': 'ANALYSE…',
   'ai.analyze_live': 'Analyser les données',
-  'ai.placeholder': 'Posez une question sur un code défaut, un symptôme, un capteur ou la prochaine vérification…',
+  'ai.placeholder': 'Posez votre question…',
   'ai.ask': 'Demander à LoToTi AI',
   'ai.answer': 'LoToTi AI',
   'ai.welcome': 'Je suis votre copilote diagnostic LoToTi. Demandez-moi un code défaut, un symptôme ou une analyse des données du véhicule. J’utilise automatiquement la base DTC locale et le contexte de la session.',

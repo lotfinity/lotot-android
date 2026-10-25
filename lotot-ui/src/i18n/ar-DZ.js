@@ -361,7 +361,7 @@ export const AR_DZ = Object.freeze({
   "ai.ready": "واجد",
   "ai.thinking": "راه يحلل…",
   "ai.analyze_live": "حلّل données لايف",
-  "ai.placeholder": "اسقسي على code défaut، symptôme، قراءة capteur، ولا واش تراقب من بعد…",
+  "ai.placeholder": "اسقسي LoToTi AI…",
   "ai.ask": "اسقسي LoToTi AI",
   "ai.answer": "LoToTi AI",
   "ai.welcome": "أنا copilote diagnostic تاعك في LoToTi. اسقسيني على code défaut، symptôme، ولا données الحالية تاع السيارة. نستعمل قاعدة DTC المحلية و contexte تاع session أوتوماتيك.",

@@ -369,7 +369,7 @@ export const EN = {
   'ai.ready': 'READY',
   'ai.thinking': 'THINKING…',
   'ai.analyze_live': 'Analyze live data',
-  'ai.placeholder': 'Ask about a fault code, symptom, sensor reading, or what to check next…',
+  'ai.placeholder': 'Ask LoToTi AI…',
   'ai.ask': 'Ask LoToTi AI',
   'ai.answer': 'LoToTi AI',
   'ai.welcome': 'I’m your LoToTi diagnostic copilot. Ask me about a fault code, a symptom, or the current vehicle data. I’ll use the local DTC database and live session context automatically.',
