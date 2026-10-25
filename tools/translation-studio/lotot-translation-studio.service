@@ -1,0 +1,16 @@
+[Unit]
+Description=LoToTi Translation Studio
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/lofa/projects/lotot-android
+ExecStart=/usr/bin/python3 /home/lofa/projects/lotot-android/tools/translation-studio/server.py
+Restart=on-failure
+RestartSec=5
+Environment=LOTOT_BIND=100.73.225.127
+Environment=LOTOT_PORT=8787
+UMask=0077
+
+[Install]
+WantedBy=default.target
