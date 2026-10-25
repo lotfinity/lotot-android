@@ -1656,7 +1656,7 @@ function App() {
 
   return (
     <IconFamilyProvider family={iconFamily}>
-    <main className="app-shell">
+    <main className={`app-shell${activeTab === 'ai' ? ' has-ai-page' : ''}`}>
       <header className="topbar">
         <div className="brand" aria-label="LoToTi">
           <img className="brand-logo brand-logo-dark" src="./logo-dark.png" alt="" />
@@ -1787,7 +1787,7 @@ function App() {
               </section>
 
               <form className="ai-composer" onSubmit={(event) => { event.preventDefault(); askLoToTiAi(); }}>
-                <textarea dir="auto" value={aiQuestion} onChange={(event) => setAiQuestion(event.target.value)} placeholder={t('ai.placeholder')} rows="1" onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); askLoToTiAi(); } }}/>
+                <textarea dir="auto" value={aiQuestion} onChange={(event) => setAiQuestion(event.target.value)} placeholder={t('ai.placeholder')} rows="2" onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); askLoToTiAi(); } }}/>
                 <button type="submit" aria-label={t('ai.ask')} disabled={!nativeAvailable || !aiState.configured || !aiQuestion.trim() || aiBusy}><Icon name="chevron"/></button>
               </form>
               <footer className="ai-page-footer"><span>{t('ai.context_auto')}</span></footer>

@@ -662,7 +662,7 @@ public class MainActivity extends LotoTPluginActivity
                         ActionBar ab = getActionBar();
                         if (ab != null)
                         {
-                            if (visible)
+                            if (visible && !isLotoTDashboardVisible())
                             {
                                 ab.show();
                             } else
@@ -784,7 +784,7 @@ public class MainActivity extends LotoTPluginActivity
         if (actionBar != null)
         {
             actionBar.setDisplayShowTitleEnabled(true);
-            actionBar.show(); // Ensure action bar is visible
+            actionBar.hide(); // The dashboard supplies its own header and tools entry.
         }
         // start automatic toolbar hider
         setAutoHider(prefs.getBoolean(PREF_AUTOHIDE, false));
@@ -3524,8 +3524,19 @@ public class MainActivity extends LotoTPluginActivity
     /**
      * Unhide action bar
      */
+    private boolean isLotoTDashboardVisible()
+    {
+        return mLototView != null && mLototView.getParent() != null;
+    }
+
     private void unHideActionBar()
     {
+        if (isLotoTDashboardVisible())
+        {
+            ActionBar actionBar = getActionBar();
+            if (actionBar != null) actionBar.hide();
+            return;
+        }
         if (toolbarAutoHider != null)
         {
             toolbarAutoHider.showComponent();
