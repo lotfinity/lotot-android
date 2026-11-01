@@ -4,7 +4,7 @@ Status: **IMPLEMENTED + DEVICE-VERIFIED — full React Darija, native ar-DZ loca
 Target locale: **`ar-DZ`**
 Display name: **الدارجة الجزائرية**
 Direction: **RTL**
-Translation character: **Algerian Darija in Arabic script, with natural French automotive/technical vocabulary kept in Latin script where Algerians normally use it.**
+Translation character: **Algerian Darija in Arabic script, with French kept in Latin script ONLY for established automotive-part names and precise garage/diagnostic technical terms. Ordinary menus, status labels and explanations must use Algerian Darija; do not sprinkle French UI vocabulary.**
 
 ---
 

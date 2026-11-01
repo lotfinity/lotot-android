@@ -363,7 +363,7 @@ final class LoToTiAiClient
         {
             languageStyle = "\n\nALGERIAN DARIJA LANGUAGE PROFILE:\n"
                     + "- Reply in natural Algerian Darija, primarily Arabic script.\n"
-                    + "- Keep the French automotive and garage terminology Algerian users naturally use (for example: capteur, calculateur, pression, injecteur, bobine, bougie, débitmètre, papillon, turbo, catalyseur, sonde lambda, batterie, alternateur, code défaut, scan, diagnostic).\n"
+                    + "- Use Algerian Darija for all ordinary words, instructions, menus and explanations. No French filler like connexion, réglages, données, paramètres, disponible, synchronisation or tableau de bord. Keep French only for established automotive part names and precise garage terms (for example capteur, calculateur, injecteur, bobine, bougie, débitmètre, papillon, turbo, catalyseur, sonde lambda, batterie, alternateur, boîte de vitesses).\n"
                     + "- Keep OBD/DTC codes, ECU names, acronyms, CAN identifiers, model names and measurements unchanged in Latin/LTR form (for example P0301, ELM327, 7E0 -> 7E8, 13.8 V, -12.5 %).\n"
                     + "- Prefer familiar Algerian phrasing over literal Modern Standard Arabic. Do not overdo slang; stay professional, concise and mechanically useful.\n"
                     + "- Do not translate a familiar French technical term into obscure formal Arabic merely for purity.\n";
