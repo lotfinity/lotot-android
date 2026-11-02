@@ -29,7 +29,13 @@ final class DemoVehicleModel
         LEAN("lean", "Lean mixture"),
         CATALYST("catalyst", "Catalyst efficiency"),
         OVERHEAT("overheat", "Engine overheating"),
-        WEAK_CHARGING("weak_charging", "Weak battery / alternator");
+        WEAK_CHARGING("weak_charging", "Weak battery / alternator"),
+        REPLAY_PEUGEOT_EXPERT("replay_peugeot_expert_2014", "Peugeot Expert (DieselOBD replay)"),
+        REPLAY_CHEVROLET_CAPTIVA("replay_chevrolet_captiva_2011", "Chevrolet Captiva (DieselOBD replay)"),
+        REPLAY_KIA_SPORTAGE("replay_kia_sportage_2017", "Kia Sportage (DieselOBD replay)"),
+        REPLAY_CITROEN_BERLINGO("replay_citroen_berlingo_2014", "Citroen Berlingo (DieselOBD replay)"),
+        REPLAY_PEUGEOT_2008("replay_peugeot_2008_2022", "Peugeot 2008 (DieselOBD replay)"),
+        REPLAY_UNATTRIBUTED_HEALTHY("replay_healthy_unattributed", "Unattributed healthy DieselOBD replay");
 
         final String id;
         final String label;
@@ -58,6 +64,10 @@ final class DemoVehicleModel
             0x21, 0x2F, 0x30, 0x31, 0x33,
             0x42, 0x46, 0x47, 0x49, 0x4A, 0x4C,
             0x5C, 0x5E
+    };
+
+    static final int[] RECORDED_PIDS = {
+            0x01, 0x04, 0x05, 0x0B, 0x0C, 0x0D, 0x0F, 0x10, 0x33, 0x42, 0x46
     };
 
     static final class State
@@ -119,6 +129,7 @@ final class DemoVehicleModel
     }
 
     private Scenario scenario;
+    private RecordedVehicleReplay.Profile replay;
     private long startedAtMs;
     private long lastUpdateMs;
     private long codesClearedAtMs = -1L;
@@ -140,6 +151,7 @@ final class DemoVehicleModel
     synchronized void reset(Scenario newScenario, long nowMs)
     {
         scenario = newScenario == null ? Scenario.HEALTHY : newScenario;
+        replay = RecordedVehicleReplay.find(scenario.id);
         startedAtMs = nowMs;
         lastUpdateMs = nowMs;
         codesClearedAtMs = -1L;
@@ -153,6 +165,12 @@ final class DemoVehicleModel
         current = calculateState(nowMs, false);
         freezeFrame = makeFreezeFrame(scenario);
     }
+
+    synchronized RecordedVehicleReplay.Profile recordedProfile() { return replay; }
+
+    synchronized int[] supportedPids() { return replay != null ? RECORDED_PIDS : SUPPORTED_PIDS; }
+
+    synchronized long supportedMaskForCurrent(int start) { return maskFor(supportedPids(), start); }
 
     synchronized Scenario getScenario()
     {
@@ -177,6 +195,7 @@ final class DemoVehicleModel
 
     synchronized void clearCodes(long nowMs)
     {
+        if (replay != null) return; // Published dataset fault labels are immutable evidence.
         update(nowMs);
         codesClearedAtMs = nowMs;
         distanceAtClearKm = distanceKm;
@@ -185,6 +204,7 @@ final class DemoVehicleModel
 
     synchronized List<String> storedCodes(long nowMs)
     {
+        if (replay != null) return Arrays.asList(replay.codes);
         String code = primaryDtc(scenario);
         if (code == null) return Collections.emptyList();
         if (codesClearedAtMs >= 0L && nowMs - codesClearedAtMs < 20_000L)
@@ -194,6 +214,8 @@ final class DemoVehicleModel
 
     synchronized List<String> pendingCodes(long nowMs)
     {
+        // The published dataset does not distinguish pending or permanent DTC status.
+        if (replay != null) return Collections.emptyList();
         String code = primaryDtc(scenario);
         if (code == null) return Collections.emptyList();
         if (codesClearedAtMs >= 0L && nowMs - codesClearedAtMs < 12_000L)
@@ -203,6 +225,7 @@ final class DemoVehicleModel
 
     synchronized List<String> permanentCodes(long nowMs)
     {
+        if (replay != null) return Collections.emptyList();
         if (!isEmissionsFault(scenario)) return Collections.emptyList();
         if (codesClearedAtMs >= 0L && nowMs - codesClearedAtMs > 75_000L)
             return Collections.emptyList();
@@ -211,6 +234,11 @@ final class DemoVehicleModel
 
     synchronized byte[] payloadForPid(int pid, boolean frozen, long nowMs)
     {
+        if (replay != null) {
+            // Dataset contains no freeze-frame snapshots. Never fabricate them.
+            if (frozen) return null;
+            return recordedPayload(pid, nowMs);
+        }
         State s;
         if (frozen)
         {
@@ -261,10 +289,12 @@ final class DemoVehicleModel
         }
     }
 
-    static long supportedMask(int start)
+    static long supportedMask(int start) { return maskFor(SUPPORTED_PIDS, start); }
+
+    private static long maskFor(int[] supported, int start)
     {
         long mask = 0L;
-        for (int pid : SUPPORTED_PIDS)
+        for (int pid : supported)
         {
             if (pid > start && pid < start + 0x20)
             {
@@ -272,7 +302,7 @@ final class DemoVehicleModel
                 mask |= (0x80000000L >>> bit);
             }
         }
-        for (int pid : SUPPORTED_PIDS)
+        for (int pid : supported)
         {
             if (pid >= start + 0x20)
             {
@@ -339,6 +369,7 @@ final class DemoVehicleModel
 
     private State calculateState(long nowMs, boolean integrate)
     {
+        if (replay != null) return recordedState(nowMs);
         double dt = Math.max(0.0, Math.min(1.0, (nowMs - lastUpdateMs) / 1000.0));
         double elapsed = Math.max(0.0, (nowMs - startedAtMs) / 1000.0);
         double phase = elapsed % 120.0;
@@ -440,6 +471,50 @@ final class DemoVehicleModel
         s.warmupsSinceClear = codesClearedAtMs < 0L ? 18 : 0;
         s.gear = gear;
         return s;
+    }
+
+    /** Snapshot sampled from the dataset test split, with an artificial 500ms playback clock.
+     * Inferred original units: temperatures Fahrenheit, MAP/BARO psi, speed mph, MAF lb/s.
+     * Do not treat these conversions as verified calibration data for a physical vehicle.
+     */
+    private State recordedState(long nowMs)
+    {
+        double[] r = replay.frame(nowMs - startedAtMs);
+        State state = new State();
+        state.loadPct = clamp(r[0], 0, 100);
+        state.coolantC = (r[1] - 32.0) * 5.0 / 9.0;
+        state.mapKpa = r[2] * 6.894757293;
+        state.rpm = Math.max(0.0, r[3]);
+        state.speedKph = r[4] * 1.609344;
+        state.intakeC = (r[5] - 32.0) * 5.0 / 9.0;
+        state.mafGps = r[6] * 453.59237;
+        // FRP at index 7 is intentionally not exposed because its scale is not verified.
+        state.baroKpa = r[8] * 6.894757293;
+        state.voltageV = r[9];
+        state.ambientC = (r[10] - 32.0) * 5.0 / 9.0;
+        return state;
+    }
+
+    private byte[] recordedPayload(int pid, long nowMs)
+    {
+        State s = recordedState(nowMs);
+        switch (pid)
+        {
+            case 0x01:
+                // Report documented DTC count, but do not fabricate measured MIL/readiness state.
+                return bytes(Math.min(0x7F, replay.codes.length), 0x00, 0x00, 0x00);
+            case 0x04: return bytes(percent(s.loadPct));
+            case 0x05: return bytes(temp(s.coolantC));
+            case 0x0B: return bytes((int)Math.round(clamp(s.mapKpa, 0, 255)));
+            case 0x0C: return u16((int)Math.round(clamp(s.rpm * 4.0, 0, 65535)));
+            case 0x0D: return bytes((int)Math.round(clamp(s.speedKph, 0, 255)));
+            case 0x0F: return bytes(temp(s.intakeC));
+            case 0x10: return u16((int)Math.round(clamp(s.mafGps * 100.0, 0, 65535)));
+            case 0x33: return bytes((int)Math.round(clamp(s.baroKpa, 0, 255)));
+            case 0x42: return u16((int)Math.round(clamp(s.voltageV * 1000.0, 0, 65535)));
+            case 0x46: return bytes(temp(s.ambientC));
+            default: return null;
+        }
     }
 
     private static State makeFreezeFrame(Scenario scenario)

@@ -1257,8 +1257,12 @@ public class MainActivity extends LotoTPluginActivity
     @Override
     public void setLotoTDemoScenario(String scenario)
     {
+        String previous = ElmProt.getDemoScenario();
         ElmProt.setDemoScenario(scenario);
-        resetLotoTDiagnosticScan();
+        if (!previous.equals(ElmProt.getDemoScenario())) {
+            resetLotoTDiagnosticScan();
+            resetLotoTSignalTimestamps(); // Vehicle identity cannot leak across replay selections.
+        }
         if ("demo".equals(mLototStatus)) publishLotoTTelemetry();
     }
 
@@ -1439,7 +1443,11 @@ public class MainActivity extends LotoTPluginActivity
         JSONObject state = new JSONObject();
         try
         {
-            Object mil = getLotoTValue("status_mil");
+            // DieselOBD does not publish an actual MIL state; never present the
+            // emulated Mode 01 default as a measured Check Engine status.
+            boolean recordedReplay = "demo".equals(mLototStatus)
+                    && ElmProt.getDemoScenario().startsWith("replay_");
+            Object mil = recordedReplay ? JSONObject.NULL : getLotoTValue("status_mil");
             Object reportedCount = getLotoTValue("number_fault_codes");
             state.put("mil", mil == null ? JSONObject.NULL : mil);
             state.put("reported_dtc_count", reportedCount == null ? JSONObject.NULL : reportedCount);
@@ -2434,9 +2442,38 @@ public class MainActivity extends LotoTPluginActivity
 
             if ("demo".equals(mLototStatus))
             {
+                String replayId = ElmProt.getDemoScenario();
                 vehicle.put("source", "demo_mode09");
-                vehicle.put("source_type", "demo");
-                vehicle.put("source_profile", "LoToTi internal Demo ECU");
+                if (replayId.startsWith("replay_")) {
+                    vehicle.put("source_type", "dataset_replay");
+                    vehicle.put("source", "dieselobd_test_split_replay");
+                    vehicle.put("source_profile", "DieselOBD CC BY 4.0, sampled recorded rows; synthetic 500ms clock; inferred unit conversions; not live ECU measurements");
+                    vehicle.put("profile_id", replayId);
+                    vehicle.put("vin_synthetic", true);
+                    switch (replayId) {
+                        case "replay_peugeot_expert_2014":
+                            vehicle.put("manufacturer", "Peugeot"); vehicle.put("dtc_manufacturer", "PEUGEOT");
+                            vehicle.put("model", "Expert"); vehicle.put("model_year", 2014); vehicle.put("engine", "2.0 HDi"); break;
+                        case "replay_chevrolet_captiva_2011":
+                            vehicle.put("manufacturer", "Chevrolet"); vehicle.put("dtc_manufacturer", "CHEVY");
+                            vehicle.put("model", "Captiva"); vehicle.put("model_year", 2011); vehicle.put("engine", "2.0 Diesel"); break;
+                        case "replay_kia_sportage_2017":
+                            vehicle.put("manufacturer", "Kia"); vehicle.put("dtc_manufacturer", "KIA");
+                            vehicle.put("model", "Sportage"); vehicle.put("model_year", 2017); vehicle.put("engine", "2.0 Diesel"); break;
+                        case "replay_citroen_berlingo_2014":
+                            vehicle.put("manufacturer", "Citroën"); vehicle.put("dtc_manufacturer", "CITROEN");
+                            vehicle.put("model", "Berlingo"); vehicle.put("model_year", 2014); vehicle.put("engine", "1.6 Diesel"); break;
+                        case "replay_peugeot_2008_2022":
+                            vehicle.put("manufacturer", "Peugeot"); vehicle.put("dtc_manufacturer", "PEUGEOT");
+                            vehicle.put("model", "2008"); vehicle.put("model_year", 2022); vehicle.put("engine", "1.5 Diesel"); break;
+                        case "replay_healthy_unattributed":
+                            vehicle.put("source_profile", "DieselOBD unlabeled fault-free rows, unknown make and model; 500ms reconstructed playback clock"); break;
+                        default: break;
+                    }
+                } else {
+                    vehicle.put("source_type", "demo");
+                    vehicle.put("source_profile", "LoToTi internal generic Demo ECU");
+                }
             }
             else if (lototExternalEmulator)
             {
@@ -2578,6 +2615,15 @@ public class MainActivity extends LotoTPluginActivity
             if ("live".equals(mLototStatus) || "demo".equals(mLototStatus))
             {
             signals = LotoTObdSignals.collect("demo".equals(mLototStatus) ? "demo" : "obd");
+                if ("demo".equals(mLototStatus) && ElmProt.getDemoScenario().startsWith("replay_")) {
+                    // Dataset has no readiness/MIL measurements: Mode 01 decoding
+                    // exposes synthetic zeroes for these fields, so suppress them.
+                    for (int i = signals.length() - 1; i >= 0; --i) {
+                        JSONObject item = signals.optJSONObject(i);
+                        if (item != null && item.optString("mnemonic", "").startsWith("status_"))
+                            signals.remove(i);
+                    }
+                }
             }
             if (mLototGateway != null) mLototGateway.appendSignals(signals);
         }

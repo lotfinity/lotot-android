@@ -1104,7 +1104,7 @@ public class ElmProt
 						demo.reset(desired, now);
 						if (service == OBD_SVC_DATA || service == OBD_SVC_FREEZEFRAME)
 						{
-							sendDemoSupportedPids(service);
+							sendDemoSupportedPids(demo, service);
 							sendDemoSnapshot(demo, service, now);
 						}
 						log.info("ELM DEMO scenario changed to " + desired.id);
@@ -1121,7 +1121,7 @@ public class ElmProt
 						if (service == OBD_SVC_DATA || service == OBD_SVC_FREEZEFRAME)
 						{
 							long now = System.currentTimeMillis();
-							sendDemoSupportedPids(service);
+							sendDemoSupportedPids(demo, service);
 							sendDemoSnapshot(demo, service, now);
 						}
 						else if (service == OBD_SVC_VEH_INFO)
@@ -1163,6 +1163,12 @@ public class ElmProt
 							break;
 
 						case OBD_SVC_CLEAR_CODES:
+                            if (demo.recordedProfile() != null) {
+                                // Never "erase" documented historical fault evidence.
+                                handleTelegram("7F0411".toCharArray());
+                                Thread.sleep(350);
+                                break;
+                            }
 							demo.clearCodes(System.currentTimeMillis());
 							tCodes.clear();
 							handleTelegram("44".toCharArray());
@@ -1186,7 +1192,7 @@ public class ElmProt
 							}
 							else
 							{
-								sendDemoSupportedPids(service);
+								sendDemoSupportedPids(demo, service);
 							}
 							break;
 						}
@@ -1222,7 +1228,7 @@ public class ElmProt
 	private void sendDemoSnapshot(DemoVehicleModel demo, int obdService, long nowMs)
 	{
 		boolean frozen = obdService == OBD_SVC_FREEZEFRAME;
-		for (int pid : DemoVehicleModel.SUPPORTED_PIDS)
+		for (int pid : demo.supportedPids())
 		{
 			byte[] payload = demo.payloadForPid(pid, frozen, nowMs);
 			if (payload == null) continue;
@@ -1232,11 +1238,11 @@ public class ElmProt
 		}
 	}
 
-	private void sendDemoSupportedPids(int obdService)
+	private void sendDemoSupportedPids(DemoVehicleModel demo, int obdService)
 	{
 		for (int start = 0; start <= 0xE0; start += 0x20)
 		{
-			long mask = DemoVehicleModel.supportedMask(start);
+			long mask = demo.supportedMaskForCurrent(start);
 			String reply = String.format(obdService == OBD_SVC_DATA
 				? "41%02X%08X" : "42%02X00%08X", start, mask);
 			handleTelegram(reply.toCharArray());
@@ -1333,13 +1339,19 @@ public class ElmProt
 				break;
 
 			case 0x02:
-				// Synthetic Volkswagen-format VIN. L0T0T identifies this as Demo data.
-				sendDemoVin("WVWZZZAUZHL0T0T01");
+                RecordedVehicleReplay.Profile vehicleProfile = activeDemoModel == null ? null : activeDemoModel.recordedProfile();
+                if (vehicleProfile != null) {
+                    // Marker is explicitly synthetic, never a physical VIN.
+                    String serial = String.format("%012d", (long)(vehicleProfile.marker.hashCode() & 0x7fffffff));
+                    sendDemoVin("L0T0T" + serial);
+                } else sendDemoVin("WVWZZZAUZHL0T0T01");
 				break;
 
 			case 0x04:
-				// 16-byte synthetic calibration ID.
-				handleTelegram(("490401" + asciiHex("LOTOTI-DEMO-1500")).toCharArray());
+                RecordedVehicleReplay.Profile calibrationProfile = activeDemoModel == null ? null : activeDemoModel.recordedProfile();
+                // Synthetic calibration marker identifies the replay profile.
+                String cal = calibrationProfile == null ? "LOTOTI-DEMO-1500" : "LOTOT-EMU-" + calibrationProfile.marker;
+                handleTelegram(("490401" + asciiHex(cal)).toCharArray());
 				break;
 
 			case 0x06:
@@ -1354,8 +1366,9 @@ public class ElmProt
 			case 0x0A:
 				// PID 09/0A is a fixed 20-byte ASCII ECU name. Do not prefix it
 				// with the item-count byte used by VIN/calibration PIDs.
-				String ecmName = String.format("%-20s", "ECM-LOTOTI-DEMO");
-				String tcmName = String.format("%-20s", "TCM-LOTOTI-DEMO");
+                RecordedVehicleReplay.Profile ecuProfile = activeDemoModel == null ? null : activeDemoModel.recordedProfile();
+                String ecmName = String.format("%-20s", ecuProfile == null ? "ECM-LOTOTI-DEMO" : "LOTOT-" + ecuProfile.marker);
+                String tcmName = String.format("%-20s", "TCM-LOTOTI-DEMO");
 				if (demoHeadersEnabled)
 				{
 					handleTelegram(("7E81016490A" + asciiHex(ecmName)).toCharArray());

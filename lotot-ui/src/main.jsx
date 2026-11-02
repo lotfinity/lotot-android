@@ -58,6 +58,19 @@ const DEMO_SCENARIOS = [
   { id: 'weak_charging', labelKey: 'demo.weak_charging', detailKey: 'demo.weak_charging_detail', code: 'P0562', icon: 'scenario_weak_charging' },
 ];
 const demoScenarioOption = (id) => DEMO_SCENARIOS.find((item) => item.id === id) || DEMO_SCENARIOS[0];
+const RECORDED_VEHICLES = [
+  { id: 'replay_peugeot_expert_2014', name: 'Peugeot Expert · 2014 · 2.0 HDi', codes: 'P0406 · P0234 · P0102 · P0113 · P1351' },
+  { id: 'replay_chevrolet_captiva_2011', name: 'Chevrolet Captiva · 2011 · 2.0 Diesel', codes: 'P0107 · P0069 · P0089' },
+  { id: 'replay_kia_sportage_2017', name: 'Kia Sportage · 2017 · 2.0 Diesel', codes: 'P0403 · P2009 · P2015 · P0404' },
+  { id: 'replay_citroen_berlingo_2014', name: 'Citroën Berlingo · 2014 · 1.6 Diesel', codes: 'P0113 · P0102 · P2562' },
+  { id: 'replay_peugeot_2008_2022', name: 'Peugeot 2008 · 2022 · 1.5 Diesel', codes: 'P0562' },
+  { id: 'replay_healthy_unattributed', nameKey: 'demo.replay_healthy', codes: '0 DTC · DieselOBD' },
+];
+const demoScenarioName = (id) => {
+  const recorded = RECORDED_VEHICLES.find((item) => item.id === id);
+  return recorded ? (recorded.nameKey ? t(recorded.nameKey) : recorded.name) : t(demoScenarioOption(id).labelKey);
+};
+
 
 const FONT_FAMILIES = [
   { id: 'system', labelKey: 'appearance.font_system', stack: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
@@ -1222,8 +1235,9 @@ function App() {
     const nativeScenario = readNativeDemoScenario();
     const saved = localStorage.getItem('lototi-demo-scenario');
     if (nativeScenario) return nativeScenario;
-    return DEMO_SCENARIOS.some((item) => item.id === saved) ? saved : 'healthy';
+    return [...DEMO_SCENARIOS, ...RECORDED_VEHICLES].some((item) => item.id === saved) ? saved : 'healthy';
   });
+  const [demoCatalogTab, setDemoCatalogTab] = useState(() => readNativeDemoScenario().startsWith('replay_') || localStorage.getItem('lototi-demo-scenario')?.startsWith('replay_') ? 'recorded' : 'interactive');
   const [query, setQuery] = useState('');
   const [aiQuestion, setAiQuestion] = useState('');
   const [aiState, setAiState] = useState(() => ({ ...aiBridge.lastState, ...readNativeAiStatus() }));
@@ -1428,7 +1442,7 @@ function App() {
     live: ['live', 'demo'].includes(status),
     lost: status === 'lost',
     label: status === 'demo'
-      ? t('status.demo')
+      ? (demoScenario.startsWith('replay_') ? t('demo.replay_tag') : t('status.demo'))
       : status === 'live'
         ? t('status.live')
         : status === 'connecting'
@@ -1436,7 +1450,7 @@ function App() {
           : status === 'lost'
             ? t('status.lost')
             : t('status.offline'),
-  }), [status, language]);
+  }), [status, language, demoScenario]);
 
   const signalMap = useMemo(() => {
     const map = new Map();
@@ -1461,10 +1475,17 @@ function App() {
   };
 
   const liveAlerts = useMemo(() => {
-    const issues = collapseDuplicateMilAlert(signals.map(assessSignal).filter(Boolean));
+    const replay = status === 'demo' && demoScenario.startsWith('replay_');
+    const issues = collapseDuplicateMilAlert(signals.map((signal) => {
+      const issue = assessSignal(signal);
+      // DTC labels in a historical dataset require investigation; they do not
+      // prove immediate danger or an illuminated MIL on a physical vehicle.
+      return issue && replay && signal.mnemonic === 'number_fault_codes'
+        ? { ...issue, level: 'warning' } : issue;
+    }).filter(Boolean));
     const rank = { danger: 2, warning: 1 };
     return issues.sort((a, b) => (rank[b.level] || 0) - (rank[a.level] || 0));
-  }, [signals, language]);
+  }, [signals, language, status, demoScenario]);
 
   const healthIcon = liveAlerts.some((item) => item.level === 'danger') ? 'health_critical' : liveAlerts.length ? 'health_warning' : 'health_stable';
 
@@ -1603,7 +1624,7 @@ function App() {
   };
 
   const selectDemoScenario = (scenarioId) => {
-    if (!DEMO_SCENARIOS.some((item) => item.id === scenarioId)) return;
+    if (![...DEMO_SCENARIOS, ...RECORDED_VEHICLES].some((item) => item.id === scenarioId)) return;
     setDemoScenarioState(scenarioId);
     window.LotoTNative?.setDemoScenario?.(scenarioId);
   };
@@ -1771,7 +1792,7 @@ function App() {
               </header>
 
               <section className="ai-context-strip" aria-label={t('ai.context')}>
-                <span><Icon name={status === 'demo' ? 'play' : 'vehicle'}/>{status === 'demo' ? `${t('status.demo')} · ${t(demoScenarioOption(demoScenario).labelKey)}` : connected ? (vehicle?.vin ? t('ai.vin_short', { vin: String(vehicle.vin).slice(-6) }) : t('status.live')) : t('status.offline')}</span>
+                <span><Icon name={status === 'demo' ? 'play' : 'vehicle'}/>{status === 'demo' ? `${demoScenario.startsWith('replay_') ? t('demo.replay_tag') : t('status.demo')} · ${demoScenarioName(demoScenario)}` : connected ? (vehicle?.vin ? t('ai.vin_short', { vin: String(vehicle.vin).slice(-6) }) : t('status.live')) : t('status.offline')}</span>
                 <span><Icon name={(diagnosticScannedCount || diagnosticReportedCount || 0) > 0 ? 'dtc_fault' : 'health_stable'}/>{aiFaultContextLabel}</span>
                 <span><Icon name="activity"/>{signals.length} {t('ai.signals')}</span>
               </section>
@@ -1891,17 +1912,36 @@ function App() {
                 <div><span>{t('demo.kicker')}</span><h2>{t('demo.title')}</h2><p>{t('demo.detail')}</p></div>
                 <span className={`demo-runtime-badge ${status === 'demo' ? 'is-running' : ''}`}><i/>{status === 'demo' ? t('demo.running') : t('demo.ready')}</span>
               </header>
-              <div className="demo-scenario-grid">
-                {DEMO_SCENARIOS.map((item) => (
-                  <button type="button" key={item.id} className={demoScenario === item.id ? 'is-active' : ''} onClick={() => selectDemoScenario(item.id)}>
-                    <span><Icon name={item.icon}/></span>
-                    <div><strong>{t(item.labelKey)}</strong><small>{t(item.detailKey)}</small></div>
-                    {item.code && <code dir="ltr">{item.code}</code>}
-                  </button>
-                ))}
+              <div className="demo-mode-tabs" role="group" aria-label={t('demo.mode_title')}>
+                <button type="button" className={demoCatalogTab === 'interactive' ? 'is-active' : ''} onClick={() => {setDemoCatalogTab('interactive');selectDemoScenario('healthy');}}>{t('demo.mode_interactive')}</button>
+                <button type="button" className={demoCatalogTab === 'recorded' ? 'is-active' : ''} onClick={() => {setDemoCatalogTab('recorded');selectDemoScenario(RECORDED_VEHICLES[0].id);}}>{t('demo.mode_recorded')}</button>
               </div>
+              {demoCatalogTab === 'recorded' ? (
+                <>
+                  <p className="demo-dataset-note">{t('demo.replay_caution')} <a href="https://github.com/AbouAbdallah-Lounis/OBD-Dataset" target="_blank" rel="noopener noreferrer">DieselOBD · CC BY 4.0</a></p>
+                  <div className="demo-vehicle-grid">
+                    {RECORDED_VEHICLES.map((item) => (
+                      <button type="button" key={item.id} className={`demo-vehicle-option ${demoScenario === item.id ? 'is-active' : ''}`} onClick={() => selectDemoScenario(item.id)}>
+                        <span><Icon name="vehicle"/></span>
+                        <div><strong>{item.nameKey ? t(item.nameKey) : item.name}</strong><small dir="ltr">{item.codes}</small></div>
+                        {demoScenario === item.id && <Icon name="check"/>}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="demo-scenario-grid">
+                  {DEMO_SCENARIOS.map((item) => (
+                    <button type="button" key={item.id} className={demoScenario === item.id ? 'is-active' : ''} onClick={() => selectDemoScenario(item.id)}>
+                      <span><Icon name={item.icon}/></span>
+                      <div><strong>{t(item.labelKey)}</strong><small>{t(item.detailKey)}</small></div>
+                      {item.code && <code dir="ltr">{item.code}</code>}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="demo-lab-footer">
-                <div><small>{t('demo.selected')}</small><strong>{t(demoScenarioOption(demoScenario).labelKey)}</strong></div>
+                <div><small>{t('demo.selected')}</small><strong>{demoScenarioName(demoScenario)}</strong></div>
                 <button type="button" onClick={startSelectedDemo} disabled={!nativeAvailable}><Icon name="play"/><span>{status === 'demo' ? t('demo.apply') : t('demo.start')}</span></button>
               </div>
             </section>
