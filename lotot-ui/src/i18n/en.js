@@ -269,6 +269,9 @@ export const EN = {
   'overview.fuel': 'FUEL',
   'overview.intake': 'INTAKE',
   'overview.pressure': 'PRESSURE',
+  'overview.airflow': 'AIR FLOW',
+  'health.review_alerts': 'Review diagnostic alerts',
+  'health.review_alerts_detail': 'Open vehicle health for the cause and the affected readings.',
 
   'explorer.kicker': 'OBD EXPLORER',
   'explorer.title': 'All live data',

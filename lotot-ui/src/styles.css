@@ -1690,3 +1690,116 @@ html[dir="rtl"] .ai-page-identity small { letter-spacing: normal; }
   .has-ai-page .ai-page-orb { width: 34px; height: 34px; }
   .has-ai-page .ai-page-shell { gap: 6px; }
 }
+
+/* Workshop field-test polish: readable Arabic/LTR telemetry and uncluttered health. */
+.brand { width: 58px; height: 58px; flex: 0 0 auto; }
+.brand-app-icon { width: 54px; height: 54px; display: block; object-fit: contain; border-radius: 16px; filter: drop-shadow(0 0 8px rgba(202,255,0,.12)); }
+.topbar { min-height: 62px; }
+
+/* Each metric needs the entire horizontal row for its measurement. */
+.critical-overview { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.overview-metric, .app-page-overview .overview-metric {
+  height: auto; min-height: 109px; padding: 12px; display: flex;
+  flex-direction: column; align-items: stretch; gap: 4px; overflow: visible;
+}
+.overview-metric-top { display: flex; justify-content: space-between; align-items: center; gap: 7px; min-height: 26px; }
+.overview-metric-top small, .app-page-overview .overview-metric-top small {
+  font-size: 11px; font-weight: 800; letter-spacing: normal; color: var(--muted);
+  overflow-wrap: anywhere; white-space: normal; line-height: 1.35;
+}
+.overview-metric-icon, .app-page-overview .overview-metric-icon {
+  display: grid; flex: 0 0 29px; width: 29px; height: 29px;
+  place-items: center; color: var(--accent); border-radius: 9px; background: rgba(202,255,0,.075);
+}
+.overview-metric-icon svg, .app-page-overview .overview-metric-icon svg { width: 17px; height: 17px; }
+.overview-metric-reading, .app-page-overview .overview-metric-reading {
+  display: flex; align-items: baseline; justify-content: flex-start; gap: 5px; margin: auto 0 0;
+  white-space: nowrap; overflow: visible; text-overflow: clip; min-width: 0;
+  font-size: clamp(18px, 5vw, 25px); line-height: 1.15; font-variant-numeric: tabular-nums;
+  letter-spacing: -.03em;
+}
+.overview-metric-reading > span { flex: 0 1 auto; min-width: 0; }
+.overview-metric-reading em, .app-page-overview .overview-metric-reading em {
+  flex: 0 0 auto; color: var(--muted); font-size: 10px; font-weight: 600;
+  font-style: normal; letter-spacing: 0;
+}
+.overview-metric-detail, .app-page-overview .overview-metric-detail {
+  display: block; margin: 5px 0 0; min-height: 14px; font-size: 10px;
+  line-height: 1.35; color: var(--muted); text-overflow: clip;
+  overflow-wrap: anywhere; white-space: normal; text-align: start;
+}
+.overview-metric-detail bdi { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.overview-metric.is-unavailable .overview-metric-reading { color: var(--muted); }
+
+/* Give the health card hierarchy instead of stretching a tiny paragraph into a large void. */
+.health-overview, .app-page-overview .health-overview { padding: 15px; }
+.health-overview > strong, .app-page-overview .health-overview > strong {
+  margin-top: 12px; font-size: clamp(15px, 4vw, 20px); line-height: 1.2;
+}
+.health-overview > p, .app-page-overview .health-overview > p {
+  flex: 0 1 auto; margin: 9px 0; line-height: 1.5;
+  font-size: 11px; -webkit-line-clamp: 5; overflow-wrap: anywhere;
+}
+.health-counts, .app-page-overview .health-counts { gap: 7px; margin-top: auto; }
+.health-counts span, .app-page-overview .health-counts span { padding: 10px 5px; }
+.health-counts b, .app-page-overview .health-counts b { font-size: 23px; }
+.health-counts small, .app-page-overview .health-counts small { font-size: 10px; margin-top: 4px; font-weight: 650; }
+.health-overview > footer, .app-page-overview .health-overview > footer {
+  margin-top: 9px; font-size: 10px; line-height: 1.3;
+}
+.health-page-summary .health-overview { min-height: 218px; height: auto; }
+.health-page-message strong { font-size: 13px; }
+.health-page-message p { font-size: 11px; line-height: 1.55; }
+
+/* DTC status: don't hide values behind ellipsis or tiny RTL labels. */
+.fault-scan-summary > div { padding: 12px; }
+.fault-scan-summary small, .fault-scan-summary strong {
+  overflow: visible; text-overflow: clip; white-space: normal;
+  overflow-wrap: anywhere; line-height: 1.35; letter-spacing: 0;
+}
+.fault-scan-summary small { font-size: 11px; }
+.fault-scan-summary strong { font-size: 16px; margin-top: 7px; }
+.fault-scan-empty strong { font-size: 13px; }
+.fault-scan-empty p { font-size: 11px; }
+
+@media (min-width: 700px) {
+  .critical-overview { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .app-page-overview .critical-overview { grid-template-columns: repeat(3,minmax(0,1fr)); }
+}
+@media (min-height: 760px) {
+  .app-page-overview { grid-template-rows: auto minmax(250px, 1.2fr) minmax(345px, 1fr) auto; }
+  .app-page-overview .critical-overview {
+    height: auto; grid-template-columns: repeat(2,minmax(0,1fr));
+    grid-template-rows: repeat(3,minmax(106px,auto)); gap: 10px;
+  }
+  .app-page-overview .overview-metric { height: auto; padding: 12px; }
+}
+@media (max-width: 430px) {
+  .fault-scan-summary { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+  .fault-scan-summary > div { padding: 12px; }
+  .fault-scan-summary > div:last-child { grid-column: 1 / -1; }
+  .fault-scan-summary strong { font-size: 14px; }
+  .app-page-overview .overview-dashboard { grid-template-columns: minmax(0,1.18fr) minmax(0,.95fr); }
+  .app-page-overview .health-overview { padding: 12px; }
+  .app-page-overview .drive-overview { padding: 12px; }
+  .app-page-overview .health-overview > header > span { width: 36px; height: 36px; }
+  .app-page-overview .health-overview > strong { margin-top: 10px; font-size: 15px; }
+  .app-page-overview .health-overview > p { font-size: 10px; }
+  .app-page-overview .health-counts small { font-size: 9px; }
+  .app-page-overview .health-counts b { font-size: 20px; }
+  .app-page-overview .speed-value strong { font-size: clamp(40px, 10vw, 52px); }
+  .app-page-overview .rpm-value strong { font-size: 21px; }
+}
+
+/* The overview should grow naturally with its contents, not stretch the health card to fill the viewport. */
+@media (min-height: 760px) {
+  .app-page-overview { display: flex; flex-direction: column; min-height: 0; gap: 10px; }
+  .app-page-overview .overview-dashboard { height: auto; }
+  .app-page-overview .drive-overview,
+  .app-page-overview .health-overview { height: 258px; min-height: 258px; }
+  .app-page-overview .critical-overview { height: auto; grid-template-rows: repeat(3,auto); }
+}
+@media (max-width: 430px) {
+  .app-page-overview .health-overview > header > span { width: 36px; height: 36px; }
+  .app-page-overview .health-counts span { padding: 8px 3px; }
+}

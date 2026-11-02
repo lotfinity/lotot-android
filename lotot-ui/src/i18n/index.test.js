@@ -28,6 +28,6 @@ test('diagnostic code and reading placeholders survive translation', () => {
   assert.equal(t('temperature.normal_range', {min:70, max:105}), 'Normal 70–105 °C');
   setLanguage('ar-DZ');
   assert.ok(t('temperature.normal_range', {min:70, max:105}).includes('70'));
-  assert.equal(t('faults.type_P'), 'Moteur و transmission');
+  assert.equal(t('faults.type_P'), 'الموتور وناقل الحركة');
   assert.equal(getLanguageDirection('ar-DZ'), 'rtl');
 });

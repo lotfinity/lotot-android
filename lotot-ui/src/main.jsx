@@ -1,4 +1,5 @@
 import { aiConnectionState } from './aiConnection.js';
+import { collapseDuplicateMilAlert } from './healthAlerts.js';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
@@ -571,8 +572,32 @@ function SignalCard({ signal, favorite, onToggleFavorite, history, now }) {
   );
 }
 
-function OverviewMetric({ label, value, unit, icon, tone = 'neutral', detail }) {
-  return <article className={`overview-metric tone-${tone}`}><span><Icon name={icon}/></span><div><small>{label}</small><strong dir="ltr">{formatValue(value)} <em>{unit}</em></strong>{detail && <p>{detail}</p>}</div></article>;
+function OverviewMetric({ label, value, unit, icon, tone = 'neutral', detail, normalRange }) {
+  return (
+    <article className={`overview-metric tone-${tone}${isNumericReading(value) ? '' : ' is-unavailable'}`}>
+      <div className="overview-metric-top"><small>{label}</small><span className="overview-metric-icon"><Icon name={icon}/></span></div>
+      <strong className="overview-metric-reading" dir="ltr"><span>{formatValue(value)}</span><em>{unit}</em></strong>
+      {normalRange ? <p className="overview-metric-detail">{t('generic.normal')} <bdi dir="ltr">{normalRange}</bdi></p> :
+        detail ? <p className="overview-metric-detail">{detail}</p> : null}
+    </article>
+  );
+}
+
+function CriticalMetrics({ readings, valueOf }) {
+  const pressure = valueOf('fuel_pressure');
+  const maf = readings.maf ?? valueOf('mass_airflow');
+  return (
+    <section className="critical-overview">
+      <OverviewMetric label={t('overview.coolant')} value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="sensor_coolant" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} normalRange="70–105 °C"/>
+      <OverviewMetric label={t('overview.oil')} value={valueOf('engine_oil_temperature')} unit="°C" icon="sensor_oil" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} normalRange="70–110 °C"/>
+      <OverviewMetric label={t('overview.voltage')} value={readings.module_voltage ?? valueOf('ecu_voltage')} unit="V" icon="sensor_voltage" tone={toneForVoltage(readings.module_voltage ?? valueOf('ecu_voltage'))} normalRange="12.3–14.8 V"/>
+      <OverviewMetric label={t('overview.fuel')} value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="sensor_fuel" tone={toneForFuel(valueOf('fuel_level', 'fuel_tank_level_input'))} detail={isNumericReading(valueOf('engine_fuel_rate')) ? `${formatValue(valueOf('engine_fuel_rate'), 1)} L/h` : null}/>
+      <OverviewMetric label={t('overview.intake')} value={valueOf('intake_manifold_pressure')} unit="kPa" icon="sensor_intake" detail={isNumericReading(valueOf('intake_air_temperature')) ? `${formatValue(valueOf('intake_air_temperature'), 0)} °C` : null}/>
+      {isNumericReading(pressure) ?
+        <OverviewMetric label={t('overview.pressure')} value={pressure} unit="kPa" icon="sensor_pressure"/> :
+        <OverviewMetric label={t('overview.airflow')} value={maf} unit="g/s" icon="sensor_pressure"/>}
+    </section>
+  );
 }
 
 function PageHeader({ kicker, title, detail }) {
@@ -630,7 +655,7 @@ function DriveOverview({ readings, valueOf, historyOf }) {
   );
 }
 
-function HealthOverview({ alerts, signals, lastCapturedAt, now }) {
+function HealthOverview({ alerts, signals, lastCapturedAt, now, showPrimary = true }) {
   const dangerCount = alerts.filter((item) => item.level === 'danger').length;
   const warningCount = alerts.filter((item) => item.level === 'warning').length;
   const tone = dangerCount ? 'danger' : warningCount ? 'warning' : signals.length ? 'normal' : 'unknown';
@@ -641,9 +666,9 @@ function HealthOverview({ alerts, signals, lastCapturedAt, now }) {
     <section className={`health-overview tone-${tone}`}>
       <header><span><Icon name={healthIcon}/></span><i/></header>
       <strong>{title}</strong>
-      <p>{primary?.message || (signals.length ? t('health.signals', { count: signals.length }) : t('health.connect'))}</p>
+      <p>{(showPrimary && primary?.message) || (signals.length ? t('health.signals', { count: signals.length }) : t('health.connect'))}</p>
       <div className="health-counts"><span><b>{dangerCount}</b><small>{t('health.critical')}</small></span><span><b>{warningCount}</b><small>{t('health.follow')}</small></span></div>
-      <footer>{ageLabel(lastCapturedAt, now)}</footer>
+      <footer>{signals.length ? t('service.updated', { age: ageLabel(lastCapturedAt, now) }) : '—'}</footer>
     </section>
   );
 }
@@ -1435,10 +1460,11 @@ function App() {
     return [];
   };
 
-  const liveAlerts = useMemo(() => signals.map(assessSignal).filter(Boolean).sort((a, b) => {
+  const liveAlerts = useMemo(() => {
+    const issues = collapseDuplicateMilAlert(signals.map(assessSignal).filter(Boolean));
     const rank = { danger: 2, warning: 1 };
-    return (rank[b.level] || 0) - (rank[a.level] || 0);
-  }), [signals, language]);
+    return issues.sort((a, b) => (rank[b.level] || 0) - (rank[a.level] || 0));
+  }, [signals, language]);
 
   const healthIcon = liveAlerts.some((item) => item.level === 'danger') ? 'health_critical' : liveAlerts.length ? 'health_warning' : 'health_stable';
 
@@ -1659,8 +1685,7 @@ function App() {
     <main className={`app-shell${activeTab === 'ai' ? ' has-ai-page' : ''}`}>
       <header className="topbar">
         <div className="brand" aria-label="LoToTi">
-          <img className="brand-logo brand-logo-dark" src="./logo-dark.png" alt="" />
-          <img className="brand-logo brand-logo-light" src="./logo-light.png" alt="" />
+          <img className="brand-app-icon" src="./app-icon.png" alt="" />
         </div>
         <button className={`status-pill ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`} type="button" onClick={openConnection}><i/><span>{state.label}</span></button>
         <div className="topbar-actions">
@@ -1686,18 +1711,11 @@ function App() {
               <HealthOverview alerts={liveAlerts} signals={signals} lastCapturedAt={lastCapturedAt} now={now}/>
             </section>
 
-            <section className="critical-overview">
-              <OverviewMetric label={t('overview.coolant')} value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="sensor_coolant" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} detail={t('temperature.normal_range', { min: 70, max: 105 })}/>
-              <OverviewMetric label={t('overview.oil')} value={valueOf('engine_oil_temperature')} unit="°C" icon="sensor_oil" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} detail={t('temperature.normal_range', { min: 70, max: 110 })}/>
-              <OverviewMetric label={t('overview.voltage')} value={readings.module_voltage ?? valueOf('ecu_voltage')} unit="V" icon="sensor_voltage" tone={toneForVoltage(readings.module_voltage ?? valueOf('ecu_voltage'))} detail="12.3–14.8 V"/>
-              <OverviewMetric label={t('overview.fuel')} value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="sensor_fuel" tone={toneForFuel(valueOf('fuel_level', 'fuel_tank_level_input'))} detail={`${formatValue(valueOf('engine_fuel_rate'), 1)} L/h`}/>
-              <OverviewMetric label={t('overview.intake')} value={valueOf('intake_manifold_pressure')} unit="kPa" icon="sensor_intake" detail={`${formatValue(valueOf('intake_air_temperature'), 0)} °C`}/>
-              <OverviewMetric label={t('overview.pressure')} value={valueOf('fuel_pressure')} unit="kPa" icon="sensor_pressure" detail={`MAF ${formatValue(readings.maf, 1)} g/s`}/>
-            </section>
+            <CriticalMetrics readings={readings} valueOf={valueOf}/>
 
             <section className={`health-card compact-health ${liveAlerts.length ? 'has-alerts' : ''}`} onClick={() => setActiveTab('health')} role="button" tabIndex="0">
               <span className="health-icon"><Icon name={healthIcon}/></span>
-              <div><strong>{liveAlerts.length ? t('health.points', { count: liveAlerts.length }) : diagnosticCopy.title}</strong><p>{liveAlerts[0]?.message || diagnosticCopy.body}</p></div>
+              <div><strong>{liveAlerts.length ? t('health.review_alerts') : diagnosticCopy.title}</strong><p>{liveAlerts.length ? t('health.review_alerts_detail') : diagnosticCopy.body}</p></div>
               <Icon name="chevron"/>
             </section>
           </section>
@@ -1800,7 +1818,7 @@ function App() {
             <PageHeader kicker={t('page.health.kicker')} title={t('page.health.title')} detail={t('page.health.detail', { count: liveAlerts.length })}/>
 
             <section className="health-page-summary">
-              <HealthOverview alerts={liveAlerts} signals={signals} lastCapturedAt={lastCapturedAt} now={now}/>
+              <HealthOverview alerts={liveAlerts} signals={signals} lastCapturedAt={lastCapturedAt} now={now} showPrimary={false}/>
               <section className={`health-card health-page-message ${liveAlerts.length ? 'has-alerts' : ''}`}>
                 <span className="health-icon"><Icon name={healthIcon}/></span>
                 <div><strong>{liveAlerts.length ? t('health.points', { count: liveAlerts.length }) : t('health.no_alerts')}</strong><p>{liveAlerts[0]?.message || t('health.no_alerts_detail')}</p></div>
@@ -1836,14 +1854,7 @@ function App() {
               )}
             </section>
 
-            <section className="critical-overview">
-              <OverviewMetric label={t('overview.coolant')} value={valueOf('engine_coolant_temperature', 'coolant_temp')} unit="°C" icon="sensor_coolant" tone={toneForTemperature(valueOf('engine_coolant_temperature', 'coolant_temp'), TEMPERATURE_PROFILES.engine_coolant_temperature)} detail={t('temperature.normal_range', { min: 70, max: 105 })}/>
-              <OverviewMetric label={t('overview.oil')} value={valueOf('engine_oil_temperature')} unit="°C" icon="sensor_oil" tone={toneForTemperature(valueOf('engine_oil_temperature'), TEMPERATURE_PROFILES.engine_oil_temperature)} detail={t('temperature.normal_range', { min: 70, max: 110 })}/>
-              <OverviewMetric label={t('overview.voltage')} value={readings.module_voltage ?? valueOf('ecu_voltage')} unit="V" icon="sensor_voltage" tone={toneForVoltage(readings.module_voltage ?? valueOf('ecu_voltage'))} detail="12.3–14.8 V"/>
-              <OverviewMetric label={t('overview.fuel')} value={valueOf('fuel_level', 'fuel_tank_level_input')} unit="%" icon="sensor_fuel" tone={toneForFuel(valueOf('fuel_level', 'fuel_tank_level_input'))} detail={`${formatValue(valueOf('engine_fuel_rate'), 1)} L/h`}/>
-              <OverviewMetric label={t('overview.intake')} value={valueOf('intake_manifold_pressure')} unit="kPa" icon="sensor_intake" detail={`${formatValue(valueOf('intake_air_temperature'), 0)} °C`}/>
-              <OverviewMetric label={t('overview.pressure')} value={valueOf('fuel_pressure')} unit="kPa" icon="sensor_pressure" detail={`MAF ${formatValue(readings.maf, 1)} g/s`}/>
-            </section>
+            <CriticalMetrics readings={readings} valueOf={valueOf}/>
 
             <section className="data-panel health-alert-panel">
               <header className="data-panel-header">
