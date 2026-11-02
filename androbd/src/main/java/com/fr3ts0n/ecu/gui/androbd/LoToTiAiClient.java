@@ -6,6 +6,7 @@ package com.fr3ts0n.ecu.gui.androbd;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import android.util.Log;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -30,6 +31,7 @@ final class LoToTiAiClient
     interface Clock { long now(); }
 
     private static final String MODEL = "lototi-auto";
+    private static final String LOG_TAG = "LoToTiAiClient";
     private static final long STATUS_TTL_MS = 90000;
     private static final long CHECK_INTERVAL_MS = 30000;
     private static final class Gateway
@@ -63,6 +65,7 @@ final class LoToTiAiClient
     private boolean available;
     private long checkedAt;
     private String availability = "unknown";
+    private volatile boolean requestReachedGateway;
 
     LoToTiAiClient()
     {
@@ -169,11 +172,12 @@ final class LoToTiAiClient
         });
     }
 
-    private synchronized void recordRequestResult(boolean success)
+    private synchronized void recordRequestResult(boolean success, boolean gatewayReached)
     {
-        connected = success;
+        // A valid HTTP response with unusable model output is NOT network disconnection.
+        connected = gatewayReached;
         available = success;
-        availability = success ? "available" : "unavailable";
+        availability = success ? "available" : gatewayReached ? "unavailable" : "offline";
         checkedAt = clock.now();
     }
 
@@ -185,17 +189,28 @@ final class LoToTiAiClient
                 callback.onError("LoToTi AI is not configured in this build.");
                 return;
             }
+            requestReachedGateway = false;
             try
             {
                 callback.onAttempt();
                 String text = requestStream(gateway, question, diagnosticContext, responseLanguage, callback);
-                if (text == null || text.trim().isEmpty()) throw new IllegalStateException("Empty answer");
-                recordRequestResult(true);
+                if (text == null || text.trim().isEmpty()) {
+                    // Some reasoning-capable OpenAI gateways return HTTP 200 with
+                    // reasoning-only SSE chunks and no final content. Attempt one
+                    // normal completion before reporting a failure to the user.
+                    logDiagnostic("stream_empty; retrying standard completion");
+                    text = requestNonStreaming(gateway, question, diagnosticContext, responseLanguage, callback);
+                }
+                if (text == null || text.trim().isEmpty()) throw new IllegalStateException("empty_completion");
+                recordRequestResult(true, true);
                 callback.onSuccess(text.trim());
             }
-            catch (Exception ignored)
+            catch (Exception failure)
             {
-                recordRequestResult(false);
+                // Never log provider messages, raw error bodies, questions, or tokens.
+                logDiagnostic("request_failed: " + failure.getClass().getSimpleName()
+                        + "; gateway_reached=" + requestReachedGateway);
+                recordRequestResult(false, requestReachedGateway);
                 callback.onError("LoToTi AI is temporarily unavailable. Please try again.");
             }
         });
@@ -234,6 +249,7 @@ final class LoToTiAiClient
         try (OutputStream out = connection.getOutputStream()) { out.write(data); }
 
         int code = connection.getResponseCode();
+        requestReachedGateway = true;
         if (code < 200 || code >= 300)
         {
             // Consume the body without surfacing it; provider errors can contain request details.
@@ -278,6 +294,11 @@ final class LoToTiAiClient
                         if (reasoning != null) reasoningChars += reasoning.length();
                     }
                     String text = extractContent(delta == null ? null : delta.opt("content"));
+                    if (text == null || text.isEmpty()) text = extractContent(
+                            choice == null ? null : choice.optJSONObject("message") == null ? null
+                                    : choice.optJSONObject("message").opt("content"));
+                    if (text == null || text.isEmpty()) text = extractContent(
+                            choice == null ? null : choice.opt("text"));
                     if (text != null && !text.isEmpty())
                     {
                         String addition = appendStreamingChunk(answer, text);
@@ -314,6 +335,55 @@ final class LoToTiAiClient
         return null;
         }
         finally { connection.disconnect(); }
+    }
+
+    private static void logDiagnostic(String detail)
+    {
+        try { Log.w(LOG_TAG, detail); }
+        catch (RuntimeException ignored) { /* Local JVM unit tests lack the Android Log runtime. */ }
+    }
+
+    private String requestNonStreaming(Gateway gateway, String question, String diagnosticContext,
+                                       String responseLanguage, Callback callback) throws Exception
+    {
+        HttpURLConnection connection = connections.open(new URL(gateway.baseUrl + "/chat/completions"));
+        try {
+            connection.setConnectTimeout(15000);
+            connection.setReadTimeout(120000);
+            connection.setInstanceFollowRedirects(false);
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Authorization", "Bearer " + gateway.apiKey);
+            connection.setRequestProperty("User-Agent", "LoToTi-Android/" + BuildConfig.VERSION_NAME);
+            JSONObject body = new JSONObject();
+            body.put("model", MODEL);
+            body.put("stream", false);
+            body.put("temperature", 0.15);
+            body.put("max_tokens", 4096);
+            JSONArray messages = new JSONArray();
+            messages.put(message("system", systemPrompt(responseLanguage)));
+            messages.put(message("user", "DIAGNOSTIC CONTEXT:\n" + safe(diagnosticContext)
+                    + "\n\nUSER QUESTION:\n" + safe(question)));
+            body.put("messages", messages);
+            byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(payload.length);
+            try (OutputStream out = connection.getOutputStream()) { out.write(payload); }
+            int code = connection.getResponseCode();
+            requestReachedGateway = true;
+            if (code < 200 || code >= 300) {
+                read(connection.getErrorStream());
+                throw new IllegalStateException("gateway_http_" + code);
+            }
+            JSONObject root = new JSONObject(read(connection.getInputStream()));
+            JSONArray choices = root.optJSONArray("choices");
+            JSONObject choice = choices == null ? null : choices.optJSONObject(0);
+            JSONObject msg = choice == null ? null : choice.optJSONObject("message");
+            String text = extractContent(msg == null ? null : msg.opt("content"));
+            if (text != null && !text.trim().isEmpty()) callback.onDelta(text);
+            return text;
+        } finally { connection.disconnect(); }
     }
 
     /**

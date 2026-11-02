@@ -181,4 +181,50 @@ public class LoToTiAiClientTest
             assertTrue(reply.closed);
         } finally { client.shutdown(); }
     }
+    @Test public void reasoningOnlySuccessfulStreamFallsBackToStandardCompletion() throws Exception {
+        AtomicInteger attempts = new AtomicInteger();
+        Reply first = new Reply(200, "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"thinking\"}}]}\n\ndata: [DONE]\n");
+        Reply second = new Reply(200, "{\"choices\":[{\"message\":{\"content\":\"The measured values are from a demo.\"}}]}");
+        LoToTiAiClient client = new LoToTiAiClient("https://gateway.test/v1", "app-token",
+                url -> attempts.getAndIncrement() == 0 ? first : second, () -> 100000);
+        CountDownLatch done = new CountDownLatch(1);
+        AtomicReference<String> result = new AtomicReference<>();
+        try {
+            client.ask("Question", "Demo context", "en", new LoToTiAiClient.Callback() {
+                @Override public void onAttempt() { }
+                @Override public void onDelta(String delta) { }
+                @Override public void onSuccess(String text) {result.set(text);done.countDown();}
+                @Override public void onError(String error) { result.set("ERROR");done.countDown(); }
+            });
+            assertTrue(done.await(3, TimeUnit.SECONDS));
+            assertEquals("The measured values are from a demo.", result.get());
+            assertEquals(2, attempts.get());
+            assertTrue(new JSONObject(first.sent.toString("UTF-8")).getBoolean("stream"));
+            assertFalse(new JSONObject(second.sent.toString("UTF-8")).getBoolean("stream"));
+            assertTrue(client.getState().getBoolean("available"));
+            assertTrue(first.closed && second.closed);
+        } finally { client.shutdown(); }
+    }
+
+    @Test public void gatewayErrorIsUnavailabilityNotLostInternetAndIsNotRetried() throws Exception {
+        AtomicInteger attempts = new AtomicInteger();
+        Reply serverError = new Reply(503, "untrusted provider failure");
+        LoToTiAiClient client = new LoToTiAiClient("https://gateway.test/v1", "app-token",
+                url -> {attempts.incrementAndGet();return serverError;}, () -> 100000);
+        CountDownLatch done = new CountDownLatch(1);
+        try {
+            client.ask("Question", "", "en", new LoToTiAiClient.Callback() {
+                @Override public void onAttempt() { }
+                @Override public void onDelta(String delta) { }
+                @Override public void onSuccess(String text) {done.countDown();}
+                @Override public void onError(String error) {done.countDown();}
+            });
+            assertTrue(done.await(3, TimeUnit.SECONDS));
+            assertEquals(1, attempts.get());
+            assertTrue(client.getState().getBoolean("connected"));
+            assertFalse(client.getState().getBoolean("available"));
+            assertEquals("unavailable", client.getState().getString("availability"));
+        } finally { client.shutdown(); }
+    }
+
 }
