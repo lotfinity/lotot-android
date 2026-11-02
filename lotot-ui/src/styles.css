@@ -1888,3 +1888,84 @@ html[dir="rtl"] .ai-page-identity small { letter-spacing: normal; }
   .has-ai-page .ai-page-shell:focus-within .ai-actions { display:none; }
   .has-ai-page .ai-page-shell:focus-within .ai-page-footer { display:none; }
 }
+
+/* Compact workshop health: one concise status strip, no repeated giant warning panels. */
+.app-page-health > .page-header { padding-bottom:3px; margin-bottom:5px; }
+.app-page-health > .page-header h1 { font-size:clamp(22px,5.5vw,30px); }
+.health-status-strip {
+  display:flex; align-items:center; min-width:0; gap:11px;
+  padding:12px 13px; border:1px solid rgba(202,255,0,.23);
+  border-radius:17px; background:linear-gradient(105deg,rgba(202,255,0,.05),rgba(255,255,255,.012));
+}
+.health-status-strip.is-warning { border-color:rgba(255,177,73,.25); background:linear-gradient(105deg,rgba(255,174,68,.065),rgba(255,255,255,.015)); }
+.health-status-strip.is-danger { border-color:rgba(255,80,103,.25); background:linear-gradient(105deg,rgba(255,80,103,.065),rgba(255,255,255,.015)); }
+.health-status-orb {
+  flex:0 0 40px; width:40px; height:40px; display:grid; place-items:center;
+  color:var(--accent); position:relative; border:1px solid currentColor; border-radius:50%;
+  background:rgba(202,255,0,.055); animation:health-orb-breathe 3s ease-in-out infinite;
+}
+.health-status-orb svg { width:20px; height:20px; }
+.health-status-orb.is-warning { color:#ffb149; background:rgba(255,177,73,.07); }
+.health-status-orb.is-danger { color:#ff687f; background:rgba(255,80,103,.07); }
+@keyframes health-orb-breathe { 0%,100%{box-shadow:0 0 0 0 currentColor;opacity:.82;}50%{box-shadow:0 0 0 6px transparent;opacity:1;} }
+.health-status-body { flex:1 1 auto; min-width:0; }
+.health-status-body strong { display:block; font-size:13px; font-weight:850; line-height:1.35; }
+.health-status-body > span { display:block; margin-top:3px; color:var(--muted);font-size:10px;line-height:1.4; }
+.health-status-counts { display:flex;align-items:center;gap:8px;flex:0 0 auto; }
+.health-status-counts > span { display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:42px; gap:3px; }
+.health-status-counts b { font-size:23px; line-height:1; font-variant-numeric:tabular-nums; }
+.health-status-counts small {font-size:9px;color:var(--muted);font-weight:700;}
+.health-status-counts .is-critical b { color:#ff7282; }
+.health-status-counts .is-warning b { color:#ffb149; }
+
+/* ECU scanner: indeterminate only while the native scan_status is scanning. */
+.app-page-health .fault-scan-panel { margin-top:10px; padding:13px; }
+.app-page-health .fault-scan-header { align-items:center;gap:9px; }
+.app-page-health .fault-scan-header > div > span { font-size:10px;letter-spacing:0; }
+.app-page-health .fault-scan-header h2 {display:flex; align-items:center;gap:7px;font-size:17px;line-height:1.25;margin:4px 0 0;}
+.app-page-health .fault-scan-header h2 svg {width:20px;height:20px;color:var(--accent);}
+.app-page-health .fault-scan-header button { min-height:39px;padding:6px 10px; flex:0 0 auto; max-width:150px;line-height:1.3; }
+.app-page-health .fault-scan-header button span { display:inline;white-space:normal;font-size:11px; }
+.app-page-health .fault-scan-header button.is-scanning svg { animation:ecu-scan-spin 1.35s linear infinite; }
+@keyframes ecu-scan-spin {to{transform:rotate(360deg);}}
+.ecu-scan-status { display:flex;align-items:center;gap:11px;margin-top:12px;padding:11px;border:1px solid var(--line);background:var(--chip);border-radius:13px; }
+.ecu-scan-status-icon { width:36px;height:36px;display:grid;place-items:center; flex:0 0 36px; border-radius:10px;color:var(--muted);background:rgba(255,255,255,.025); }
+.ecu-scan-status-icon svg {width:21px;height:21px;}
+.ecu-scan-status.is-scanning .ecu-scan-status-icon {color:var(--accent);background:rgba(202,255,0,.10);animation:ecu-scan-pulse 1.25s ease-in-out infinite;}
+.ecu-scan-status.is-ready .ecu-scan-status-icon {color:var(--accent);background:rgba(202,255,0,.07);}
+.ecu-scan-status.is-error .ecu-scan-status-icon {color:#ffb149;}
+@keyframes ecu-scan-pulse {0%,100%{opacity:.6;transform:scale(.94)}50%{opacity:1;transform:scale(1.07)}}
+.ecu-scan-status > div {flex:1 1 auto;min-width:0;}
+.ecu-scan-status strong {display:block;font-size:12px;line-height:1.35;}
+.ecu-scan-status small {display:block;margin-top:4px;color:var(--muted);font-size:10px;line-height:1.4;}
+.ecu-scan-status-codes {flex:0 0 auto;color:var(--accent);font-size:12px;font-weight:850;}
+.ecu-scan-track { height:3px;overflow:hidden;margin:6px 5px 0;border-radius:99px;background:rgba(202,255,0,.08); }
+.ecu-scan-track span {display:block;width:35%;height:100%;border-radius:99px;background:var(--accent);animation:ecu-scan-sweep 1.5s ease-in-out infinite;}
+@keyframes ecu-scan-sweep{0%{transform:translateX(-120%)}100%{transform:translateX(390%)}}
+.ecu-scan-facts {display:flex;flex-wrap:wrap;gap:13px;margin-top:9px;color:var(--muted);font-size:10px;}
+.ecu-scan-facts b {margin-inline-start:4px;color:var(--text);font-size:11px;}
+.app-page-health .fault-code-grid {grid-template-columns:1fr;gap:8px;margin-top:13px;}
+.app-page-health .fault-code-card {padding:12px;}
+.app-page-health .fault-code-card > strong {font-size:13px;line-height:1.5;}
+.app-page-health .fault-code-card code {font-size:15px;}
+.fault-code-footer {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:9px;margin-top:9px;padding-top:9px;border-top:1px solid var(--line);}
+.fault-code-footer > small {flex:1 1 100px;color:var(--muted);font-size:10px;line-height:1.35;}
+.fault-search-link {display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:35px;padding:7px 10px;border:1px solid rgba(202,255,0,.28);border-radius:10px;background:rgba(202,255,0,.075);color:var(--accent);font-size:11px;font-weight:800;text-decoration:none;}
+.fault-search-link svg {width:14px;height:14px;}
+.fault-search-link:focus-visible {outline:2px solid var(--accent);outline-offset:3px;}
+@media (max-width:400px) {
+  .health-status-strip {gap:8px;padding:10px;}
+  .health-status-orb {flex-basis:32px;width:32px;height:32px;}
+  .health-status-body strong {font-size:12px;}
+  .health-status-counts {gap:4px;}
+  .health-status-counts > span {min-width:34px;}
+  .health-status-counts b {font-size:20px;}
+  .app-page-health .fault-scan-header button { max-width:125px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .health-status-orb,.ecu-scan-status.is-scanning .ecu-scan-status-icon,
+  .ecu-scan-track span,.app-page-health .fault-scan-header button.is-scanning svg {animation:none!important;}
+}
+.ecu-scan-status.is-ready .ecu-scan-status-icon { animation:ecu-scan-complete .55s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes ecu-scan-complete {0%{transform:scale(.84);opacity:.65}70%{transform:scale(1.1);opacity:1}100%{transform:scale(1);opacity:1}}
+@media(prefers-reduced-motion:reduce){.ecu-scan-status.is-ready .ecu-scan-status-icon{animation:none!important;}}

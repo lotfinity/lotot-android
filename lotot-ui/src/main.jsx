@@ -1,6 +1,7 @@
 import { aiConnectionState } from './aiConnection.js';
 import { aiQuickActions, vehicleSignals } from './aiChatPresentation.js';
 import { collapseDuplicateMilAlert } from './healthAlerts.js';
+import { healthAlertCounts, googleFaultSearchUrl } from './healthScreen.js';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
@@ -1534,6 +1535,12 @@ function App() {
       ? t('ai.dtc_reported', { count: diagnosticReportedCount })
       : t('ai.dtc_unscanned');
   const faultScanBusy = diagnostics?.scan_status === 'scanning';
+  const healthCounts = healthAlertCounts(liveAlerts);
+  const healthTone = healthCounts.critical ? 'danger' : healthCounts.warnings ? 'warning' : 'clear';
+  const scanStatus = diagnostics?.scan_status || 'idle';
+  const scannerEnabled = nativeAvailable && ['live', 'demo'].includes(status);
+  const scanPresentation = scannerEnabled ? scanStatus : 'disconnected';
+
 
   const diagnosticCopy = signals.length
     ? { title: t('diagnostic.live_sensors', { count: signals.length }), body: t('diagnostic.last_packet', { age: ageLabel(lastCapturedAt, now), count: packetCount }) }
@@ -1858,27 +1865,38 @@ function App() {
 
         {activeTab === 'health' && (
           <section className="app-page app-page-health">
-            <PageHeader kicker={t('page.health.kicker')} title={t('page.health.title')} detail={t('page.health.detail', { count: liveAlerts.length })}/>
+            <PageHeader kicker={t('page.health.kicker')} title={t('page.health.title')}/>
 
-            <section className="health-page-summary">
-              <HealthOverview alerts={liveAlerts} signals={signals} lastCapturedAt={lastCapturedAt} now={now} showPrimary={false}/>
-              <section className={`health-card health-page-message ${liveAlerts.length ? 'has-alerts' : ''}`}>
-                <span className="health-icon"><Icon name={healthIcon}/></span>
-                <div><strong>{liveAlerts.length ? t('health.points', { count: liveAlerts.length }) : t('health.no_alerts')}</strong><p>{liveAlerts[0]?.message || t('health.no_alerts_detail')}</p></div>
-              </section>
+            <section className={`health-status-strip is-${healthTone}`} aria-label={t('health.compact_title')}>
+              <div className={`health-status-orb is-${healthTone}`} aria-hidden="true"><Icon name={healthCounts.critical ? 'health_critical' : healthCounts.warnings ? 'health_warning' : 'health_stable'}/></div>
+              <div className="health-status-body">
+                <strong>{t('health.compact_title')}</strong>
+                <span>{healthCounts.critical || healthCounts.warnings ? t('health.compact_attention') : ['live','demo'].includes(status) ? t('health.compact_clear') : t('health.compact_no_data')}</span>
+              </div>
+              <div className="health-status-counts">
+                <span className="is-critical"><b>{healthCounts.critical}</b><small>{t('health.critical')}</small></span>
+                <span className="is-warning"><b>{healthCounts.warnings}</b><small>{t('health.follow')}</small></span>
+              </div>
             </section>
 
             <section className={`fault-scan-panel ${diagnosticMil ? 'has-mil' : ''}`}>
               <header className="fault-scan-header">
-                <div><span>{t('faults.kicker')}</span><h2>{t('faults.title')}</h2><p>{t('faults.detail')}</p></div>
-                <button type="button" onClick={() => window.LotoTNative?.scanFaults?.()} disabled={!nativeAvailable || faultScanBusy || !['live', 'demo'].includes(status)}>
+                <div><span>{t('faults.kicker')}</span><h2><Icon name="diagnostic_scan"/>{t('faults.title')}</h2></div>
+                <button type="button" className={faultScanBusy ? 'is-scanning' : ''} onClick={() => window.LotoTNative?.scanFaults?.()} disabled={!scannerEnabled || faultScanBusy}>
                   <Icon name={faultScanBusy ? 'activity' : 'diagnostic_scan'}/><span>{faultScanBusy ? t('faults.scanning') : t('faults.scan')}</span>
                 </button>
               </header>
-              <div className="fault-scan-summary">
-                <div><small>{t('faults.mil')}</small><strong className={diagnosticMil ? 'is-danger' : ''}>{diagnosticMil === null ? '—' : diagnosticMil ? t('faults.on') : t('faults.off')}</strong></div>
-                <div><small>{t('faults.reported')}</small><strong>{diagnosticReportedCount === null ? '—' : diagnosticReportedCount}</strong></div>
-                <div><small>{t('faults.last_scan')}</small><strong>{diagnostics?.scanned_at ? ageLabel(Number(diagnostics.scanned_at), now) : t('faults.not_scanned')}</strong></div>
+              <div className={`ecu-scan-status is-${scanPresentation}`} role="status" aria-live="polite">
+                <span className="ecu-scan-status-icon"><Icon name={faultScanBusy ? 'activity' : scanPresentation === 'ready' ? 'health_stable' : scanPresentation === 'error' ? 'health_warning' : scanPresentation === 'disconnected' ? 'obd_disconnected' : 'diagnostic_scan'}/></span>
+                <div><strong>{t('faults.progress_' + (['scanning','ready','error','disconnected'].includes(scanPresentation) ? scanPresentation : 'idle'))}</strong>
+                  <small>{scanPresentation === 'ready' && diagnostics?.scanned_at ? <>{t('faults.last_scan')} · <bdi dir="ltr">{ageLabel(Number(diagnostics.scanned_at), now)}</bdi></> : scanPresentation === 'scanning' ? t('faults.progress_scanning_detail') : scanPresentation === 'error' ? t('faults.progress_error_detail') : scanPresentation === 'disconnected' ? t('faults.progress_disconnected_detail') : t('faults.progress_idle_detail')}</small>
+                </div>
+                {scanPresentation === 'ready' && <span className="ecu-scan-status-codes" dir="ltr">{diagnosticScannedCount ?? 0} DTC</span>}
+              </div>
+              {faultScanBusy && <div className="ecu-scan-track" aria-hidden="true"><span/></div>}
+              <div className="ecu-scan-facts">
+                <span>{t('faults.mil')}: <b>{diagnosticMil === null ? '—' : diagnosticMil ? t('faults.on') : t('faults.off')}</b></span>
+                <span>{t('faults.reported_short')}: <b>{diagnosticReportedCount === null ? '—' : diagnosticReportedCount}</b></span>
               </div>
               {diagnosticDtcs.length > 0 ? (
                 <div className="fault-code-grid">
@@ -1888,12 +1906,23 @@ function App() {
                       <strong><BidiText>{dtc.description || t('faults.no_description')}</BidiText></strong>
                       {language !== 'en' && dtc.description_language === 'en' && <small className="definition-fallback">{t('faults.definition_en')}</small>}
                       {language === 'ar-DZ' && dtc.description_language === 'fr' && <small className="definition-fallback">{t('faults.definition_fr')}</small>}
-                      <small>{[t('faults.type_' + (dtc.type_code || dtc.code?.[0] || 'unknown'), {}, t('faults.type_unknown')), dtc.manufacturer && dtc.manufacturer !== 'GENERIC' ? dtc.manufacturer : null].filter(Boolean).join(' · ')}</small>
+                      <div className="fault-code-footer">
+                        <small>{[t('faults.type_' + (dtc.type_code || dtc.code?.[0] || 'unknown'), {}, t('faults.type_unknown')), dtc.manufacturer && dtc.manufacturer !== 'GENERIC' ? dtc.manufacturer : null].filter(Boolean).join(' · ')}</small>
+                        {googleFaultSearchUrl(dtc.code, vehicle) && <a className="fault-search-link" href={googleFaultSearchUrl(dtc.code, vehicle)} target="_self" rel="noopener noreferrer"
+                          onClick={(event) => {
+                            if (typeof window.LotoTNative?.googleFaultSearch === 'function') {
+                              event.preventDefault();
+                              window.LotoTNative.googleFaultSearch(String(dtc.code), String(vehicle?.manufacturer || ''), String(vehicle?.model || ''));
+                            }
+                          }} aria-label={t('faults.google_search') + ' ' + dtc.code}>
+                          <Icon name="search"/><span>{t('faults.google_search')}</span><Icon name="external_link"/>
+                        </a>}
+                      </div>
                     </article>
                   ))}
                 </div>
               ) : (
-                <div className="fault-scan-empty"><Icon name="dtc_fault"/><div><strong>{diagnostics?.scan_status === 'ready' ? t('faults.none_found') : t('faults.scan_needed')}</strong><p>{diagnostics?.scan_status === 'ready' ? t('faults.none_found_detail') : t('faults.scan_needed_detail')}</p></div></div>
+                <div className="fault-scan-empty"><Icon name="dtc_fault"/><div><strong>{scanPresentation === 'ready' ? t('faults.none_found') : scanPresentation === 'error' ? t('faults.progress_error') : t('faults.scan_needed')}</strong><p>{scanPresentation === 'ready' ? t('faults.none_found_detail') : scanPresentation === 'error' ? t('faults.progress_error_detail') : scanPresentation === 'disconnected' ? t('faults.progress_disconnected_detail') : t('faults.scan_needed_detail')}</p></div></div>
               )}
             </section>
 

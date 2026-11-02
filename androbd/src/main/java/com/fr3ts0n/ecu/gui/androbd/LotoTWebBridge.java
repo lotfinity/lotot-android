@@ -7,6 +7,10 @@
 package com.fr3ts0n.ecu.gui.androbd;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
+import android.util.Log;
+import java.util.Locale;
 import android.webkit.JavascriptInterface;
 
 /**
@@ -101,6 +105,34 @@ final class LotoTWebBridge
     {
         host.requestLotoTFaultScan();
     }
+
+    /** Open a safe, narrowly scoped external DTC lookup in the system browser.
+     * Accepts no arbitrary URLs or VINs from JavaScript.
+     */
+    @JavascriptInterface
+    public void googleFaultSearch(String faultCode, String make, String model)
+    {
+        final String code = faultCode == null ? "" : faultCode.trim().toUpperCase(Locale.ROOT);
+        if (!code.matches("[PBCU][0-9A-F]{4}")) return;
+        final String safeMake = searchText(make);
+        final String safeModel = searchText(model);
+        final String query = code + (safeMake.isEmpty() ? "" : " " + safeMake)
+                + (safeModel.isEmpty() ? "" : " " + safeModel) + " OBD2 fault code";
+        final Uri uri = Uri.parse("https://www.google.com/search")
+                .buildUpon().appendQueryParameter("q", query).build();
+        activity.runOnUiThread(() -> {
+            try { activity.startActivity(new Intent(Intent.ACTION_VIEW, uri)); }
+            catch (RuntimeException ex) { Log.w("LoToTi", "Unable to open Google fault lookup", ex); }
+        });
+    }
+
+    private static String searchText(String value)
+    {
+        if (value == null) return "";
+        String cleaned = value.replaceAll("[^\\p{L}\\p{N} .-]", " ").trim();
+        return cleaned.substring(0, Math.min(45, cleaned.length()));
+    }
+
 
     @JavascriptInterface
     public String getDiagnosticState()
