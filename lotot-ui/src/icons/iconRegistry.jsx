@@ -25,6 +25,8 @@ const S = {
       <circle cx="17" cy="12" r="1.4" />
     </>
   ),
+  sparkles: (<><path d="m12 2 1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2Z"/><path d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16Z"/></>),
+  send_up: (<> <path d="M12 20V4M5 11l7-7 7 7"/> </>),
   nav_ai: (
     <>
       <rect x="4.5" y="3" width="15" height="14" rx="3" />

@@ -1,4 +1,5 @@
 import { aiConnectionState } from './aiConnection.js';
+import { aiQuickActions, vehicleSignals } from './aiChatPresentation.js';
 import { collapseDuplicateMilAlert } from './healthAlerts.js';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -1242,11 +1243,7 @@ function App() {
   const [aiQuestion, setAiQuestion] = useState('');
   const [aiState, setAiState] = useState(() => ({ ...aiBridge.lastState, ...readNativeAiStatus() }));
   const [aiStreamingText, setAiStreamingText] = useState('');
-  const [aiMessages, setAiMessages] = useState(() => [{
-    role: 'assistant',
-    text: t('ai.welcome'),
-    meta: 'LoToTi AI',
-  }]);
+  const [aiMessages, setAiMessages] = useState([]);
   const aiThreadRef = React.useRef(null);
   const [category, setCategory] = useState('all');
   const [lastCapturedAt, setLastCapturedAt] = useState(Number(retainedPayload.captured_at) || 0);
@@ -1329,13 +1326,6 @@ function App() {
   }, [language]);
 
   useEffect(() => {
-    setAiMessages((current) => {
-      if (current.length !== 1 || current[0]?.role !== 'assistant') return current;
-      return [{ ...current[0], text: t('ai.welcome') }];
-    });
-  }, [language]);
-
-  useEffect(() => {
     if (activeTab !== 'ai') return;
     const node = aiThreadRef.current;
     if (node) window.requestAnimationFrame(() => node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' }));
@@ -1371,7 +1361,7 @@ function App() {
         });
       }
       if (payload.mode) setStatus(payload.mode);
-      if (payload.demo_scenario && DEMO_SCENARIOS.some((item) => item.id === payload.demo_scenario)) setDemoScenarioState(payload.demo_scenario);
+      if (payload.demo_scenario && [...DEMO_SCENARIOS, ...RECORDED_VEHICLES].some((item) => item.id === payload.demo_scenario)) setDemoScenarioState(payload.demo_scenario);
       if (payload.captured_at) setLastCapturedAt(Number(payload.captured_at));
       setPacketCount((count) => count + 1);
     };
@@ -1695,6 +1685,17 @@ function App() {
   const aiBusy = ['thinking', 'trying', 'streaming'].includes(aiState.status);
   const aiConnection = aiConnectionState(aiState, now);
   const aiConnectionLabel = t('ai.connection.' + aiConnection);
+  const aiSession = status === 'demo' ? 'demo' : status === 'live' ? 'live' : 'offline';
+  const aiVehicleSignals = vehicleSignals(signals, aiSession !== 'offline');
+  const aiQuickPrompts = aiQuickActions({session: aiSession, vehicleSignalCount: aiVehicleSignals.length, dtcs: diagnosticDtcs});
+  const aiVehicleTitle = aiSession === 'demo' ? demoScenarioName(demoScenario) :
+    [vehicle?.manufacturer, vehicle?.model].filter(Boolean).join(' ') || connected?.name || t('ai.session.live');
+  const aiSessionLabel = aiSession === 'demo'
+    ? (demoScenario.startsWith('replay_') ? t('demo.replay_tag') : t('status.demo'))
+    : aiSession === 'live' ? t('ai.session.live') : t('ai.session.none');
+  const aiContextAvailable = aiSession !== 'offline' && aiVehicleSignals.length > 0;
+  const aiHasConversation = aiMessages.length > 0 || aiBusy;
+
 
 
   if (onboardingOpen || !onboardingComplete) {
@@ -1708,7 +1709,7 @@ function App() {
         <div className="brand" aria-label="LoToTi">
           <img className="brand-app-icon" src="./app-icon.png" alt="" />
         </div>
-        <button className={`status-pill ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`} type="button" onClick={openConnection}><i/><span>{state.label}</span></button>
+        <button className={`status-pill ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`} type="button" onClick={openConnection}><i/><span>{activeTab === 'ai' ? t('ai.session.header_' + (aiSession === 'demo' && demoScenario.startsWith('replay_') ? 'replay' : aiSession)) : state.label}</span></button>
         <div className="topbar-actions">
           <button className="topbar-icon-button topbar-settings" type="button" onClick={() => window.LotoTNative?.openNativeTools?.()} disabled={!nativeAvailable} aria-label={t('action.advanced_settings')} title={t('action.advanced_settings')}><Icon name="tool"/></button>
           <button className="topbar-icon-button theme-toggle" type="button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? t('theme.light') : t('theme.dark')} title={theme === 'dark' ? t('theme.light') : t('theme.dark')}><Icon name={theme === 'dark' ? 'sun' : 'moon'}/></button>
@@ -1783,21 +1784,35 @@ function App() {
               <header className="ai-page-header">
                 <div className="ai-page-identity">
                   <span className="ai-page-orb"><Icon name="nav_ai"/></span>
-                  <div><small>{t('ai.kicker')}</small><h1>LoToTi AI</h1><p>{t('ai.subtitle')}</p></div>
+                  <div><small>{t('ai.kicker')}</small><h1>LoToTi <span>AI</span></h1></div>
                 </div>
-                <button type="button" className="ai-provider-pill" onClick={() => window.LotoTNative?.checkAiConnection?.()} disabled={!nativeAvailable || aiConnection === 'checking'} aria-label={t('ai.check_connection')} title={t('ai.check_connection')}>
+                <button type="button" className={`ai-provider-pill is-${aiConnection}`} onClick={() => window.LotoTNative?.checkAiConnection?.()}
+                  disabled={!nativeAvailable || aiConnection === 'checking'} aria-label={t('ai.check_connection')} title={t('ai.check_connection')}>
                   <i className={aiConnection === 'available' ? 'is-online' : ''}/>
-                  <span role="status" aria-live="polite">{aiConnectionLabel}</span>
+                  <span role="status" aria-live="polite"><bdi>AI</bdi> · {aiConnectionLabel}</span>
+                  <Icon name="refresh"/>
                 </button>
               </header>
 
-              <section className="ai-context-strip" aria-label={t('ai.context')}>
-                <span><Icon name={status === 'demo' ? 'play' : 'vehicle'}/>{status === 'demo' ? `${demoScenario.startsWith('replay_') ? t('demo.replay_tag') : t('status.demo')} · ${demoScenarioName(demoScenario)}` : connected ? (vehicle?.vin ? t('ai.vin_short', { vin: String(vehicle.vin).slice(-6) }) : t('status.live')) : t('status.offline')}</span>
-                <span><Icon name={(diagnosticScannedCount || diagnosticReportedCount || 0) > 0 ? 'dtc_fault' : 'health_stable'}/>{aiFaultContextLabel}</span>
-                <span><Icon name="activity"/>{signals.length} {t('ai.signals')}</span>
+              <section className={`ai-session-card is-${aiSession}`} aria-label={t('ai.session.section')}>
+                <span className="ai-session-icon"><Icon name={aiSession === 'offline' ? 'obd_disconnected' : aiSession === 'demo' ? 'play' : 'obd_connected'}/></span>
+                <div className="ai-session-copy">
+                  <strong>{aiSessionLabel}</strong>
+                  <p>{aiSession === 'offline' ? t('ai.session.none_detail') : aiVehicleTitle}</p>
+                  {aiSession !== 'offline' && <small>{aiVehicleSignals.length} {t('ai.vehicle_readings')}{diagnosticScannedCount !== null ? ` · ${t('ai.dtc_current', { count: diagnosticScannedCount })}` : diagnosticReportedCount !== null ? ` · ${t('ai.dtc_reported', { count: diagnosticReportedCount })}` : ''}</small>}
+                </div>
+                {aiSession === 'offline' && <button type="button" className="ai-session-connect" onClick={openConnection} disabled={!nativeAvailable}>{t('ai.connect_obd')}<Icon name="chevron"/></button>}
               </section>
 
-              <div className="ai-chat-thread" ref={aiThreadRef}>
+              <div className={`ai-chat-thread ${aiHasConversation ? 'has-conversation' : 'is-empty'}`} ref={aiThreadRef} aria-label={t('ai.conversation')}>
+                {!aiHasConversation && (
+                  <section className="ai-empty-state">
+                    <div className="ai-empty-emblem"><Icon name="nav_ai"/></div>
+                    <h2>{t('ai.empty.title')}</h2>
+                    <p>{aiSession === 'offline' ? t('ai.empty.no_vehicle') : aiSession === 'demo' ? t('ai.empty.demo') : t('ai.empty.connected')}</p>
+                    {aiSession !== 'offline' && !aiContextAvailable && <small className="ai-empty-notice">{t('ai.empty.waiting_data')}</small>}
+                  </section>
+                )}
                 {aiMessages.map((message, index) => (
                   <article key={`${message.role}-${index}`} className={`ai-message is-${message.role}`}>
                     {message.role !== 'user' && <span className="ai-message-avatar"><Icon name={message.role === 'error' ? 'health_critical' : 'nav_ai'}/></span>}
@@ -1810,26 +1825,33 @@ function App() {
                 {aiBusy && (
                   <article className="ai-message is-assistant is-thinking">
                     <span className="ai-message-avatar"><Icon name="nav_ai"/></span>
-                    <div className="ai-message-bubble">
-                      <small>LoToTi AI</small>
+                    <div className="ai-message-bubble"><small>LoToTi AI</small>
                       {aiStreamingText ? <MarkdownMessage text={aiStreamingText}/> : <div className="ai-thinking-dots"><i/><i/><i/></div>}
                     </div>
                   </article>
                 )}
               </div>
 
-              <section className="ai-quick-prompts">
-                <button type="button" onClick={() => askLoToTiAi(t('ai.prompt.analyze_live'))}>{t('ai.analyze_live')}</button>
-                <button type="button" onClick={() => askLoToTiAi(t('ai.prompt.p0301'))}>P0301</button>
-                <button type="button" onClick={() => askLoToTiAi(t('ai.prompt.p0420'))}>P0420</button>
-                <button type="button" onClick={() => askLoToTiAi(t('ai.prompt.health_summary'))}>{t('ai.health_summary')}</button>
+              <section className="ai-actions" aria-label={t('ai.suggestions')}>
+                <div className="ai-actions-caption"><Icon name="sparkles"/><span>{aiSession === 'offline' ? t('ai.suggestions.general') : t('ai.suggestions.contextual')}</span></div>
+                <div className="ai-quick-prompts">
+                  {aiQuickPrompts.map((item) => (
+                    <button type="button" key={item.id} disabled={!nativeAvailable || !aiState.configured || aiBusy}
+                      onClick={() => askLoToTiAi(item.code ? t(item.questionKey, { code: item.code }) : t(item.questionKey))}>
+                      {item.code ? <bdi dir="ltr">{item.code}</bdi> : t(item.labelKey)}
+                    </button>
+                  ))}
+                </div>
               </section>
 
               <form className="ai-composer" onSubmit={(event) => { event.preventDefault(); askLoToTiAi(); }}>
-                <textarea dir="auto" value={aiQuestion} onChange={(event) => setAiQuestion(event.target.value)} placeholder={t('ai.placeholder')} rows="2" onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); askLoToTiAi(); } }}/>
-                <button type="submit" aria-label={t('ai.ask')} disabled={!nativeAvailable || !aiState.configured || !aiQuestion.trim() || aiBusy}><Icon name="chevron"/></button>
+                <textarea dir="auto" value={aiQuestion} onChange={(event) => setAiQuestion(event.target.value)}
+                  onFocus={(event) => window.setTimeout(() => event.target.scrollIntoView({block: 'nearest', behavior: 'smooth'}), 180)}
+                  placeholder={t('ai.placeholder')} rows="1" aria-label={t('ai.ask')}
+                  onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); askLoToTiAi(); } }}/>
+                <button type="submit" aria-label={t('ai.ask')} disabled={!nativeAvailable || !aiState.configured || !aiQuestion.trim() || aiBusy}><Icon name="send_up"/></button>
               </form>
-              <footer className="ai-page-footer"><span>{t('ai.context_auto')}</span></footer>
+              <footer className="ai-page-footer"><span>{aiContextAvailable ? t('ai.context_auto') : t('ai.no_vehicle_data')}</span></footer>
             </section>
           </section>
         )}
