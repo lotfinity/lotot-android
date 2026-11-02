@@ -3,6 +3,8 @@ import { aiQuickActions, vehicleSignals } from './aiChatPresentation.js';
 import { collapseDuplicateMilAlert } from './healthAlerts.js';
 import { healthAlertCounts, googleFaultSearchUrl } from './healthScreen.js';
 import React, { useEffect, useMemo, useState } from 'react';
+import { Search as LucideSearch } from 'lucide-react';
+import { brandIconSlug } from './vehicleBrand.js';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 import { getLanguage, setLanguage, t, LANGUAGE_REGISTRY } from './i18n.js';
@@ -61,11 +63,11 @@ const DEMO_SCENARIOS = [
 ];
 const demoScenarioOption = (id) => DEMO_SCENARIOS.find((item) => item.id === id) || DEMO_SCENARIOS[0];
 const RECORDED_VEHICLES = [
-  { id: 'replay_peugeot_expert_2014', name: 'Peugeot Expert · 2014 · 2.0 HDi', codes: 'P0406 · P0234 · P0102 · P0113 · P1351' },
-  { id: 'replay_chevrolet_captiva_2011', name: 'Chevrolet Captiva · 2011 · 2.0 Diesel', codes: 'P0107 · P0069 · P0089' },
-  { id: 'replay_kia_sportage_2017', name: 'Kia Sportage · 2017 · 2.0 Diesel', codes: 'P0403 · P2009 · P2015 · P0404' },
-  { id: 'replay_citroen_berlingo_2014', name: 'Citroën Berlingo · 2014 · 1.6 Diesel', codes: 'P0113 · P0102 · P2562' },
-  { id: 'replay_peugeot_2008_2022', name: 'Peugeot 2008 · 2022 · 1.5 Diesel', codes: 'P0562' },
+  { id: 'replay_peugeot_expert_2014', brand: 'Peugeot', name: 'Peugeot Expert · 2014 · 2.0 HDi', codes: 'P0406 · P0234 · P0102 · P0113 · P1351' },
+  { id: 'replay_chevrolet_captiva_2011', brand: 'Chevrolet', name: 'Chevrolet Captiva · 2011 · 2.0 Diesel', codes: 'P0107 · P0069 · P0089' },
+  { id: 'replay_kia_sportage_2017', brand: 'Kia', name: 'Kia Sportage · 2017 · 2.0 Diesel', codes: 'P0403 · P2009 · P2015 · P0404' },
+  { id: 'replay_citroen_berlingo_2014', brand: 'Citroën', name: 'Citroën Berlingo · 2014 · 1.6 Diesel', codes: 'P0113 · P0102 · P2562' },
+  { id: 'replay_peugeot_2008_2022', brand: 'Peugeot', name: 'Peugeot 2008 · 2022 · 1.5 Diesel', codes: 'P0562' },
   { id: 'replay_healthy_unattributed', nameKey: 'demo.replay_healthy', codes: '0 DTC · DieselOBD' },
 ];
 const demoScenarioName = (id) => {
@@ -646,6 +648,13 @@ function BottomNavigation({ active, onChange }) {
 }
 
 /** Every navigational surface uses the same directional cue and touch language. */
+function VehicleBrandMark({ manufacturer, fallback = 'vehicle' }) {
+  const slug = brandIconSlug(manufacturer);
+  return slug
+    ? <img className="vehicle-brand-logo" src={`./brands/${slug}.svg`} alt="" aria-hidden="true" loading="lazy" decoding="async"/>
+    : <Icon name={fallback}/>;
+}
+
 function NavigationCue({ label, compact = false }) {
   return <span className={`navigation-cue${compact ? ' is-compact' : ''}`} aria-hidden="true">
     {!compact && <small>{label || t('nav.action.open')}</small>}
@@ -1737,7 +1746,9 @@ function App() {
             <section className={`connection-summary ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`} aria-label={t('nav.action.section')}>
               <div className="connection-actions">
                 <button type="button" className="connection-primary nav-interactive" onClick={status === 'demo' ? () => setActiveTab('more') : connectionAction} disabled={!nativeAvailable}>
-                  <span className="connection-icon"><Icon name={status === 'demo' ? 'scenario_healthy' : state.live || connected ? 'obd_connected' : 'obd_disconnected'}/></span>
+                  <span className="connection-icon">{status === 'demo' && demoScenario.startsWith('replay_')
+                    ? <VehicleBrandMark manufacturer={RECORDED_VEHICLES.find((item) => item.id === demoScenario)?.brand} fallback="scenario_healthy"/>
+                    : <Icon name={status === 'demo' ? 'scenario_healthy' : state.live || connected ? 'obd_connected' : 'obd_disconnected'}/>}</span>
                   <span className="connection-copy"><small>{status === 'demo' ? t('status.demo') : state.label}</small><strong>{status === 'demo' ? t('demo.manage_replay') : connected?.name || (state.lost ? lastDevice?.name || t('connection.lost') : t('connection.connect_adapter'))}</strong></span>
                   <NavigationCue compact/>
                 </button>
@@ -1774,7 +1785,7 @@ function App() {
               </header>
 
               <label className="search-box">
-                <Icon name="search"/>
+                <LucideSearch aria-hidden="true"/>
                 <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('explorer.search')} />
                 {query && <button type="button" onClick={() => setQuery('')} aria-label={t('generic.clear')}><Icon name="close"/></button>}
               </label>
@@ -1816,7 +1827,9 @@ function App() {
               </header>
 
               <section className={`ai-session-card is-${aiSession}`} aria-label={t('ai.session.section')}>
-                <span className="ai-session-icon"><Icon name={aiSession === 'offline' ? 'obd_disconnected' : aiSession === 'demo' ? 'play' : 'obd_connected'}/></span>
+                <span className="ai-session-icon">{aiSession !== 'offline' && (vehicle?.manufacturer || (aiSession === 'demo' && demoScenario.startsWith('replay_')))
+                    ? <VehicleBrandMark manufacturer={vehicle?.manufacturer || RECORDED_VEHICLES.find((item) => item.id === demoScenario)?.brand} fallback="obd_connected"/>
+                    : <Icon name={aiSession === 'offline' ? 'obd_disconnected' : aiSession === 'demo' ? 'play' : 'obd_connected'}/>}</span>
                 <div className="ai-session-copy">
                   <strong>{aiSessionLabel}</strong>
                   <p>{aiSession === 'offline' ? t('ai.session.none_detail') : aiVehicleTitle}</p>
@@ -1923,7 +1936,7 @@ function App() {
                               window.LotoTNative.googleFaultSearch(String(dtc.code), String(vehicle?.manufacturer || ''), String(vehicle?.model || ''));
                             }
                           }} aria-label={t('faults.google_search') + ' ' + dtc.code}>
-                          <span className="fault-search-icon-visual"><Icon name="search"/></span>
+                          <span className="fault-search-icon-visual"><img className="google-search-brand" src="./brands/google.svg" alt="" aria-hidden="true"/></span>
                         </a>}</div>
                       <strong><BidiText>{dtc.description || t('faults.no_description')}</BidiText></strong>
                       {language !== 'en' && dtc.description_language === 'en' && <small className="definition-fallback">{t('faults.definition_en')}</small>}
@@ -1987,7 +2000,7 @@ function App() {
                   <div className="demo-vehicle-grid">
                     {RECORDED_VEHICLES.map((item) => (
                       <button type="button" key={item.id} className={`demo-vehicle-option ${demoScenario === item.id ? 'is-active' : ''}`} onClick={() => selectDemoScenario(item.id)}>
-                        <span><Icon name="vehicle"/></span>
+                        <span><VehicleBrandMark manufacturer={item.brand}/></span>
                         <div><strong>{item.nameKey ? t(item.nameKey) : item.name}</strong><small dir="ltr">{item.codes}</small></div>
                         {demoScenario === item.id && <Icon name="check"/>}
                       </button>

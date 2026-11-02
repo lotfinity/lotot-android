@@ -2051,3 +2051,18 @@ html[dir="rtl"] .ai-page-identity small { letter-spacing: normal; }
  .navigation-cue-arrow svg,.app-page-overview .compact-health.nav-interactive::after,.connection-primary.nav-interactive::after,.connection-readings.nav-interactive::after {animation:none!important;}
  .nav-interactive,.service-tile,.fault-search-icon {transition:none!important;}
 }
+
+/* Offline open-source brand artwork: Simple Icons CC0. Trademarks remain with their owners. */
+.vehicle-brand-logo { display:block;width:26px;height:26px;max-width:100%;object-fit:contain;filter:brightness(0) invert(1);flex-shrink:0; }
+.demo-vehicle-option > span { flex:0 0 43px;width:43px;height:43px;border-radius:13px; }
+.demo-vehicle-option > span > .vehicle-brand-logo { width:30px;height:30px; }
+.demo-vehicle-option.is-active > span { background:rgba(202,255,0,.11); }
+.demo-vehicle-option > div { min-width:0; }
+.connection-primary .connection-icon > .vehicle-brand-logo { width:26px;height:26px; }
+.ai-session-icon > .vehicle-brand-logo { width:23px;height:23px; }
+.fault-search-icon-visual .google-search-brand { display:block;width:19px;height:19px;object-fit:contain;filter:brightness(0) invert(1); }
+html[data-theme="light"] .vehicle-brand-logo,html[data-theme="light"] .google-search-brand { filter:brightness(0); }
+@media(max-width:385px) {
+  .demo-vehicle-option > span {flex-basis:37px;width:37px;height:37px;}
+  .demo-vehicle-option > span > .vehicle-brand-logo {width:26px;height:26px;}
+}
