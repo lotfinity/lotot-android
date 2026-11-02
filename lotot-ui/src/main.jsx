@@ -645,6 +645,14 @@ function BottomNavigation({ active, onChange }) {
   );
 }
 
+/** Every navigational surface uses the same directional cue and touch language. */
+function NavigationCue({ label, compact = false }) {
+  return <span className={`navigation-cue${compact ? ' is-compact' : ''}`} aria-hidden="true">
+    {!compact && <small>{label || t('nav.action.open')}</small>}
+    <span className="navigation-cue-arrow"><Icon name="chevron"/></span>
+  </span>;
+}
+
 function DriveOverview({ readings, valueOf, historyOf }) {
   const speed = readings.vehicle_speed;
   const rpm = readings.engine_rpm;
@@ -788,7 +796,7 @@ function ServiceTile({ icon, title, service, kind, detail, onClick }) {
     <button type="button" className={`service-tile ${healthy ? 'is-active' : ''} ${warning ? 'is-warning' : ''}`} onClick={onClick}>
       <span className="service-icon"><Icon name={icon}/></span>
       <span className="service-copy"><small>{title}</small><strong>{serviceLabel(service, kind)}</strong><em>{detail}</em></span>
-      <span className="service-chevron"><Icon name="chevron"/></span>
+      <NavigationCue compact/>
     </button>
   );
 }
@@ -1716,7 +1724,7 @@ function App() {
         <div className="brand" aria-label="LoToTi">
           <img className="brand-app-icon" src="./app-icon.png" alt="" />
         </div>
-        <button className={`status-pill ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`} type="button" onClick={openConnection}><i/><span>{activeTab === 'ai' ? t('ai.session.header_' + (aiSession === 'demo' && demoScenario.startsWith('replay_') ? 'replay' : aiSession)) : state.label}</span></button>
+        <button className={`status-pill nav-interactive ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`} type="button" onClick={status === 'demo' ? () => setActiveTab('more') : openConnection} aria-label={`${state.label} · ${status === 'demo' ? t('demo.manage_replay') : t('connection.choose')}`}><i/><span>{activeTab === 'ai' ? t('ai.session.header_' + (aiSession === 'demo' && demoScenario.startsWith('replay_') ? 'replay' : aiSession)) : state.label}</span><Icon name="chevron"/></button>
         <div className="topbar-actions">
           <button className="topbar-icon-button topbar-settings" type="button" onClick={() => window.LotoTNative?.openNativeTools?.()} disabled={!nativeAvailable} aria-label={t('action.advanced_settings')} title={t('action.advanced_settings')}><Icon name="tool"/></button>
           <button className="topbar-icon-button theme-toggle" type="button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? t('theme.light') : t('theme.dark')} title={theme === 'dark' ? t('theme.light') : t('theme.dark')}><Icon name={theme === 'dark' ? 'sun' : 'moon'}/></button>
@@ -1726,13 +1734,19 @@ function App() {
       <div className="page-stack" data-active-page={activeTab}>
         {activeTab === 'overview' && (
           <section className="app-page app-page-overview">
-            <section className={`connection-summary ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`}>
-              <button type="button" onClick={connectionAction} disabled={!nativeAvailable}>
-                <span className="connection-icon"><Icon name={state.live || connected ? 'obd_connected' : 'obd_disconnected'}/></span>
-                <span className="connection-copy"><small>{state.label}</small><strong>{connected?.name || (state.lost ? lastDevice?.name || t('connection.lost') : t('connection.connect_adapter'))}</strong></span>
-                <span className="connection-meta"><em>{t('connection.live_signals', { count: signals.length })}</em><small>{fluxLabel}</small></span>
-                <Icon name="chevron"/>
-              </button>
+            <section className={`connection-summary ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`} aria-label={t('nav.action.section')}>
+              <div className="connection-actions">
+                <button type="button" className="connection-primary nav-interactive" onClick={status === 'demo' ? () => setActiveTab('more') : connectionAction} disabled={!nativeAvailable}>
+                  <span className="connection-icon"><Icon name={status === 'demo' ? 'scenario_healthy' : state.live || connected ? 'obd_connected' : 'obd_disconnected'}/></span>
+                  <span className="connection-copy"><small>{status === 'demo' ? t('status.demo') : state.label}</small><strong>{status === 'demo' ? t('demo.manage_replay') : connected?.name || (state.lost ? lastDevice?.name || t('connection.lost') : t('connection.connect_adapter'))}</strong></span>
+                  <NavigationCue compact/>
+                </button>
+                <button type="button" className="connection-readings nav-interactive" onClick={() => setActiveTab('live')}>
+                  <span className="connection-reading-value">{t('connection.live_signals', { count: signals.length })}</span>
+                  <span className="connection-reading-label">{t('nav.action.view_readings')}</span>
+                  <NavigationCue compact/>
+                </button>
+              </div>
             </section>
 
             <section className="overview-dashboard">
@@ -1740,13 +1754,13 @@ function App() {
               <HealthOverview alerts={liveAlerts} signals={signals} lastCapturedAt={lastCapturedAt} now={now}/>
             </section>
 
-            <CriticalMetrics readings={readings} valueOf={valueOf}/>
-
-            <section className={`health-card compact-health ${liveAlerts.length ? 'has-alerts' : ''}`} onClick={() => setActiveTab('health')} role="button" tabIndex="0">
+            <button type="button" className={`health-card compact-health nav-interactive ${liveAlerts.length ? 'has-alerts' : ''}`} onClick={() => setActiveTab('health')}>
               <span className="health-icon"><Icon name={healthIcon}/></span>
-              <div><strong>{liveAlerts.length ? t('health.review_alerts') : diagnosticCopy.title}</strong><p>{liveAlerts.length ? t('health.review_alerts_detail') : diagnosticCopy.body}</p></div>
-              <Icon name="chevron"/>
-            </section>
+              <span className="health-link-copy"><strong>{liveAlerts.length ? t('health.review_alerts') : t('nav.action.view_faults')}</strong><small>{diagnosticReportedCount !== null ? t('nav.action.fault_count', { count: diagnosticReportedCount }) : t('health.review_alerts_detail')}</small></span>
+              <NavigationCue label={t('nav.action.open')}/>
+            </button>
+
+            <CriticalMetrics readings={readings} valueOf={valueOf}/>
           </section>
         )}
 
@@ -1902,21 +1916,21 @@ function App() {
                 <div className="fault-code-grid">
                   {diagnosticDtcs.map((dtc, index) => (
                     <article className="fault-code-card" key={`${dtc.code}-${dtc.status}-${index}`}>
-                      <div><code dir="ltr">{dtc.code}</code><span>{t(`faults.status_${dtc.status || 'confirmed'}`)}</span></div>
-                      <strong><BidiText>{dtc.description || t('faults.no_description')}</BidiText></strong>
-                      {language !== 'en' && dtc.description_language === 'en' && <small className="definition-fallback">{t('faults.definition_en')}</small>}
-                      {language === 'ar-DZ' && dtc.description_language === 'fr' && <small className="definition-fallback">{t('faults.definition_fr')}</small>}
-                      <div className="fault-code-footer">
-                        <small>{[t('faults.type_' + (dtc.type_code || dtc.code?.[0] || 'unknown'), {}, t('faults.type_unknown')), dtc.manufacturer && dtc.manufacturer !== 'GENERIC' ? dtc.manufacturer : null].filter(Boolean).join(' · ')}</small>
-                        {googleFaultSearchUrl(dtc.code, vehicle) && <a className="fault-search-link" href={googleFaultSearchUrl(dtc.code, vehicle)} target="_self" rel="noopener noreferrer"
+                      <div className="fault-code-head"><code dir="ltr">{dtc.code}</code><span>{t(`faults.status_${dtc.status || 'confirmed'}`)}</span>                      {googleFaultSearchUrl(dtc.code, vehicle) && <a className="fault-search-icon" href={googleFaultSearchUrl(dtc.code, vehicle)} target="_self" rel="noopener noreferrer"
                           onClick={(event) => {
                             if (typeof window.LotoTNative?.googleFaultSearch === 'function') {
                               event.preventDefault();
                               window.LotoTNative.googleFaultSearch(String(dtc.code), String(vehicle?.manufacturer || ''), String(vehicle?.model || ''));
                             }
                           }} aria-label={t('faults.google_search') + ' ' + dtc.code}>
-                          <Icon name="search"/><span>{t('faults.google_search')}</span><Icon name="external_link"/>
-                        </a>}
+                          <span className="fault-search-icon-visual"><Icon name="search"/></span>
+                        </a>}</div>
+                      <strong><BidiText>{dtc.description || t('faults.no_description')}</BidiText></strong>
+                      {language !== 'en' && dtc.description_language === 'en' && <small className="definition-fallback">{t('faults.definition_en')}</small>}
+                      {language === 'ar-DZ' && dtc.description_language === 'fr' && <small className="definition-fallback">{t('faults.definition_fr')}</small>}
+                      <div className="fault-code-footer">
+                        <small>{[t('faults.type_' + (dtc.type_code || dtc.code?.[0] || 'unknown'), {}, t('faults.type_unknown')), dtc.manufacturer && dtc.manufacturer !== 'GENERIC' ? dtc.manufacturer : null].filter(Boolean).join(' · ')}</small>
+
                       </div>
                     </article>
                   ))}

@@ -1969,3 +1969,85 @@ html[dir="rtl"] .ai-page-identity small { letter-spacing: normal; }
 .ecu-scan-status.is-ready .ecu-scan-status-icon { animation:ecu-scan-complete .55s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes ecu-scan-complete {0%{transform:scale(.84);opacity:.65}70%{transform:scale(1.1);opacity:1}100%{transform:scale(1);opacity:1}}
 @media(prefers-reduced-motion:reduce){.ecu-scan-status.is-ready .ecu-scan-status-icon{animation:none!important;}}
+
+/* Mobile touch language: navigation surfaces visibly differ from passive telemetry. */
+.nav-interactive, .service-tile { position:relative; touch-action:manipulation; -webkit-tap-highlight-color:transparent; cursor:pointer; }
+.nav-interactive:not(:disabled), .service-tile:not(:disabled) { transition:background .16s ease,border-color .16s ease,transform .16s ease,box-shadow .16s ease; }
+.nav-interactive:active:not(:disabled),.service-tile:active:not(:disabled) { transform:scale(.983); background-color:rgba(202,255,0,.095); }
+.nav-interactive:focus-visible,.service-tile:focus-visible,.fault-search-icon:focus-visible { outline:2px solid var(--accent);outline-offset:3px; }
+.navigation-cue { display:inline-flex;align-items:center;gap:7px;justify-content:flex-end;flex:0 0 auto;color:var(--accent);direction:inherit; }
+.navigation-cue > small { font-size:10px;font-weight:850;line-height:1.3;white-space:nowrap; }
+.navigation-cue-arrow { display:grid;place-items:center;flex:0 0 30px;width:30px;height:30px;border:1px solid rgba(202,255,0,.35);border-radius:10px;background:rgba(202,255,0,.095); }
+.navigation-cue-arrow svg { width:17px;height:17px;stroke-width:2.8;animation:nav-arrow-intro .65s cubic-bezier(.2,.7,.3,1) .3s both; }
+.navigation-cue.is-compact .navigation-cue-arrow { flex-basis:32px;width:32px;height:32px;border-radius:11px; }
+[dir="rtl"] .navigation-cue-arrow svg { transform:scaleX(-1);animation-name:nav-arrow-intro-rtl; }
+@keyframes nav-arrow-intro { 0%{transform:translateX(-4px);opacity:.5}60%{transform:translateX(2px);opacity:1}100%{transform:translateX(0);opacity:1} }
+@keyframes nav-arrow-intro-rtl {0%{transform:scaleX(-1) translateX(-4px);opacity:.5}60%{transform:scaleX(-1) translateX(2px);opacity:1}100%{transform:scaleX(-1);opacity:1}}
+
+/* Single intro edge sweep only for major drill-down actions. */
+.app-page-overview .compact-health.nav-interactive,.connection-primary.nav-interactive,.connection-readings.nav-interactive { overflow:hidden; }
+.app-page-overview .compact-health.nav-interactive::after,.connection-primary.nav-interactive::after,.connection-readings.nav-interactive::after { content:"";position:absolute;inset:0;pointer-events:none;z-index:1;border-radius:inherit;background:linear-gradient(115deg,transparent 22%,rgba(202,255,0,.095) 48%,transparent 74%);transform:translateX(-150%);animation:nav-discovery-sweep 1.05s ease-out .6s 1 both; }
+.connection-readings.nav-interactive::after {animation-delay:.95s;}
+.app-page-overview .compact-health.nav-interactive::after {animation-delay:1.2s;}
+@keyframes nav-discovery-sweep {to{transform:translateX(150%);}}
+
+/* The connection row has TWO independent destinations, not one misleading button. */
+.app-page-overview .connection-summary { overflow:visible;border-color:transparent;background:transparent; }
+.connection-actions { display:flex;align-items:stretch;gap:9px;min-width:0; }
+.connection-primary,.connection-readings {display:flex;align-items:center;min-width:0;min-height:67px;padding:10px;border:1px solid rgba(202,255,0,.23);border-radius:17px;background:rgba(202,255,0,.045);color:var(--text);text-align:start;font:inherit;}
+.connection-primary {flex:1 1 60%;gap:9px;}
+.connection-primary:disabled {opacity:.55;}
+.connection-primary .connection-icon { flex:0 0 40px;width:40px;height:40px;color:var(--accent);background:rgba(202,255,0,.09);border-radius:12px; }
+.connection-primary .connection-copy { flex:1 1 auto;min-width:0; }
+.connection-primary .connection-copy strong {font-size:12px;white-space:normal;overflow-wrap:anywhere;line-height:1.3;}
+.connection-primary .connection-copy small {font-size:9px;letter-spacing:0;}
+.connection-primary .navigation-cue-arrow {background:transparent;border-color:transparent;flex-basis:24px;width:24px;height:28px;}
+.connection-readings {flex:0 1 38%;position:relative;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:3px;border-color:var(--line);background:rgba(255,255,255,.018);padding-inline-end:29px;}
+.connection-reading-value {font-size:13px;font-weight:850;line-height:1.3;}
+.connection-reading-label {font-size:10px;font-weight:800;color:var(--accent);line-height:1.3;}
+.connection-readings .navigation-cue {position:absolute;inset-inline-end:5px;top:50%;transform:translateY(-50%);}
+.connection-readings .navigation-cue-arrow {flex-basis:22px;width:22px;height:28px;background:transparent;border:0;}
+.connection-readings .navigation-cue-arrow svg {width:16px;height:16px;}
+.app-page-overview .connection-summary .connection-primary,.app-page-overview .connection-summary .connection-readings {min-height:64px;}
+
+/* Compact health details CTA: obvious navigation, but no extra screen-height. */
+.app-page-overview .compact-health.nav-interactive {width:100%;display:flex;gap:10px;align-items:center;min-height:70px;padding:11px 12px;text-align:start;border:1px solid rgba(202,255,0,.3);background:linear-gradient(105deg,rgba(202,255,0,.07),rgba(202,255,0,.016));border-radius:17px;color:var(--text);font:inherit;}
+.app-page-overview .compact-health .health-icon {flex:0 0 42px;width:42px;height:42px;}
+.app-page-overview .compact-health .health-link-copy {flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:4px;}
+.app-page-overview .compact-health .health-link-copy strong {margin:0;font-size:13px;line-height:1.3;}
+.app-page-overview .compact-health .health-link-copy small {margin:0;font-size:10px;line-height:1.35;color:var(--muted);}
+.app-page-overview .compact-health .navigation-cue {gap:5px;}
+.app-page-overview .compact-health .navigation-cue > small {font-size:9px;}
+.status-pill.nav-interactive {display:inline-flex;align-items:center;gap:7px;}
+.status-pill.nav-interactive > svg {flex:0 0 12px;width:12px;height:12px;color:var(--accent);}
+[dir="rtl"] .status-pill.nav-interactive > svg { transform:scaleX(-1); }
+.service-tile .navigation-cue-arrow {width:30px;height:30px;flex-basis:30px;}
+
+/* Tiny lookup icon in the fault code header; a 48px touch area with 32px visual. */
+.app-page-health .fault-code-card {position:relative;}
+.app-page-health .fault-code-head {display:flex;align-items:center;gap:8px;justify-content:flex-start;min-height:48px;}
+.app-page-health .fault-code-head > code {flex:0 0 auto;}
+.app-page-health .fault-code-head > span {flex:0 1 auto;min-width:0;color:var(--muted);font-size:10px;font-weight:750;}
+.app-page-health .fault-search-icon {flex:0 0 48px;display:grid;place-items:center;align-self:center;width:48px;height:48px;min-width:48px;min-height:48px;margin-inline-start:auto;border-radius:14px;color:var(--accent);background:transparent;text-decoration:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
+.app-page-health .fault-search-icon:active {background:rgba(202,255,0,.075);transform:scale(.97);}
+.fault-search-icon-visual {display:grid;place-items:center;width:32px;height:32px;border-radius:10px;border:1px solid rgba(202,255,0,.22);background:rgba(202,255,0,.055);color:var(--accent);}
+.fault-search-icon-visual svg {width:17px;height:17px;stroke-width:2.2;}
+.app-page-health .fault-code-footer {display:flex;align-items:center;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
+.app-page-health .fault-code-footer > small {font-size:10px;color:var(--muted);}
+.app-page-health .fault-code-card > strong {margin-top:5px;}
+
+@media(max-width:400px){
+ .connection-actions {gap:6px;}
+ .connection-primary,.connection-readings {padding:8px;min-height:60px;}
+ .connection-primary .connection-icon {flex-basis:32px;width:32px;height:32px;}
+ .connection-primary {gap:5px;}
+ .connection-primary .connection-copy strong {font-size:11px;}
+ .connection-readings {padding-inline-end:22px;}
+ .connection-reading-value {font-size:11px;}
+ .connection-reading-label {font-size:9px;}
+ .app-page-overview .compact-health .navigation-cue > small {display:none;}
+}
+@media(prefers-reduced-motion:reduce){
+ .navigation-cue-arrow svg,.app-page-overview .compact-health.nav-interactive::after,.connection-primary.nav-interactive::after,.connection-readings.nav-interactive::after {animation:none!important;}
+ .nav-interactive,.service-tile,.fault-search-icon {transition:none!important;}
+}
