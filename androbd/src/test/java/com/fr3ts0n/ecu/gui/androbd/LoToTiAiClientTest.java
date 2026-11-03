@@ -151,7 +151,9 @@ public class LoToTiAiClientTest
             });
             assertTrue(done.await(3, TimeUnit.SECONDS));
             assertEquals("Hello", answer.get());
-            assertEquals("lototi-auto", new JSONObject(reply.sent.toString("UTF-8")).getString("model"));
+            JSONObject requestBody = new JSONObject(reply.sent.toString("UTF-8"));
+            assertEquals("lototi-auto", requestBody.getString("model"));
+            assertFalse("Avoid forcing unsupported sampling parameters", requestBody.has("temperature"));
             assertTrue(client.getState().getBoolean("available"));
             assertTrue(reply.closed);
         } finally { client.shutdown(); }
@@ -201,6 +203,8 @@ public class LoToTiAiClientTest
             assertEquals(2, attempts.get());
             assertTrue(new JSONObject(first.sent.toString("UTF-8")).getBoolean("stream"));
             assertFalse(new JSONObject(second.sent.toString("UTF-8")).getBoolean("stream"));
+            assertFalse(new JSONObject(first.sent.toString("UTF-8")).has("temperature"));
+            assertFalse(new JSONObject(second.sent.toString("UTF-8")).has("temperature"));
             assertTrue(client.getState().getBoolean("available"));
             assertTrue(first.closed && second.closed);
         } finally { client.shutdown(); }

@@ -235,7 +235,7 @@ final class LoToTiAiClient
 
         JSONObject body = new JSONObject();
         body.put("model", gateway.model);
-        body.put("temperature", 0.15);
+        // Omit temperature: GPT-6 Sol routing rejects this optional parameter at runtime.
         body.put("stream", true);
         body.put("max_tokens", 4096);
         JSONArray messages = new JSONArray();
@@ -360,7 +360,7 @@ final class LoToTiAiClient
             JSONObject body = new JSONObject();
             body.put("model", MODEL);
             body.put("stream", false);
-            body.put("temperature", 0.15);
+            // Preserve provider defaults for models with fixed sampling parameters.
             body.put("max_tokens", 4096);
             JSONArray messages = new JSONArray();
             messages.put(message("system", systemPrompt(responseLanguage)));
