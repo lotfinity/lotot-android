@@ -2154,3 +2154,60 @@ html[data-theme="light"] .vehicle-brand-logo,html[data-theme="light"] .google-se
  .app-page-overview .nav-route.is-discoverable::after {animation:none!important;content:none!important;}
  .app-page-overview .nav-route {transition:none!important;}
 }
+
+
+/* Overview opening motion: only navigation cards, every visit, no looping. */
+.app-page-overview .nav-route.nav-intro {
+  animation:lototi-nav-rise .46s cubic-bezier(.22,.82,.24,1) both;
+}
+.app-page-overview .nav-route.nav-intro-1 {animation-delay:0ms;}
+.app-page-overview .nav-route.nav-intro-2 {animation-delay:90ms;}
+.app-page-overview .nav-route.nav-intro-3 {animation-delay:180ms;}
+.app-page-overview .nav-route.nav-intro-4 {animation-delay:270ms;}
+/* Preserve the permanent accent rail (::before); the sweep occupies ::after. */
+.app-page-overview .nav-route.nav-intro::after,
+.app-page-overview .nav-route.nav-intro.is-discoverable::after {
+  content:''; position:absolute;inset:0;z-index:1;pointer-events:none;border-radius:inherit;
+  background:linear-gradient(115deg,transparent 20%,rgba(202,255,0,.15) 50%,transparent 80%);
+  transform:translateX(-150%);
+  animation:lototi-nav-sweep .75s ease-out .17s 1 both;
+}
+.app-page-overview .nav-route.nav-intro-2::after {animation-delay:.26s;}
+.app-page-overview .nav-route.nav-intro-3::after {animation-delay:.35s;}
+.app-page-overview .nav-route.nav-intro-4::after {animation-delay:.44s;}
+.app-page-overview .nav-route.nav-intro .navigation-cue-arrow svg,
+.app-page-overview .nav-route.nav-intro .health-overview-open svg {
+  animation:lototi-nav-cue .48s ease-out .25s both;
+}
+.app-page-overview .nav-route.nav-intro-2 .navigation-cue-arrow svg {animation-delay:.34s;}
+.app-page-overview .nav-route.nav-intro-4 .navigation-cue-arrow svg {animation-delay:.52s;}
+[dir='rtl'] .app-page-overview .nav-route.nav-intro .navigation-cue-arrow svg,
+[dir='rtl'] .app-page-overview .nav-route.nav-intro .health-overview-open svg {
+  animation-name:lototi-nav-cue-rtl;
+}
+@keyframes lototi-nav-rise {
+  0% {opacity:.55;transform:translateY(9px) scale(.986);}
+  70% {opacity:1;transform:translateY(-1px) scale(1.004);}
+  100% {opacity:1;transform:translateY(0) scale(1);}
+}
+@keyframes lototi-nav-sweep {
+  0% {transform:translateX(-150%);opacity:.7;}
+  100% {transform:translateX(150%);opacity:0;}
+}
+@keyframes lototi-nav-cue {
+  0% {transform:translateX(-4px);opacity:.55;}
+  65% {transform:translateX(2px);opacity:1;}
+  100% {transform:translateX(0);opacity:1;}
+}
+@keyframes lototi-nav-cue-rtl {
+  0% {transform:scaleX(-1) translateX(-4px);opacity:.55;}
+  65% {transform:scaleX(-1) translateX(2px);opacity:1;}
+  100% {transform:scaleX(-1);opacity:1;}
+}
+@media(prefers-reduced-motion:reduce) {
+  .app-page-overview .nav-route.nav-intro,
+  .app-page-overview .nav-route.nav-intro::after,
+  .app-page-overview .nav-route.nav-intro.is-discoverable::after,
+  .app-page-overview .nav-route.nav-intro .navigation-cue-arrow svg,
+  .app-page-overview .nav-route.nav-intro .health-overview-open svg {animation:none!important;}
+}
