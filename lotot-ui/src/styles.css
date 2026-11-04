@@ -2066,3 +2066,91 @@ html[data-theme="light"] .vehicle-brand-logo,html[data-theme="light"] .google-se
   .demo-vehicle-option > span {flex-basis:37px;width:37px;height:37px;}
   .demo-vehicle-option > span > .vehicle-brand-logo {width:26px;height:26px;}
 }
+
+
+/* v2 NAVIGATION LANGUAGE — immutable distinction between tappable cards and passive gauges.
+   Permanent accent rail + solid route icon, with one short first-visit sweep. */
+.app-page-overview .nav-route {
+  position:relative; isolation:isolate; overflow:hidden; cursor:pointer;
+  font-family:inherit; color:var(--text); text-align:start; touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+  border:1px solid rgba(201,255,8,.43);
+  background:linear-gradient(110deg,rgba(191,255,3,.105),rgba(18,23,17,.94) 63%);
+  box-shadow:inset 0 1px 0 rgba(205,255,5,.06),0 0 0 1px rgba(202,255,0,.035);
+  transition:transform .14s ease, background .14s ease, border-color .14s ease;
+}
+/* A clearly visible, persistent narrow navigation rail — not applied to sensor cards. */
+.app-page-overview .nav-route::before {
+  content:''; position:absolute; inset-block:16px; inset-inline-start:0;
+  width:3px; border-radius:9px; background:var(--accent);
+  box-shadow:0 0 13px rgba(202,255,0,.55); pointer-events:none;
+}
+.app-page-overview .nav-route:active { transform:scale(.981); border-color:var(--accent);
+  background:linear-gradient(110deg,rgba(202,255,0,.18),rgba(22,30,17,.95)); }
+.app-page-overview .nav-route:focus-visible { outline:3px solid var(--accent);outline-offset:3px; }
+.app-page-overview .nav-route .navigation-cue-arrow {
+  width:31px;height:31px;flex-basis:31px;
+  border:1px solid rgba(202,255,0,.58);border-radius:11px;
+  background:rgba(202,255,0,.15);color:var(--accent);
+  box-shadow:0 0 0 3px rgba(202,255,0,.045);
+}
+.app-page-overview .nav-route .navigation-cue-arrow svg {width:18px;height:18px;}
+.app-page-overview .connection-readings {background:linear-gradient(120deg,rgba(202,255,0,.08),rgba(13,18,15,.95));}
+.app-page-overview .connection-readings .navigation-cue {inset-inline-end:6px;}
+.app-page-overview .connection-primary {background:linear-gradient(120deg,rgba(202,255,0,.1),rgba(13,18,15,.96));}
+.app-page-overview .compact-health.nav-route {border-color:rgba(202,255,0,.46);}
+.app-page-overview .compact-health.nav-route .navigation-cue > small {color:var(--accent);font-weight:850;}
+/* Only these interactions get an entry-guide sweep. No perpetual animation on the dashboard. */
+.app-page-overview .nav-route:not(.is-discoverable)::after {animation:none!important;content:none!important;}
+.app-page-overview .nav-route.is-discoverable::after {
+  animation:nav-discovery-sweep 1.05s ease-out .65s 1 both;
+}
+.app-page-overview .connection-readings.nav-route.is-discoverable::after {animation-delay:1.0s;}
+.app-page-overview .compact-health.nav-route.is-discoverable::after {animation-delay:1.35s;}
+.app-page-overview .health-overview.nav-route.is-discoverable::after {animation-delay:1.75s;}
+
+/* Health summary is now a true, whole-card button that navigates to the ECU health tab. */
+.app-page-overview .health-overview.nav-route {
+  width:100%; display:flex; flex-direction:column; align-items:stretch;
+  min-width:0; height:258px; min-height:258px; margin:0; padding:12px;
+  border-color:rgba(202,255,0,.42);
+}
+.app-page-overview .health-overview.nav-route.tone-warning {border-color:rgba(255,181,72,.62);}
+.app-page-overview .health-overview.nav-route.tone-danger {border-color:rgba(255,96,115,.62);}
+.app-page-overview .health-overview.nav-route > strong,
+.app-page-overview .health-overview.nav-route > p {text-align:start;}
+.app-page-overview .health-overview.nav-route .health-counts span {pointer-events:none;}
+.app-page-overview .health-overview.nav-route .health-overview-footer {
+  display:flex;justify-content:space-between;align-items:center;gap:4px;
+  margin-top:auto;padding-top:8px;border-top:1px solid rgba(202,255,0,.12);
+}
+.app-page-overview .health-overview.nav-route .health-overview-footer > small {
+  color:var(--muted);font-size:8px;line-height:1.3;min-width:0;
+}
+.app-page-overview .health-overview.nav-route .health-overview-open {
+  display:inline-flex;align-items:center;gap:3px;white-space:nowrap;
+  color:var(--accent);font-size:10px;font-weight:900;
+}
+.app-page-overview .health-overview.nav-route .health-overview-open svg {
+  width:16px;height:16px;flex:0 0 16px;
+}
+[dir='rtl'] .health-overview-open svg { transform:scaleX(-1); }
+.app-page-overview .health-overview.nav-route::after {
+  content:'';position:absolute;inset:0;pointer-events:none;border-radius:inherit;
+  background:linear-gradient(115deg,transparent 22%,rgba(202,255,0,.10) 48%,transparent 74%);
+  transform:translateX(-150%);z-index:1;
+}
+/* Static measurements remain flat, without a rail, arrow, or discovery animation. */
+.app-page-overview .overview-metric {cursor:default;}
+@media(max-width:430px){
+ .app-page-overview .health-overview.nav-route {padding:10px;height:258px;min-height:258px;}
+ .app-page-overview .health-overview.nav-route .health-overview-open {font-size:9px;}
+}
+@media(max-width:380px){
+ .app-page-overview .health-overview.nav-route {height:258px;min-height:258px;}
+ .app-page-overview .health-overview.nav-route .health-overview-footer > small {display:none;}
+}
+@media(prefers-reduced-motion:reduce){
+ .app-page-overview .nav-route.is-discoverable::after {animation:none!important;content:none!important;}
+ .app-page-overview .nav-route {transition:none!important;}
+}

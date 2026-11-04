@@ -687,7 +687,7 @@ function DriveOverview({ readings, valueOf, historyOf }) {
   );
 }
 
-function HealthOverview({ alerts, signals, lastCapturedAt, now, showPrimary = true }) {
+function HealthOverview({ alerts, signals, lastCapturedAt, now, showPrimary = true, onOpen, discovery = false }) {
   const dangerCount = alerts.filter((item) => item.level === 'danger').length;
   const warningCount = alerts.filter((item) => item.level === 'warning').length;
   const tone = dangerCount ? 'danger' : warningCount ? 'warning' : signals.length ? 'normal' : 'unknown';
@@ -695,13 +695,17 @@ function HealthOverview({ alerts, signals, lastCapturedAt, now, showPrimary = tr
   const title = dangerCount ? t('health.action') : warningCount ? t('health.watch') : signals.length ? t('health.stable') : t('health.waiting');
   const healthIcon = tone === 'danger' ? 'health_critical' : tone === 'warning' ? 'health_warning' : 'health_stable';
   return (
-    <section className={`health-overview tone-${tone}`}>
+    <button type="button" onClick={onOpen} className={`health-overview tone-${tone} nav-route${discovery ? ' is-discoverable' : ''}`}
+      aria-label={`${t('nav.action.view_faults')}: ${dangerCount} ${t('health.critical')}, ${warningCount} ${t('health.follow')}`}>
       <header><span><Icon name={healthIcon}/></span><i/></header>
       <strong>{title}</strong>
       <p>{(showPrimary && primary?.message) || (signals.length ? t('health.signals', { count: signals.length }) : t('health.connect'))}</p>
       <div className="health-counts"><span><b>{dangerCount}</b><small>{t('health.critical')}</small></span><span><b>{warningCount}</b><small>{t('health.follow')}</small></span></div>
-      <footer>{signals.length ? t('service.updated', { age: ageLabel(lastCapturedAt, now) }) : '—'}</footer>
-    </section>
+      <footer className="health-overview-footer">
+        <small>{signals.length ? t('service.updated', { age: ageLabel(lastCapturedAt, now) }) : '—'}</small>
+        <span className="health-overview-open">{t('nav.action.open')}<Icon name="chevron"/></span>
+      </footer>
+    </button>
   );
 }
 
@@ -1272,6 +1276,12 @@ function App() {
     const saved = localStorage.getItem('lotot-active-tab');
     return PRIMARY_NAV.some((item) => item.id === saved) ? saved : 'overview';
   });
+  // An introductory sweep runs only on the first overview visit per WebView session.
+  // All interactive cards retain clear visual affordances after it finishes.
+  const [navigationGuide, setNavigationGuide] = useState(() => {
+    try { return sessionStorage.getItem('lototi-nav-guide-seen-v2') !== '1'; }
+    catch (_) { return true; }
+  });
   const [favorites, setFavorites] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('lotot-signal-favorites') || '[]');
@@ -1353,6 +1363,16 @@ function App() {
     localStorage.setItem('lotot-active-tab', activeTab);
     window.scrollTo({ top: 0, behavior: 'auto' });
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'overview' || !navigationGuide || onboardingOpen || !onboardingComplete) return undefined;
+    const timer = window.setTimeout(() => {
+      try { sessionStorage.setItem('lototi-nav-guide-seen-v2', '1'); }
+      catch (_) { /* Keep the rest of the UI working if session storage is disabled. */ }
+      setNavigationGuide(false);
+    }, 2850);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, navigationGuide, onboardingOpen, onboardingComplete]);
 
   useEffect(() => {
     localStorage.setItem('lotot-signal-favorites', JSON.stringify(favorites));
@@ -1745,14 +1765,16 @@ function App() {
           <section className="app-page app-page-overview">
             <section className={`connection-summary ${state.live ? 'is-live' : ''} ${state.lost ? 'is-lost' : ''}`} aria-label={t('nav.action.section')}>
               <div className="connection-actions">
-                <button type="button" className="connection-primary nav-interactive" onClick={status === 'demo' ? () => setActiveTab('more') : connectionAction} disabled={!nativeAvailable}>
+                <button type="button" className={`connection-primary nav-interactive nav-route${navigationGuide ? ' is-discoverable' : ''}`} onClick={status === 'demo' ? () => setActiveTab('more') : connectionAction}
+                  aria-label={status === 'demo' ? t('demo.manage_replay') : t('connection.connect_adapter')} disabled={!nativeAvailable}>
                   <span className="connection-icon">{status === 'demo' && demoScenario.startsWith('replay_')
                     ? <VehicleBrandMark manufacturer={RECORDED_VEHICLES.find((item) => item.id === demoScenario)?.brand} fallback="scenario_healthy"/>
                     : <Icon name={status === 'demo' ? 'scenario_healthy' : state.live || connected ? 'obd_connected' : 'obd_disconnected'}/>}</span>
                   <span className="connection-copy"><small>{status === 'demo' ? t('status.demo') : state.label}</small><strong>{status === 'demo' ? t('demo.manage_replay') : connected?.name || (state.lost ? lastDevice?.name || t('connection.lost') : t('connection.connect_adapter'))}</strong></span>
                   <NavigationCue compact/>
                 </button>
-                <button type="button" className="connection-readings nav-interactive" onClick={() => setActiveTab('live')}>
+                <button type="button" className={`connection-readings nav-interactive nav-route${navigationGuide ? ' is-discoverable' : ''}`} onClick={() => setActiveTab('live')}
+                  aria-label={t('nav.action.view_readings')}>
                   <span className="connection-reading-value">{t('connection.live_signals', { count: signals.length })}</span>
                   <span className="connection-reading-label">{t('nav.action.view_readings')}</span>
                   <NavigationCue compact/>
@@ -1762,10 +1784,12 @@ function App() {
 
             <section className="overview-dashboard">
               <DriveOverview readings={readings} valueOf={valueOf} historyOf={historyOf}/>
-              <HealthOverview alerts={liveAlerts} signals={signals} lastCapturedAt={lastCapturedAt} now={now}/>
+              <HealthOverview alerts={liveAlerts} signals={signals} lastCapturedAt={lastCapturedAt} now={now}
+                onOpen={() => setActiveTab('health')} discovery={navigationGuide}/>
             </section>
 
-            <button type="button" className={`health-card compact-health nav-interactive ${liveAlerts.length ? 'has-alerts' : ''}`} onClick={() => setActiveTab('health')}>
+            <button type="button" className={`health-card compact-health nav-interactive nav-route${navigationGuide ? ' is-discoverable' : ''} ${liveAlerts.length ? 'has-alerts' : ''}`} onClick={() => setActiveTab('health')}
+              aria-label={t('nav.action.view_faults')}>
               <span className="health-icon"><Icon name={healthIcon}/></span>
               <span className="health-link-copy"><strong>{liveAlerts.length ? t('health.review_alerts') : t('nav.action.view_faults')}</strong><small>{diagnosticReportedCount !== null ? t('nav.action.fault_count', { count: diagnosticReportedCount }) : t('health.review_alerts_detail')}</small></span>
               <NavigationCue label={t('nav.action.open')}/>
